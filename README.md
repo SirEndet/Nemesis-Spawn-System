@@ -24,9 +24,11 @@ Every so often, a hunter comes for you. He spawns out of sight, sprints after yo
 | [G.A.M.M.A.](https://github.com/Grokitach/Stalker_GAMMA) | Or S.T.A.L.K.E.R. Anomaly 1.5.3 with the [modded exes](https://github.com/themrdemonized/xray-monolith) (2025.9.10 or newer) and MCM. |
 | **[xlibs](https://github.com/damiansirbu-stalker/xlibs) 1.9.1 or newer** | By Damian Sirbu. Not included in GAMMA; install it first. Also on [ModDB](https://www.moddb.com/mods/stalker-anomaly/addons/xlibs-1001). |
 
-**Optional, no setup needed:** AlifePlus and AlifeTactics. The mod works with them and without them.
+## Compatibility
 
-**Obrien GAMMA Overhaul** users: turn on *Obrien GAMMA Overhaul armour* in the mod's MCM settings.
+Works with:
+- **AlifePlus** and **AlifeTactics**: no setup needed.
+- **Obrien GAMMA Overhaul**: turn on *Obrien GAMMA Overhaul armour* in the mod's MCM settings.
 
 ## Installation (Mod Organizer 2)
 
