@@ -62,6 +62,10 @@ Turn on **Debug logs** in MCM (Debug page), play until the problem happens, and 
 
 - **Phoenixxx**: the original idea for this mod.
 - **Damian Sirbu**: [xlibs](https://github.com/damiansirbu-stalker/xlibs), the library this mod is built on.
+
+  xlibs by Damian Sirbu  
+  https://github.com/damiansirbu-stalker
+
 - **SirEndet**: design, testing and direction.
 
 Built with AI assistance (Claude by Anthropic).
