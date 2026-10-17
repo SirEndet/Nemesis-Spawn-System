@@ -32,16 +32,16 @@ Works with:
 
 ## Installation (Mod Organizer 2)
 
-1. Install **xlibs** first, following its own instructions.
-2. Download this mod: on GitHub, click **Code → Download ZIP**.
-3. In Mod Organizer 2, click **Install a new mod from an archive** (the CD icon) and pick the downloaded ZIP.
-4. In the install dialog, find the `Nemesis` folder, right-click it and choose **Set data directory**. The `gamedata` folder should now be directly under the top. Name the mod `Nemesis Wave Spawn System` and click **OK**.
+1. Install **[xlibs](https://github.com/damiansirbu-stalker/xlibs)** 1.9.1 or newer first, following its own instructions.
+2. Download the mod from the **[Latest Release](https://github.com/SirEndet/Nemesis-Wave-Spawn-System/releases/latest)**: under *Assets*, click the `NemesisWaveSpawnSystem_*.zip` file. (Older versions are on the [releases page](https://github.com/SirEndet/Nemesis-Wave-Spawn-System/releases).)
+3. In Mod Organizer 2, click **Install a new mod from an archive** (the CD icon) and pick the downloaded zip.
+4. Name the mod `Nemesis Wave Spawn System` and click **OK**. The zip is already laid out for MO2, so there is nothing else to set.
 5. Tick the mod in the left pane to enable it. Load order doesn't matter.
 6. Start the game. Settings are under **MCM → Nemesis Wave Spawn System**.
 
-**Manual install:** create an empty mod in MO2 (right-click the left pane → *Create empty mod*), open its folder, and copy the `gamedata` folder from `Nemesis/` into it.
+**Manual install:** unpack the release zip and copy its `gamedata` folder into an empty MO2 mod (right-click the left pane → *Create empty mod*), or into your Anomaly folder.
 
-**Updating:** install the new version over the old one (choose *Replace* when MO2 asks). Your MCM settings are kept.
+**Updating:** install the new release over the old one (choose *Replace* when MO2 asks). Your MCM settings are kept.
 
 **Note on saves:** the first hunt comes after a 12-day grace period by default, counted from when the mod is first loaded in a save. You can shorten it in MCM.
 
