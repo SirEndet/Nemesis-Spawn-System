@@ -1,0 +1,213 @@
+-- Nemesis Guard
+
+local S = nemesis_state.S
+
+local function dbg(...) nemesis_utils.log_msg(...) end
+
+---------------------------------------------------------------------------
+-- Release guard
+---------------------------------------------------------------------------
+
+local release_guard_installed = false
+local release_guard_warned = false
+local refused_count = 0
+
+local function log_refusal(what, se_obj)
+    refused_count = refused_count + 1
+    if refused_count <= 20 or refused_count % 25 == 0 then
+        local tb = ""
+        pcall(function() tb = debug.traceback("", 4) end)
+        dbg("!Nemesis: refused engine release (%s) of %s, online=%s, refusal %s.%s",
+            what, tostring(se_obj.id), tostring(se_obj.online), tostring(refused_count), tb or "")
+    end
+end
+
+local function restore_member(se_obj)
+    local sq = S.sim_squad_id and alife():object(S.sim_squad_id)
+    if not sq or not sq.register_member then return end
+    for _, mid in ipairs(nemesis_spawn.member_ids(sq)) do
+        if mid == se_obj.id then return end
+    end
+    pcall(function() sq:register_member(se_obj.id) end)
+end
+
+local function install_release_guard()
+    if release_guard_installed then return end
+    local ok, mgr = pcall(function() return safe_release_manager end)
+    if not ok or type(mgr) ~= "table" or type(mgr.release) ~= "function" then
+        if not release_guard_warned then
+            release_guard_warned = true
+            dbg("!Nemesis ERROR: safe_release_manager not reachable (%s), release guard is OFF.", type(mgr))
+        end
+        return
+    end
+    local orig = mgr.release
+    mgr.release = function(se_obj, ...)
+        if se_obj and se_obj.id and S.phase ~= "idle" then
+            if nemesis_state.is_member(se_obj.id) then
+                log_refusal("hunt member", se_obj)
+                restore_member(se_obj)
+                return
+            end
+            if se_obj.id == S.sim_squad_id then
+                log_refusal("hunt squad", se_obj)
+                return
+            end
+        end
+        return orig(se_obj, ...)
+    end
+    release_guard_installed = true
+    dbg("Nemesis: release guard installed on safe_release_manager.")
+end
+
+---------------------------------------------------------------------------
+-- South cleanup exemption
+---------------------------------------------------------------------------
+
+local south_exempt_installed = false
+local function install_south_exemption()
+    if south_exempt_installed then return end
+    if type(_G.get_object_story_id) ~= "function" then return end
+    local orig = _G.get_object_story_id
+    _G.get_object_story_id = function(obj_id, ...)
+        local sid = orig(obj_id, ...)
+        if sid ~= nil then return sid end
+        if obj_id and S.phase ~= "idle" and nemesis_state.is_member(obj_id) then
+            local obj = level.object_by_id(obj_id)
+            if obj and nemesis_fx.alive_obj(obj) then return "nemesis_hunter" end
+        end
+        return sid
+    end
+    south_exempt_installed = true
+    dbg("Nemesis: hunters are exempt from the north-faction cleanup while a hunt is active.")
+end
+
+---------------------------------------------------------------------------
+-- AlifePlus
+---------------------------------------------------------------------------
+local ap_owner_ready = false
+local function install_ap_owner()
+    if ap_owner_ready then return end
+    if not (ap_api and ap_api.register_owner) then return end
+    local ok, res = pcall(function()
+        return ap_api.register_owner("nemesis", function(squad)
+            return squad ~= nil and S.sim_squad_id ~= nil and squad.id == S.sim_squad_id
+        end)
+    end)
+    if ok and res ~= false then
+        ap_owner_ready = true
+        dbg("Nemesis: AlifePlus will not route these squads.")
+    end
+end
+
+---------------------------------------------------------------------------
+-- MCM action boxes
+---------------------------------------------------------------------------
+local box_was = {}
+local function box(id)
+    local on = nemesis_mcm.get_bool(id, false)
+    local fire = on and not box_was[id]
+    box_was[id] = on
+    if fire then
+        pcall(function() ui_mcm.set(nemesis_mcm.path(id), false) end)
+        nemesis_mcm.invalidate()
+    end
+    return fire
+end
+
+local function check_boxes()
+    if box("reset_escalation_now") then
+        dbg("Nemesis: escalation reset from cycle %s to 1 (MCM).", tostring(S.cycle))
+        S.cycle = 1
+        nemesis_damage.unseed_br()
+        nemesis_utils.send_news("Escalation reset. The next hunt starts at cycle 1.", "Nemesis")
+    end
+    if box("test_pda") then
+        local ok = nemesis_utils.send_news("PDA test: if you can read this, Nemesis messages work.", "Nemesis")
+        dbg("Nemesis: PDA test requested from MCM, result: %s.", ok and "sent" or "FAILED")
+    end
+    if box("force_boss") then
+        nemesis_boss.force()
+        dbg("Nemesis: the next named hunter to spawn will be the boss (MCM).")
+    end
+end
+
+function tick()
+    install_south_exemption()
+    check_boxes()
+    nemesis_damage.install_br_wrap()
+    install_release_guard()
+    install_ap_owner()
+end
+
+---------------------------------------------------------------------------
+-- Death reset
+---------------------------------------------------------------------------
+
+local DEATH_HIT_WINDOW_MS = 30000
+local death_reset_pending = false
+local last_hunter_hit = nil
+
+local function death_marker_path()
+    local path = nil
+    pcall(function() path = getFS():update_path("$app_data_root$", "nemesis_death_reset.txt") end)
+    return path
+end
+
+local function write_death_marker()
+    local path = death_marker_path()
+    if not path then return end
+    local ok = pcall(function()
+        local f = io.open(path, "w")
+        if f then f:write("1"); f:close() end
+    end)
+    if not ok then dbg("!Nemesis ERROR: could not write the death marker (%s).", tostring(path)) end
+end
+
+local function take_death_marker()
+    local path = death_marker_path()
+    if not path then return false end
+    local found = false
+    pcall(function()
+        local f = io.open(path, "r")
+        if f then
+            found = true
+            f:close()
+            os.remove(path)
+        end
+    end)
+    return found
+end
+
+function on_actor_hit(actor, amount, dir, who, bone)
+    if S.phase == "idle" or not who then return end
+    local wid = nil
+    pcall(function() wid = who:id() end)
+    if wid and nemesis_state.is_member(wid) then last_hunter_hit = time_global() end
+end
+
+function on_actor_before_death(who_id, flags)
+    if not nemesis_mcm.get_bool("reset_on_death", true) then return end
+    if S.phase == "idle" then return end
+    local by_hunter = who_id ~= nil and nemesis_state.is_member(who_id)
+    if not by_hunter and last_hunter_hit and time_global() - last_hunter_hit <= DEATH_HIT_WINDOW_MS then
+        by_hunter = true
+    end
+    if not by_hunter then return end
+    death_reset_pending = true
+    write_death_marker()
+    dbg("Nemesis: killed by a hunter at cycle %s. The next loaded save starts again at cycle 1.", tostring(S.cycle))
+end
+
+function apply_death_reset()
+    local from_file = take_death_marker()
+    if not (death_reset_pending or from_file) then return end
+    death_reset_pending = false
+    last_hunter_hit = nil
+    if not nemesis_mcm.get_bool("reset_on_death", true) then return end
+    if (S.cycle or 1) > 1 then
+        dbg("Nemesis: you died to a hunter; escalation reset from cycle %s to 1.", tostring(S.cycle))
+    end
+    S.cycle = 1
+    nemesis_damage.unseed_br()
+end

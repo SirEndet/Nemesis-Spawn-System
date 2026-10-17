@@ -1,0 +1,5 @@
+*.dds binary
+*.script text eol=lf
+*.ltx text eol=lf
+# MCM strings are windows-1251; keep the bytes exactly as they are
+*.xml -text

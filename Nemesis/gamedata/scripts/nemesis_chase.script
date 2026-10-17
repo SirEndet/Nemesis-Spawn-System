@@ -1,0 +1,175 @@
+-- Nemesis Chase
+
+local CHASE_ID = 188590
+
+local wanted = {}
+local installed = {}
+local blocked = {}
+local ran = {}
+local refs = {}
+
+local function extra_ids()
+    local ids = {}
+    local function add(v) if type(v) == "number" then ids[#ids + 1] = v end end
+    pcall(function() add(stalker_ids.action_gather_items) end)
+    pcall(function() add(xr_actions_id.corpse_exist) end)
+    pcall(function() add(xr_actions_id.wounded_exist) end)
+    return ids
+end
+
+local planner_list = nil
+local planner_source_logged = false
+local function planner_ids()
+    if planner_list then return planner_list end
+    for _, mod in ipairs({ "xgraft", "xcombat" }) do
+        local lib = rawget(_G, mod)
+        if lib == nil then pcall(function() lib = _G[mod] end) end
+        if type(lib) == "table" and type(lib.get_blocked_planners) == "function" then
+            local ok, list = pcall(function() return lib.get_blocked_planners() end)
+            if ok and type(list) == "table" and #list > 0 then
+                local all = {}
+                for i = 1, #list do all[#all + 1] = list[i] end
+                local extra = extra_ids()
+                for i = 1, #extra do all[#all + 1] = extra[i] end
+                planner_list = all
+                if not planner_source_logged then
+                    planner_source_logged = true
+                    nemesis_utils.log_msg("Nemesis: chase blocks %s vanilla planners (%s, plus %s loot/help).", tostring(#all), mod, tostring(#extra))
+                end
+                return planner_list
+            end
+        end
+    end
+    if not planner_source_logged then
+        planner_source_logged = true
+        nemesis_utils.log_msg("!Nemesis ERROR: xlibs planner list not found (needs xlibs 1.9.1+); vanilla AI may override the chase.")
+    end
+    return {}
+end
+
+local function _takeover(npc) return xgraft.is_takeover_current(npc) end
+local function takeover_running(npc)
+    if type(xgraft) ~= "table" or type(xgraft.is_takeover_current) ~= "function" then return false end
+    local ok, busy = pcall(_takeover, npc)
+    return ok and busy == true
+end
+
+local function gate_open(npc)
+    if not npc then return false end
+    local id = npc:id()
+    if not wanted[id] then return false end
+    if nemesis_utils.get_retreat_dest(id) then return true end
+    if takeover_running(npc) then return false end
+    if nemesis_utils.combat_owns(npc) then return false end
+    return true
+end
+
+class "nemesis_chase_gate" (property_evaluator)
+function nemesis_chase_gate:__init(name) super(nil, name) end
+function nemesis_chase_gate:evaluate()
+    return gate_open(self.object) == true
+end
+
+class "nemesis_chase_action" (action_base)
+function nemesis_chase_action:__init(name) super(nil, name) end
+function nemesis_chase_action:initialize()
+    action_base.initialize(self)
+    local npc = self.object
+    pcall(function() npc:clear_animations() end)
+    npc:set_path_type(game_object.level_path)
+    npc:set_desired_position()
+    npc:set_desired_direction()
+
+    nemesis_utils.reset_chase(npc:id())
+end
+function nemesis_chase_action:execute()
+    action_base.execute(self)
+    local npc = self.object
+    if not npc or not npc:alive() then return end
+    local actor = db.actor
+    if not actor then return end
+    ran[npc:id()] = true
+    nemesis_utils.drive_chase(npc, actor)
+end
+function nemesis_chase_action:finalize()
+    action_base.finalize(self)
+    local npc = self.object
+    if npc then nemesis_utils.reset_chase(npc:id()) end
+end
+
+function install(npc)
+    if not npc then return false end
+    local id = npc:id()
+    local manager = npc:motivation_action_manager()
+    if not manager then return false end
+
+    if not installed[id] then
+        local ok, err = pcall(function()
+            local eva = nemesis_chase_gate("eva_nemesis_chase")
+            local act = nemesis_chase_action("act_nemesis_chase")
+            act:add_precondition(world_property(stalker_ids.property_alive, true))
+
+            if xr_evaluators_id and type(xr_evaluators_id.sidor_wounded_base) == "number" then
+                act:add_precondition(world_property(xr_evaluators_id.sidor_wounded_base, false))
+            end
+            act:add_precondition(world_property(CHASE_ID, true))
+            act:add_effect(world_property(CHASE_ID, false))
+            manager:add_evaluator(CHASE_ID, eva)
+            manager:add_action(CHASE_ID, act)
+            refs[id] = { eva, act }
+        end)
+        if not ok then
+            nemesis_utils.log_msg("!Nemesis ERROR: chase action install failed (%s).", tostring(err))
+            return false
+        end
+        installed[id] = true
+        blocked[id] = {}
+    end
+
+    local done = blocked[id]
+    for _, pid in ipairs(planner_ids()) do
+        if not done[pid] then
+            local planner = manager:action(pid)
+            if planner then
+                planner:add_precondition(world_property(CHASE_ID, false))
+                done[pid] = true
+            end
+        end
+    end
+    return true
+end
+
+function set_wanted(id, on)
+    if not id then return end
+    wanted[id] = on and true or nil
+end
+
+function forget(id)
+    if not id then return end
+    nemesis_utils.forget_fight(id)
+    wanted[id] = nil
+    installed[id] = nil
+    blocked[id] = nil
+    ran[id] = nil
+    refs[id] = nil
+end
+
+function offline(id)
+    if not id then return end
+    installed[id] = nil
+    blocked[id] = nil
+    ran[id] = nil
+    refs[id] = nil
+end
+
+function reset_all()
+    wanted = {}
+    installed = {}
+    blocked = {}
+    ran = {}
+    refs = {}
+end
+
+function has_run(id)
+    return ran[id] == true
+end

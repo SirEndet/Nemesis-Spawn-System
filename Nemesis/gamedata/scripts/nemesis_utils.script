@@ -1,0 +1,995 @@
+-- Nemesis Utilities
+
+local DEFAULT_NAME = "Bogdan Kravets"
+
+local epoch = nil
+
+function log_msg(...)
+    if not nemesis_mcm.get_bool("debug_logs", false) then return end
+    printf(...)
+end
+
+---------------------------------------------------------------------------
+-- Time
+---------------------------------------------------------------------------
+
+function game_seconds()
+    if not epoch then
+        epoch = game.CTime()
+        epoch:set(2000, 1, 1, 0, 0, 0, 0)
+    end
+    return game.get_game_time():diffSec(epoch)
+end
+
+function same_level(se_a, se_b)
+    if not se_a or not se_b or not xlevel then return nil end
+    local ok, a, b = pcall(function()
+        return xlevel.get_level_id(se_a), xlevel.get_level_id(se_b)
+    end)
+    if not ok or not a or not b then return nil end
+    return a == b
+end
+
+---------------------------------------------------------------------------
+-- Settings-derived values
+---------------------------------------------------------------------------
+
+function get_npc_name()
+    return nemesis_mcm.get_string("npc_name", DEFAULT_NAME)
+end
+
+local FIRST_NAMES = {
+    "Dmitri", "Sergei", "Ivan", "Mykola", "Andrei", "Alexei", "Viktor", "Pavel",
+    "Igor", "Oleg", "Boris", "Mikhail", "Yuri", "Roman", "Taras",
+    "Vasyl", "Petro", "Stepan", "Yaroslav", "Volodymyr", "Leonid", "Maksym", "Vadim",
+    "Artem", "Konstantin", "Gennadiy", "Arkadiy", "Ostap", "Fedir", "Anatoliy",
+}
+
+local LAST_NAMES = {
+    "Shevchenko", "Kravchenko", "Petrenko", "Kovalenko", "Bondarenko", "Savchenko",
+    "Tkachenko", "Marchenko", "Rudenko", "Lysenko", "Boyko", "Melnyk",
+    "Kovalchuk", "Shevchuk", "Bondarchuk", "Polishchuk", "Kravchuk", "Tarasyuk",
+    "Sotkinov", "Volkov", "Sokolov", "Morozov", "Lebedev", "Novikov",
+    "Kozlov", "Orlov", "Fedorov", "Smirnov", "Popov", "Belov",
+}
+
+function set_health(obj, v)
+    if not obj or not v then return false end
+    if v < 0 then v = 0 end
+    if v > 1 then v = 1 end
+    return pcall(function() obj:set_health_ex(v) end)
+end
+
+local function compose_name()
+    return FIRST_NAMES[math.random(#FIRST_NAMES)] .. " " .. LAST_NAMES[math.random(#LAST_NAMES)]
+end
+
+local RANKS = {
+    monolith = { "Acolyte", "Disciple", "Zealot", "Sentinel", "Templar", "Herald" },
+    isg = { "Sergeant", "Lieutenant", "Captain", "Major", "Specialist", "Operative" },
+}
+
+local function rank()
+    local list = RANKS[nemesis_state.S.faction or "monolith"] or RANKS.monolith
+    return list[math.random(#list)]
+end
+
+function next_hunter_name(used, named)
+    used = used or {}
+    local boss = get_npc_name()
+    local name = nil
+    for _ = 1, 24 do
+        name = compose_name()
+        if named then name = rank() .. " " .. name end
+        if not used[name] and name ~= boss then break end
+    end
+    if name == boss then name = (named and rank() .. " " or "") .. "Taras Kravchuk" end
+    used[name] = true
+    return name
+end
+
+function get_escalation(cycle)
+    local speed = nemesis_mcm.get_number("escalation_speed", 1.1)
+    if speed < 1 then speed = 1 end
+    local cap = nemesis_mcm.get_number("max_escalation", 3)
+    if cap < 1 then cap = 1 end
+    local v = speed ^ math.max(0, (cycle or 1) - 1)
+    if v > cap then v = cap end
+    return v
+end
+
+function get_retreat_health(cycle)
+    local base = nemesis_mcm.get_number("retreat_health", 25) / 100
+    local v = base / get_escalation(cycle)
+    if v < 0.10 then v = 0.10 end
+    if v > 0.9 then v = 0.9 end
+    return v
+end
+
+function br_gains(cycle)
+    local notch = nemesis_mcm.get_number("br_escalation", 0)
+    if notch < -5 or notch > 5 then notch = 0 end
+    local span = math.abs(notch) * 0.3
+    local mult = 1 + span
+    if notch < 0 then mult = 1 / mult end
+
+    local br_cap = nemesis_mcm.get_number("br_class_cap", 0.2)
+    if br_cap < 0 then br_cap = 0 end
+    if br_cap > 1 then br_cap = 1 end
+    local pct_cap = nemesis_mcm.get_number("br_pct_cap", 25)
+    if pct_cap < 5 then pct_cap = 5 end
+    if pct_cap > 50 then pct_cap = 50 end
+    pct_cap = pct_cap / 100
+    local steps = math.max(0, (cycle or 1) - 1)
+    local share = steps * mult / 10
+    local br = math.min(br_cap, br_cap * share)
+    local pct = math.min(pct_cap, pct_cap * share)
+    return br, pct
+end
+
+function obrien_item_stats(sec, cond)
+    local br = ini_sys:r_float_ex(sec, "br_class") or 0
+    local pct = ini_sys:r_float_ex(sec, "hit_fraction_actor") or 0
+    return br * cond, pct * cond
+end
+
+local obrien_warned = false
+function warn_obrien_off(sec)
+    if obrien_warned then return end
+    local has = false
+    pcall(function() has = ini_sys:line_exist(sec, "br_class") end)
+    if has then
+        obrien_warned = true
+        log_msg("!Nemesis: your armour has br_class (Obrien GAMMA Overhaul) but the MCM option 'Obrien GAMMA Overhaul armour' is off. Hunters will get far too much armour; turn it on.")
+    end
+end
+
+function player_br_stats()
+    local body_br, head_br, body_pct, head_pct = 0, 0, 0, 0
+    local body_hf, head_hf = 1, 1
+    local obrien = nemesis_mcm.get_bool("obrien_armor", false)
+    local actor = db.actor
+    if not actor then return body_br, head_br, body_pct, head_pct, body_hf, head_hf end
+    pcall(function()
+        local outfit = actor:item_in_slot(7)
+        if outfit then
+            local cond = outfit:condition() or 1
+            if obrien then
+                body_br, body_pct = obrien_item_stats(outfit:section(), cond)
+            else
+                local hf = ini_sys:r_float_ex(outfit:section(), "hit_fraction_actor")
+                if hf then body_br = (1 - hf) * cond; body_hf = hf end
+                local c = outfit:cast_CustomOutfit()
+                if c and BoneID and BoneID["bip01_spine"] then
+                    body_pct = (c:GetBoneArmor(BoneID["bip01_spine"]) or 0) * cond * 0.80
+                end
+                warn_obrien_off(outfit:section())
+            end
+        end
+        local helmet = actor:item_in_slot(12)
+        if helmet then
+            local cond = helmet:condition() or 1
+            if obrien then
+                head_br, head_pct = obrien_item_stats(helmet:section(), cond)
+            else
+                local hf = ini_sys:r_float_ex(helmet:section(), "hit_fraction_actor")
+                if hf then head_br = (1 - hf) * cond; head_hf = hf end
+                local c = helmet:cast_Helmet()
+                if c and BoneID and BoneID["bip01_head"] then
+                    head_pct = (c:GetBoneArmor(BoneID["bip01_head"]) or 0) * cond * 0.80
+                end
+                warn_obrien_off(helmet:section())
+            end
+        end
+    end)
+    local function clamp_br(v)
+        if not v or v < 0 then return 0 end
+        return v
+    end
+    local function clamp_pct(v)
+        if not v or v < 0 then return 0 end
+        if v > 0.90 then return 0.90 end
+        return v
+    end
+    local function clamp_hf(v)
+        if not v or v > 1 then return 1 end
+        if v < 0.05 then return 0.05 end
+        return v
+    end
+    return clamp_br(body_br), clamp_br(head_br), clamp_pct(body_pct), clamp_pct(head_pct),
+        clamp_hf(body_hf), clamp_hf(head_hf)
+end
+
+---------------------------------------------------------------------------
+-- Spawn section lookup
+---------------------------------------------------------------------------
+
+local function section_ok(sect)
+    return sect and sect ~= "" and ini_sys:section_exist(sect)
+end
+
+local function ini_string(sect, key)
+    local ok, val = pcall(function() return ini_sys:r_string_ex(sect, key) end)
+    if ok and type(val) == "string" and val ~= "" then return val end
+    return nil
+end
+
+local function has_story_id(sect)
+    return ini_string(sect, "story_id") ~= nil
+end
+
+local hunt_faction = "monolith"
+function set_hunt_faction(f) hunt_faction = (f == "isg") and "isg" or "monolith" end
+function get_hunt_faction() return hunt_faction end
+function faction_for_player()
+    local comm = nil
+    pcall(function() comm = get_actor_true_community() end)
+    if type(comm) ~= "string" then pcall(function() comm = db.actor:character_community() end) end
+    if type(comm) == "string" then comm = string.gsub(comm, "^actor_", "") end
+    return comm == "monolith" and "isg" or "monolith"
+end
+
+local function generic_member(sect, faction)
+    faction = faction or "monolith"
+    if not section_ok(sect) or has_story_id(sect) then return false end
+
+    local cd = ini_string(sect, "custom_data")
+    if cd and cd ~= "default_custom_data.ltx" then return false end
+    local low = string.lower(sect)
+    if string.find(low, "phantom", 1, true) then return false end
+    if ini_string(sect, "class") ~= "AI_STL_S" then return false end
+    if string.find(low, faction, 1, true) then return true end
+    if faction == "monolith" and string.find(low, "nemesis_stalker", 1, true) then return true end
+    return ini_string(sect, "community") == faction
+end
+
+local FALLBACK_SQUADS = {
+    monolith = { "monolith_sim_squad_novice", "monolith_sim_squad_advanced", "monolith_sim_squad_veteran", "simulation_monolith_squad" },
+    isg = { "isg_sim_squad_novice", "isg_sim_squad_advanced", "isg_sim_squad_veteran" },
+}
+local warned_squad_fallback = false
+
+local function squad_target_is_free(sec)
+    if not ini_sys:line_exist(sec, "target_smart") then return true end
+    local v = ini_sys:r_string_ex(sec, "target_smart")
+    if not v or v == "" then return true end
+    return string.lower(v) == "nil"
+end
+
+local function listed_sections_exist(sec, key)
+    local v = ini_sys:r_string_ex(sec, key)
+    if not v or v == "" then return false end
+    for s in string.gmatch(v, "[^,%s]+") do
+        if not ini_sys:section_exist(s) then return false end
+    end
+    return true
+end
+
+local function squad_is_safe(sec, faction)
+    faction = faction or "monolith"
+    if not section_ok(sec) then return false end
+    if ini_sys:line_exist(sec, "story_id") then return false end
+    if not squad_target_is_free(sec) then return false end
+    local low = string.lower(sec)
+    if string.find(low, "protector", 1, true) then return false end
+    if string.find(low, "camper", 1, true) then return false end
+    if string.find(low, "brain", 1, true) then return false end
+    if string.find(low, "ambush", 1, true) then return false end
+
+    local match
+    if ini_sys:line_exist(sec, "faction") then
+        match = ini_sys:r_string(sec, "faction") == faction
+    else
+        match = string.find(low, faction, 1, true) ~= nil
+    end
+    if not match then return false end
+    local listed = false
+    if ini_sys:line_exist(sec, "npc") then listed = listed_sections_exist(sec, "npc") end
+    if not listed and ini_sys:line_exist(sec, "npc_random") then listed = listed_sections_exist(sec, "npc_random") end
+    return listed
+end
+
+function resolve_squad_section(faction)
+    faction = faction or "monolith"
+    local own = faction == "isg" and "nemesis_hunter_squad_isg" or "nemesis_hunter_squad"
+    if squad_is_safe(own, faction) then
+        return own
+    end
+    for _, sec in ipairs(FALLBACK_SQUADS[faction] or {}) do
+        if squad_is_safe(sec, faction) then
+            if not warned_squad_fallback then
+                warned_squad_fallback = true
+                log_msg("Nemesis: %s is not usable, using %s.", own, sec)
+            end
+            return sec
+        end
+    end
+    log_msg("!Nemesis ERROR: no safe %s squad section, nothing was spawned.", faction)
+    return nil
+end
+
+local MEMBER_POOL = {
+    monolith = { "sim_default_monolith_3", "sim_default_monolith_2", "sim_default_monolith_4",
+                 "sim_default_monolith_1", "sim_monolith_sniper" },
+    isg = { "sim_default_isg_3", "sim_default_isg_4", "sim_default_isg_2", "sim_default_isg_1" },
+}
+
+function pick_member_section(faction)
+    faction = faction or "monolith"
+    local pool = {}
+    for _, sect in ipairs(MEMBER_POOL[faction] or {}) do
+        if generic_member(sect, faction) then pool[#pool + 1] = sect end
+    end
+    if #pool == 0 then return nil end
+    return pool[math.random(#pool)]
+end
+
+---------------------------------------------------------------------------
+-- Chase movement
+---------------------------------------------------------------------------
+
+local CHASE_REFRESH_MS = 6000
+
+local RESEND_MS = 250
+local SNEAK_REFRESH_MS = 1500
+local SNEAK_SLOW_M = 45
+local SPRINT_FROM_M = 50
+local CLOSE_THREAT_M = 30
+local SIGHT_LINGER_MS = 12000
+local SCAN_MS = 500
+local fight_memo = {}
+
+local roles = {}
+local retreat_dest = {}
+local focus = {}
+local sneak = {}
+local chase = {}
+
+local function copy_vec(v)
+    local c = vector()
+    c:set(v.x, v.y, v.z)
+    return c
+end
+
+function reset_chase(id)
+    if id then
+        chase[id] = nil
+    else
+        chase = {}
+        fight_memo = {}
+    end
+end
+
+function retreat_arrived(npc)
+    local vid = npc and retreat_dest[npc:id()]
+    if not vid then return true end
+    local here = false
+    pcall(function()
+        here = npc:level_vertex_id() == vid or npc:position():distance_to(level.vertex_position(vid)) < 1.5
+    end)
+    return here
+end
+
+function forget_fight(id)
+    if not id then return end
+    fight_memo[id] = nil
+    roles[id] = nil
+    retreat_dest[id] = nil
+    focus[id] = nil
+    sneak[id] = nil
+end
+
+function set_focus(id, on) if id then focus[id] = on and true or nil end end
+
+function set_sneak(id, on)
+    if not id then return end
+    if on then sneak[id] = sneak[id] or { done = false } else sneak[id] = nil end
+end
+function sneak_active(id) local s = id and sneak[id]; return s ~= nil and not s.done end
+function end_sneak(id, fight)
+    local s = id and sneak[id]
+    if s then s.done = true end
+    local memo = id and fight_memo[id]
+    if fight then
+        if not memo then memo = { scan_at = 0, scan_hit = false, last_fight = 0 }; fight_memo[id] = memo end
+        memo.last_fight = time_global()
+    end
+    if memo then memo.res_at = -1000000 end
+end
+
+function pick_dest(npc, pos, lv)
+    if not pos then return nil end
+    lv = lv or level.vertex_id(pos)
+    local reachable = false
+    local ok_acc, acc = pcall(function() return npc:accessible(pos) end)
+    if ok_acc then reachable = acc end
+    if not reachable then
+        local ok_near, near = pcall(function()
+            return npc:accessible_nearest(pos, vector())
+        end)
+        if ok_near and near and near < 4294967295 then
+            lv = near
+            local vp = level.vertex_position(near)
+            if vp then pos = vp end
+        end
+    end
+    if not lv or lv >= 4294967295 or not pos then return nil end
+    return lv, copy_vec(pos)
+end
+
+local fight_range_cache, fight_range_at = 70, -1000000
+local function fight_range()
+    local now = time_global()
+    if now - fight_range_at >= 1000 then
+        fight_range_at = now
+        local r = nemesis_mcm.get_number("fight_range", 70)
+        if r < 10 then r = 10 end
+        if r > 150 then r = 150 end
+        fight_range_cache = r
+    end
+    return fight_range_cache
+end
+
+local function _dist(a, b) return a:position():distance_to(b:position()) end
+local function _see(a, b) return a:see(b) end
+local function _best_enemy(npc) return npc:best_enemy() end
+
+local function sees_player(npc, range)
+    local actor = db.actor
+    if not actor then return false end
+    local ok, d = pcall(_dist, npc, actor)
+    if not ok or d > range then return false end
+    local ok2, seen = pcall(_see, npc, actor)
+    return ok2 and seen == true
+end
+
+local function _threat(npc, be, range)
+    if be:id() == 0 or not be:alive() then return false end
+    if npc:relation(be) ~= game_object.enemy then return false end
+    local d = npc:position():distance_to(be:position())
+    if d <= CLOSE_THREAT_M then return true end
+    return d <= range and npc:see(be)
+end
+
+local function hostile_near(npc, range)
+    local ok, be = pcall(_best_enemy, npc)
+    if not ok or not be then return false end
+    local ok2, hit = pcall(_threat, npc, be, range)
+    return ok2 and hit == true
+end
+
+local OWNS_CACHE_MS = 100
+function combat_owns(npc)
+    if not npc then return false end
+    local id = npc:id()
+    local memo = fight_memo[id]
+    if not memo then
+        memo = { scan_at = 0, scan_hit = false, last_fight = 0, res_at = -1000000, res = false }
+        fight_memo[id] = memo
+    end
+    local now = time_global()
+    if now - memo.res_at < OWNS_CACHE_MS then return memo.res end
+    memo.res_at = now
+    memo.res = combat_owns_now(npc, memo, now)
+    return memo.res
+end
+
+function combat_owns_now(npc, memo, now)
+    local id = npc:id()
+    if sneak_active(id) then return false end
+    local okb, be = pcall(_best_enemy, npc)
+    if not okb or not be then return false end
+    local range = fight_range()
+    local fight = sees_player(npc, range)
+    if not fight and not focus[id] then
+        if now - memo.scan_at >= SCAN_MS then
+            memo.scan_at = now
+            memo.scan_hit = hostile_near(npc, range)
+        end
+        fight = memo.scan_hit
+    end
+    if fight then
+        memo.last_fight = now
+        return true
+    end
+    return now - memo.last_fight < SIGHT_LINGER_MS
+end
+
+---------------------------------------------------------------------------
+-- Tactics
+---------------------------------------------------------------------------
+
+local LKP_GIVE_UP_MS = 60000
+local FLANK_MIN_M = 30
+local SNIPER_MARGIN_M = 5
+
+function set_role(id, role) if id then roles[id] = role end end
+function set_retreat_dest(id, vid) if id then retreat_dest[id] = vid end end
+function get_retreat_dest(id) return id and retreat_dest[id] or nil end
+
+local function has_xcombat(fn) return type(xcombat) == "table" and type(xcombat[fn]) == "function" end
+
+local function player_target(npc, actor)
+    local live_pos, live_lv = actor:position(), actor:level_vertex_id()
+    if not nemesis_mcm.get_bool("last_known_chase", true) or not has_xcombat("get_track_pos") then
+        return live_pos, live_lv, "live"
+    end
+    local mt, sees = 0, false
+    pcall(function() mt = npc:memory_time(actor) end)
+    pcall(function() sees = npc:see(actor) end)
+    if sees then return live_pos, live_lv, "seen" end
+    if not mt or mt <= 0 or time_global() - mt > LKP_GIVE_UP_MS then return live_pos, live_lv, "live" end
+    local pos = nil
+    pcall(function() pos = xcombat.get_track_pos(npc, actor, false) end)
+    if not pos or (pos.x == 0 and pos.y == 0 and pos.z == 0) then return live_pos, live_lv, "live" end
+    return pos, nil, "last known"
+end
+
+local function flank_vertex(npc, tpos, role)
+    if not has_xcombat("find_flee_lane") then return nil end
+    local npos = npc:position()
+    local dx, dz = tpos.x - npos.x, tpos.z - npos.z
+    local d = math.sqrt(dx * dx + dz * dz)
+    if d < FLANK_MIN_M then return nil end
+    local a = math.rad(role.angle * role.side)
+    local ca, sa = math.cos(a), math.sin(a)
+    local dir = vector()
+    dir:set((dx * ca - dz * sa) / d, 0, (dx * sa + dz * ca) / d)
+    local vid = nil
+    pcall(function() vid = xcombat.find_flee_lane(npc, dir, math.min(d * 0.5, 35), 10, 30) end)
+    return vid
+end
+
+local function sniper_vertex(npc, tpos)
+    if not (has_xcombat("get_weapon_kind") and has_xcombat("find_cover")) then return nil end
+    local kind = nil
+    pcall(function() kind = xcombat.get_weapon_kind(npc) end)
+    if not (kind and xcombat.SNIPER_KINDS and xcombat.SNIPER_KINDS[kind]) then return nil end
+    local hold = math.max(30, fight_range() - SNIPER_MARGIN_M)
+    if npc:position():distance_to(tpos) > hold then return nil end
+    local vid = nil
+    pcall(function()
+        vid = xcombat.find_cover(npc, tpos, { selection = xcombat.COVER.NEAREST, firing = true, radius = 15, search_pos = npc:position() })
+    end)
+    return vid or npc:level_vertex_id()
+end
+
+local SNEAK_RING_M = 60
+local SNEAK_STEP_DEG = 35
+local SNEAK_CLOSE_DEG = 30
+local SNEAK_RELEASE_DEG = 60
+local SNEAK_BEHIND_M = 15
+
+local function wrap_angle(a)
+    while a > math.pi do a = a - 2 * math.pi end
+    while a <= -math.pi do a = a + 2 * math.pi end
+    return a
+end
+
+local function sneak_target(npc, actor)
+    local s = sneak[npc:id()]
+    local apos, npos, dir = actor:position(), npc:position(), nil
+    pcall(function() dir = actor:direction() end)
+    if not dir then return nil end
+    local l = math.sqrt(dir.x * dir.x + dir.z * dir.z)
+    if l < 0.01 then return nil end
+    local back = math.atan2(-dir.z / l, -dir.x / l)
+    local vx, vz = npos.x - apos.x, npos.z - apos.z
+    local here = math.atan2(vz, vx)
+    local off = wrap_angle(back - here)
+    local deg = math.abs(off) * 180 / math.pi
+    if s.closing and deg > SNEAK_RELEASE_DEG then s.closing = false
+    elseif not s.closing and deg <= SNEAK_CLOSE_DEG then s.closing = true end
+    local p = vector()
+    if s.closing then
+        p:set(apos.x + math.cos(back) * SNEAK_BEHIND_M, apos.y, apos.z + math.sin(back) * SNEAK_BEHIND_M)
+        return p, "closing in from behind you"
+    end
+    local step = math.min(math.abs(off), SNEAK_STEP_DEG * math.pi / 180)
+    local a = here + (off >= 0 and step or -step)
+    p:set(apos.x + math.cos(a) * SNEAK_RING_M, apos.y, apos.z + math.sin(a) * SNEAK_RING_M)
+    return p, "circling behind you"
+end
+
+local function chase_target(npc, actor)
+    if sneak_active(npc:id()) then
+        local p, phase = sneak_target(npc, actor)
+        if p then return p, nil, phase end
+    end
+    local tpos, tlv, mode = player_target(npc, actor)
+    local role = roles[npc:id()]
+    if role and role.extra and nemesis_mcm.get_bool("squad_tactics", true) then
+        local svid = sniper_vertex(npc, tpos)
+        if svid then return level.vertex_position(svid), svid, mode .. ", sniper position" end
+        local fvid = flank_vertex(npc, tpos, role)
+        if fvid then return level.vertex_position(fvid), fvid, mode .. ", flank" end
+    end
+    return tpos, tlv, mode
+end
+
+local function state_exists(name)
+    local ok, res = pcall(function()
+        return state_lib ~= nil and state_lib.states ~= nil and state_lib.states[name] ~= nil
+    end)
+    return ok and res == true
+end
+
+local function pick_state(far, sneaky)
+    local order = far and { "sprint", "rush", "assault", "run" } or { "rush", "assault", "run" }
+    if sneaky then order = { "sneak_run", "sneak", "assault", "run" } end
+    for _, name in ipairs(order) do
+        if state_exists(name) then return name end
+    end
+    return nil
+end
+
+local route_logged = {}
+local function apply_state(npc, slot, far, sneaky)
+    local name = pick_state(far, sneaky)
+    local ok = false
+    if name and db.storage[npc:id()] and db.storage[npc:id()].state_mgr then
+        ok = pcall(function()
+            state_mgr.set_state(npc, name, nil, nil, nil, { fast_set = true })
+        end)
+    end
+    local route = ok and ("state_mgr " .. tostring(name)) or "raw run (no state manager)"
+    if route_logged[npc:id()] ~= route then
+        route_logged[npc:id()] = route
+        log_msg("Nemesis: chase movement for %s via %s.", tostring(npc:id()), route)
+    end
+    if ok then
+        slot.state = name
+        return true
+    end
+    slot.state = nil
+    return pcall(function()
+        npc:set_movement_type(move.run)
+        npc:set_mental_state(anim.danger)
+        npc:set_sight(look.path_dir, nil, 0)
+    end)
+end
+
+local function send_to(npc, lv)
+    local used = nil
+    if utils_obj and utils_obj.send_to_nearest_accessible_vertex then
+        pcall(function() used = utils_obj.send_to_nearest_accessible_vertex(npc, lv, "nemesis_chase") end)
+    end
+    if type(used) == "number" and used < 4294967295 then return used end
+    local ok = pcall(function() npc:set_dest_level_vertex_id(lv) end)
+    return ok and lv or nil
+end
+
+function drive_chase(npc, actor)
+    if not npc or not actor then return false, false end
+
+    local id = npc:id()
+    local slot = chase[id]
+    if not slot then
+        slot = { at = 0 }
+        chase[id] = slot
+    end
+
+    local cover = retreat_dest[id]
+    if cover then
+        local now = time_global()
+        if slot.cover_lv == cover and now - (slot.cover_at or -1000000) < RESEND_MS then return true, false end
+        slot.cover_lv, slot.cover_at = cover, now
+        pcall(function()
+            npc:set_path_type(game_object.level_path)
+            npc:set_detail_path_type(move.line)
+            npc:set_desired_position()
+            npc:set_desired_direction()
+        end)
+        if has_xcombat("set_destination") then
+            pcall(function() xcombat.set_destination(npc, cover) end)
+        else
+            send_to(npc, cover)
+        end
+        return apply_state(npc, slot, true), false
+    end
+
+    if combat_owns(npc) then
+        slot.was_fighting = true
+        return nil, nil
+    end
+
+    if slot.was_fighting then
+        slot.was_fighting = nil
+        slot.lv = nil
+        slot.at = 0
+    end
+
+    local gt = time_global()
+    local refreshed = false
+    local sneaking = sneak_active(id)
+    local refresh_ms = sneaking and SNEAK_REFRESH_MS or CHASE_REFRESH_MS
+    if not slot.lv or gt - slot.at >= refresh_ms then
+        local tpos, tlv, mode = chase_target(npc, actor)
+        local lv, pos = pick_dest(npc, tpos, tlv)
+        if not lv then return false, false end
+        if slot.mode ~= mode then
+            slot.mode = mode
+            log_msg("Nemesis: %s chases toward %s.", tostring(id), mode)
+        end
+        slot.lv = lv
+        slot.pos = pos
+        slot.at = gt
+        refreshed = true
+        pcall(function() npc:set_relation(game_object.enemy, actor) end)
+        pcall(function() actor:set_relation(game_object.enemy, npc) end)
+
+        pcall(function() npc:enable_vision(true) end)
+    end
+
+    if not refreshed and slot.sent_lv == slot.lv and gt - (slot.sent_at or -1000000) < RESEND_MS then
+        return true, false
+    end
+
+    local dist = 9999
+    pcall(function() dist = npc:position():distance_to(actor:position()) end)
+    local far = dist > SPRINT_FROM_M
+    local sneaky = sneaking and dist <= SNEAK_SLOW_M
+
+    pcall(function()
+        npc:set_path_type(game_object.level_path)
+
+        npc:set_detail_path_type(move.line)
+
+        npc:set_desired_position()
+        npc:set_desired_direction()
+    end)
+    local used = send_to(npc, slot.lv)
+    if not used then return false, refreshed end
+    local moved = apply_state(npc, slot, far, sneaky)
+    slot.sent_lv, slot.sent_at = slot.lv, gt
+    return moved, refreshed
+end
+
+---------------------------------------------------------------------------
+-- UI
+---------------------------------------------------------------------------
+
+local FALLBACK_ICON = "ui_inGame2_PD_storonnik_ravnovesiya"
+local NEWS_SHOW_MS = 7000
+
+function send_news(text, caption, icon_override)
+    local actor = db.actor
+    if not actor then
+        log_msg("!Nemesis: PDA message skipped, no actor yet: %s", tostring(text))
+        return false
+    end
+    if type(caption) ~= "string" or caption == "" then caption = "Nemesis" end
+    local icon = "ui_nemesis_news"
+    if nemesis_mcm.get_bool("hd_icon", false) then
+        icon = "ui_nemesis_news_hd"
+    end
+    if type(icon_override) == "string" and icon_override ~= "" then icon = icon_override end
+    local ok, err = pcall(function() actor:give_game_news(caption, text, icon, 0, NEWS_SHOW_MS) end)
+    if not ok then
+        log_msg("!Nemesis ERROR: PDA message failed with icon %s (%s), retrying with a vanilla icon.", icon, tostring(err))
+        icon = FALLBACK_ICON
+        ok, err = pcall(function() actor:give_game_news(caption, text, icon, 0, NEWS_SHOW_MS) end)
+    end
+    if ok then
+        pcall(function() xr_sound.set_sound_play(AC_ID, "pda_tips") end)
+        log_msg("Nemesis: PDA message sent [%s] %s (icon %s).", caption, text, icon)
+    else
+        log_msg("!Nemesis ERROR: PDA message failed twice (%s).", tostring(err))
+    end
+    return ok
+end
+
+function sound_exists(path)
+    local ok, res = pcall(function() return getFS():exist("$game_sounds$", path .. ".ogg") end)
+    return ok and res and true or false
+end
+
+local sound_pick = {}
+function pick_sound(key, paths)
+    if sound_pick[key] == nil then
+        sound_pick[key] = false
+        for _, p in ipairs(paths) do
+            if sound_exists(p) then sound_pick[key] = p; break end
+        end
+        log_msg("Nemesis: %s sound: %s.", key, sound_pick[key] or "none found")
+    end
+    return sound_pick[key] or nil
+end
+
+function volume_setting(id, default)
+    local v = nemesis_mcm.get_number(id, default) / 100
+    if v < 0 then v = 0 end
+    if v > 1 then v = 1 end
+    return v
+end
+
+local function player_name()
+    local name = nil
+    pcall(function() name = db.actor:character_name() end)
+    if type(name) ~= "string" or name == "" then name = "Stalker" end
+    return name
+end
+
+---------------------------------------------------------------------------
+-- PDA lines
+---------------------------------------------------------------------------
+local LINES = {
+    monolith = {
+        warning = {
+            "You feel watched.",
+            "Static on every channel. Something is coming.",
+            "Your PDA picks up a broken Monolith prayer. It is getting closer.",
+            "A voice under the static whispers your name.",
+            "The Zone has noticed you, %name%.",
+        },
+        taunt = {
+            { max = 1, lines = {
+                "I can smell your fear, Stalker. Run while you still can.",
+                "The Zone is a small place. There is nowhere left to hide.",
+                "Did you think you were the predator here?",
+                "Your footsteps are like a beacon in the dark. I am coming.",
+            } },
+            { max = 3, lines = {
+                "You were lucky last time. Luck runs out in the Zone.",
+                "I remember how you fight, %name%. I have learned.",
+                "Again, Stalker. The Monolith does not forget.",
+            } },
+            { max = 6, lines = {
+                "How many times must I come for you, %name%?",
+                "Every wound you gave me made me stronger. Count them.",
+                "You are running out of places, %name%. I am not running out of patience.",
+            } },
+            { max = math.huge, lines = {
+                "%name%. The Monolith has whispered your name to me so many times.",
+                "There is no hunt left. Only the ending.",
+                "I have died for you a hundred times, %name%. Tonight it is your turn.",
+            } },
+        },
+        retreat = {
+            "Enjoy this while it lasts. We are not finished.",
+            "Not today. But I will find you again.",
+            "You got lucky, Stalker. Remember my face.",
+        },
+        time_up = {
+            "The Monolith calls me back. This is not over.",
+            "You ran well. Next time you will not run far enough.",
+            "Your time is borrowed, Stalker. I will collect it.",
+        },
+        boss = {
+            "Glory to the Monolith. Your road ends here, %name%.",
+            "The Monolith spoke your name. I came to answer.",
+            "You cannot hide from what lives in the static.",
+            "Kneel before the Monolith. It will be quick.",
+            "Every step you took led you here. The Zone is closing in.",
+            "Za Monolith! The Zone will drink your blood.",
+            "I walked through the Brain Scorcher to reach you. You will not outrun me.",
+            "The Monolith does not forgive. Neither do I.",
+        },
+        boss_warning = {
+            "The static is screaming. Something old is coming for you.",
+            "Every channel at once: a man's voice, praying to the Monolith.",
+            "Your PDA flickers a name you have never seen: %boss%. The signal is getting closer.",
+            "The Zone goes quiet. Even the anomalies are listening for him.",
+        },
+        boss_retreat = {
+            "This is not the end. The Monolith is patient.",
+            "You bleed me, and still I return. Remember that.",
+            "Run while it hides me. Next time it will not.",
+        },
+        boss_escape = {
+            "You slipped away this time. The Monolith keeps count.",
+            "Hide, then. I will be waiting in the static.",
+            "The Monolith calls me home. Do not mistake that for mercy.",
+        },
+        dread = {
+            "I can hear your heartbeat.",
+            "You are walking the way I want you to.",
+            "Look around. You will not see me.",
+            "The static is me. It has always been me.",
+            "Closer than you think, %name%.",
+            "Your breath is so loud in the quiet.",
+        },
+        sneak = { "%name%, you don't see me because I'm behind you right now." },
+    },
+    isg = {
+        warning = {
+            "Encrypted military traffic on your frequency. Your callsign is in it.",
+            "Your PDA pings a UNISG tracker. Someone is triangulating you.",
+            "Rotor noise far off, then silence. They are coming on foot.",
+            "Intercepted: 'Target is Monolith. Liquidate on sight.'",
+            "The Zone has noticed you, %name%. So has UNISG.",
+        },
+        taunt = {
+            { max = 1, lines = {
+                "Target acquired. Monolith zealot, alone. Moving in.",
+                "This is a cleanup operation. You are the mess.",
+                "Your faith will not stop a bullet.",
+            } },
+            { max = 3, lines = {
+                "You walked away last time. The file on you got thicker, %name%.",
+                "Second contact. We adjusted the approach.",
+            } },
+            { max = 6, lines = {
+                "%name%. Every report ends with your name. Today we close the file.",
+                "Command wants you gone. I want it personal.",
+            } },
+            { max = math.huge, lines = {
+                "%name%. Priority one. No withdrawal authorised.",
+                "This ends with you bagged and tagged.",
+            } },
+        },
+        retreat = {
+            "Pulling out. This is not over.",
+            "Extraction. Mark this place, we will be back.",
+            "Fall back. We will finish this, zealot.",
+        },
+        time_up = {
+            "Operation window closed. You got lucky.",
+            "Recall order received. Next time, %name%.",
+            "We are pulled out. Your file stays open.",
+        },
+        boss = {
+            "UNISG Command authorised your removal, %name%.",
+            "I have hunted things in the Zone that would eat your Monolith.",
+            "No prayers on this channel. Only the countdown.",
+            "You worship a rock. I was trained to break things like you.",
+            "Rules of engagement: none.",
+            "Your Monolith brothers are next. You are first.",
+            "Hold still. This will be clean.",
+            "I never miss twice, %name%.",
+        },
+        boss_warning = {
+            "Military channel: 'Specialist deployed, codename %boss%.' The signal is getting closer.",
+            "Your PDA locks up for a second. Someone very good has your position.",
+            "Every UNISG channel goes silent at once.",
+        },
+        boss_retreat = {
+            "Wounded. Pulling out. This changes nothing.",
+            "Extraction. I will be back for you, zealot.",
+            "You bought yourself time. Not much.",
+        },
+        boss_escape = {
+            "Operation window closed. The file stays open.",
+            "Recalled. Do not get comfortable.",
+            "Command pulls me out. Next time there is no recall.",
+        },
+        dread = {
+            "Thermals have you. Keep walking.",
+            "I can hear your heartbeat on the mic.",
+            "You will not see me. Nobody ever does.",
+            "Closer than you think, %name%.",
+            "Checking your six yet, zealot?",
+        },
+        sneak = { "%name%. Don't turn around. I'm right behind you." },
+    },
+}
+
+local function fill(line, boss)
+    local you = player_name()
+    line = string.gsub(line, "%%name%%", function() return you end)
+    line = string.gsub(line, "%%boss%%", function() return tostring(boss or get_npc_name()) end)
+    return line
+end
+
+local function pick(kind, boss)
+    local set = (LINES[hunt_faction] or LINES.monolith)[kind]
+    return fill(set[math.random(#set)], boss)
+end
+
+function warning_line() return pick("warning") end
+function retreat_line() return pick("retreat") end
+function time_up_line() return pick("time_up") end
+function boss_line() return pick("boss") end
+function boss_warning_line(boss) return pick("boss_warning", boss) end
+function boss_retreat_line() return pick("boss_retreat") end
+function boss_escape_line() return pick("boss_escape") end
+function dread_line() return pick("dread") end
+function sneak_line() return pick("sneak") end
+
+function taunt(cycle)
+    cycle = cycle or 1
+    for _, tier in ipairs((LINES[hunt_faction] or LINES.monolith).taunt) do
+        if cycle <= tier.max then return fill(tier.lines[math.random(#tier.lines)]) end
+    end
+    return "I am coming."
+end

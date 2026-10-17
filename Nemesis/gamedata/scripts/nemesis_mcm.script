@@ -1,0 +1,161 @@
+-- Nemesis MCM Configuration
+
+local function options()
+    return {
+        id = "nemesis",
+        gr = {
+            { id = "general", sh = true, text = "ui_mcm_nemesis_page_general", gr = {
+                { id = "title", type = "slide", link = "ui_options_slider_player", text = "ui_mcm_nemesis_title", size = {512, 50}, spacing = 20 },
+                { id = "teleport_volume", type = "track", val = 2, def = 40, min = 0, max = 100, step = 5, prec = 0, hint = "nemesis_teleport_volume" },
+                { id = "whisper_volume", type = "track", val = 2, def = 60, min = 0, max = 100, step = 5, prec = 0, hint = "nemesis_whisper_volume" },
+                { id = "warning_volume", type = "track", val = 2, def = 70, min = 0, max = 100, step = 5, prec = 0, hint = "nemesis_warning_volume" },
+                { id = "arrival_warning", type = "check", val = 1, def = true, hint = "nemesis_arrival_warning" },
+                { id = "hd_icon", type = "check", val = 1, def = false, hint = "nemesis_hd_icon" },
+                { id = "grace_period", type = "track", val = 2, def = 12, min = 0, max = 21, step = 1, prec = 0, hint = "nemesis_grace_period" },
+                { id = "retreat_cooldown", type = "track", val = 2, def = 24, min = 0, max = 72, step = 1, prec = 0, hint = "nemesis_retreat_cooldown" },
+                { id = "hunt_duration", type = "track", val = 2, def = 4, min = 4, max = 12, step = 1, prec = 0, hint = "nemesis_hunt_duration" },
+            } },
+            { id = "boss", sh = true, text = "ui_mcm_nemesis_page_boss", gr = {
+                { id = "title", type = "slide", link = "ui_options_slider_player", text = "ui_mcm_nemesis_title", size = {512, 50}, spacing = 20 },
+                { id = "npc_name", type = "input", val = 0, def = "Bogdan Kravets", hint = "nemesis_npc_name" },
+                { id = "boss_chance", type = "track", val = 2, def = 2, min = 0, max = 20, step = 1, prec = 0, hint = "nemesis_boss_chance" },
+                { id = "boss_toughness", type = "track", val = 2, def = 30, min = 0, max = 100, step = 5, prec = 0, hint = "nemesis_boss_toughness" },
+                { id = "boss_min_day", type = "track", val = 2, def = 3, min = 1, max = 7, step = 1, prec = 0, hint = "nemesis_boss_min_day" },
+                { id = "boss_sneak_chance", type = "track", val = 2, def = 50, min = 0, max = 100, step = 5, prec = 0, hint = "nemesis_boss_sneak_chance" },
+            } },
+            { id = "combat", sh = true, text = "ui_mcm_nemesis_page_combat", gr = {
+                { id = "title", type = "slide", link = "ui_options_slider_player", text = "ui_mcm_nemesis_title", size = {512, 50}, spacing = 20 },
+                { id = "retreat_health", type = "track", val = 2, def = 25, min = 5, max = 60, step = 5, prec = 0, hint = "nemesis_retreat_health" },
+                { id = "escalation_speed", type = "track", val = 2, def = 1.1, min = 1.0, max = 2.0, step = 0.05, prec = 2, hint = "nemesis_escalation_speed" },
+                { id = "max_escalation", type = "track", val = 2, def = 3, min = 1, max = 10, step = 0.5, prec = 1, hint = "nemesis_max_escalation" },
+                { id = "reset_on_death", type = "check", val = 1, def = true, hint = "nemesis_reset_on_death" },
+                { id = "reset_escalation_now", type = "check", val = 1, def = false, hint = "nemesis_reset_escalation_now" },
+                { id = "decay_days", type = "track", val = 2, def = 1, min = 0, max = 14, step = 1, prec = 0, hint = "nemesis_decay_days" },
+                { id = "br_escalation", type = "track", val = 2, def = 0, min = -5, max = 5, step = 1, prec = 0, hint = "nemesis_br_escalation" },
+                { id = "br_class_cap", type = "track", val = 2, def = 0.2, min = 0, max = 1, step = 0.05, prec = 2, hint = "nemesis_br_class_cap" },
+                { id = "br_pct_cap", type = "track", val = 2, def = 25, min = 5, max = 50, step = 1, prec = 0, hint = "nemesis_br_pct_cap" },
+                { id = "obrien_armor", type = "check", val = 1, def = false, hint = "nemesis_obrien_armor" },
+                { id = "last_known_chase", type = "check", val = 1, def = true, hint = "nemesis_last_known_chase" },
+                { id = "squad_tactics", type = "check", val = 1, def = true, hint = "nemesis_squad_tactics" },
+                { id = "retreat_to_cover", type = "check", val = 1, def = true, hint = "nemesis_retreat_to_cover" },
+                { id = "hunter_cloak", type = "check", val = 1, def = true, hint = "nemesis_hunter_cloak" },
+                { id = "fight_range", type = "track", val = 2, def = 70, min = 10, max = 150, step = 5, prec = 0, hint = "nemesis_fight_range" },
+            } },
+            { id = "spawning", sh = true, text = "ui_mcm_nemesis_page_spawning", gr = {
+                { id = "title", type = "slide", link = "ui_options_slider_player", text = "ui_mcm_nemesis_title", size = {512, 50}, spacing = 20 },
+                { id = "spawn_dist_min", type = "track", val = 2, def = 70, min = 40, max = 100, step = 5, prec = 0, hint = "nemesis_spawn_dist_min" },
+                { id = "spawn_dist_max", type = "track", val = 2, def = 140, min = 60, max = 140, step = 5, prec = 0, hint = "nemesis_spawn_dist_max" },
+                { id = "squad_w1", type = "track", val = 2, def = 50, min = 0, max = 100, step = 1, prec = 0, hint = "nemesis_squad_w1" },
+                { id = "squad_w2", type = "track", val = 2, def = 25, min = 0, max = 100, step = 1, prec = 0, hint = "nemesis_squad_w2" },
+                { id = "squad_w3", type = "track", val = 2, def = 14, min = 0, max = 100, step = 1, prec = 0, hint = "nemesis_squad_w3" },
+                { id = "squad_w4", type = "track", val = 2, def = 10, min = 0, max = 100, step = 1, prec = 0, hint = "nemesis_squad_w4" },
+                { id = "squad_w5", type = "track", val = 2, def = 6, min = 0, max = 100, step = 1, prec = 0, hint = "nemesis_squad_w5" },
+                { id = "named_chance", type = "track", val = 2, def = 25, min = 0, max = 100, step = 5, prec = 0, hint = "nemesis_named_chance" },
+            } },
+            { id = "debug", sh = true, text = "ui_mcm_nemesis_page_debug", gr = {
+                { id = "title", type = "slide", link = "ui_options_slider_player", text = "ui_mcm_nemesis_title", size = {512, 50}, spacing = 20 },
+                { id = "debug_mode", type = "check", val = 1, def = false, hint = "nemesis_debug_mode" },
+                { id = "debug_logs", type = "check", val = 1, def = false, hint = "nemesis_debug_logs" },
+                { id = "test_pda", type = "check", val = 1, def = false, hint = "nemesis_test_pda" },
+                { id = "force_boss", type = "check", val = 1, def = false, hint = "nemesis_force_boss" },
+            } },
+        },
+    }
+end
+
+function on_mcm_load()
+    return options()
+end
+
+local PAGE_OF = {}
+for _, page in ipairs(options().gr) do
+    for _, o in ipairs(page.gr) do
+        if o.val then PAGE_OF[o.id] = { page = page.id, val = o.val } end
+    end
+end
+
+function path(id)
+    local e = PAGE_OF[id]
+    return e and ("nemesis/" .. e.page .. "/" .. id) or ("nemesis/" .. id)
+end
+
+local migrated = false
+function migrate()
+    if migrated then return end
+    local cfg = axr_main and axr_main.config
+    if not cfg then return end
+    migrated = true
+    local moved = 0
+    pcall(function()
+        for id, e in pairs(PAGE_OF) do
+            local new = path(id)
+            if cfg:r_value("mcm", new, e.val) == nil then
+                local old = cfg:r_value("mcm", "nemesis/" .. id, e.val)
+                if old ~= nil then
+                    cfg:w_value("mcm", new, old)
+                    moved = moved + 1
+                end
+            end
+        end
+        if moved > 0 then cfg:save() end
+    end)
+    if moved > 0 and printf then printf("Nemesis: %s settings moved to the new MCM pages.", tostring(moved)) end
+end
+
+local cache = {}
+local cache_at = nil
+local CACHE_MS = 5000
+
+function invalidate()
+    cache = {}
+    cache_at = nil
+end
+
+function on_option_change() invalidate() end
+
+function on_game_start()
+    migrate()
+    RegisterScriptCallback("on_option_change", on_option_change)
+end
+
+function get_setting(id, default)
+    local now = time_global and time_global() or 0
+    if cache_at == nil or now - cache_at > CACHE_MS or now < cache_at then
+        cache = {}
+        cache_at = now
+    end
+    local v = cache[id]
+    if v ~= nil then return v end
+    if ui_mcm then
+        v = ui_mcm.get(path(id))
+        if v ~= nil then
+            cache[id] = v
+            return v
+        end
+    end
+    return default
+end
+
+function get_number(id, default)
+    local v = tonumber(get_setting(id, default))
+    if v == nil then return default end
+    return v
+end
+
+function get_bool(id, default)
+    local v = get_setting(id, default)
+    if type(v) == "boolean" then return v end
+    if v == 1 or v == "1" or v == "true" then return true end
+    if v == 0 or v == "0" or v == "false" then return false end
+    return default
+end
+
+function get_string(id, default)
+    local v = get_setting(id, default)
+    if type(v) ~= "string" then return default end
+    v = string.gsub(v, ":", "")
+    v = string.gsub(v, "^%s+", "")
+    v = string.gsub(v, "%s+$", "")
+    if v == "" then return default end
+    return v
+end

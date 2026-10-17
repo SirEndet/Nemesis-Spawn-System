@@ -1,0 +1,132 @@
+<?xml version="1.0" encoding="windows-1251"?>
+<string_table>
+    <string id="ui_mcm_menu_nemesis"><text>Nemesis Wave Spawn System</text></string>
+    <string id="ui_mcm_nemesis"><text>Nemesis Wave Spawn System</text></string>
+    <string id="ui_mcm_nemesis_title"><text>Nemesis Wave Spawn System</text></string>
+
+    <string id="ui_mcm_nemesis_page_general"><text>General</text></string>
+    <string id="ui_mcm_nemesis_page_boss"><text>Boss</text></string>
+    <string id="ui_mcm_nemesis_page_combat"><text>Combat and armour</text></string>
+    <string id="ui_mcm_nemesis_page_spawning"><text>Spawning</text></string>
+    <string id="ui_mcm_nemesis_page_debug"><text>Debug</text></string>
+
+    <string id="ui_mcm_nemesis_teleport_volume"><text>Teleport sound volume (%)</text></string>
+    <string id="ui_mcm_nemesis_teleport_volume_desc"><text>Loudness of the teleport sound when a hunter breaks off or vanishes. 0 mutes it. Default 40.</text></string>
+
+    <string id="ui_mcm_nemesis_whisper_volume"><text>Psy whisper volume (%)</text></string>
+    <string id="ui_mcm_nemesis_whisper_volume_desc"><text>Monolith whispers in your head while a named hunter is within 60 m, louder the closer he is. A named hunter is the main Nemesis enemy: hard to kill, he retreats when hurt and comes back stronger. 0 mutes the whispers. Default 60.</text></string>
+
+    <string id="ui_mcm_nemesis_warning_volume"><text>Arrival warning volume (%)</text></string>
+    <string id="ui_mcm_nemesis_warning_volume_desc"><text>Loudness of the radio static that comes with the arrival warning. 0 mutes it (the PDA line still shows). Default 70.</text></string>
+
+    <string id="ui_mcm_nemesis_arrival_warning"><text>Arrival warning</text></string>
+    <string id="ui_mcm_nemesis_arrival_warning_desc"><text>A radio message and static warn you 30 to 120 seconds before a hunt starts. Off: the hunt starts without warning. Default on.</text></string>
+
+    <string id="ui_mcm_nemesis_npc_name"><text>Boss name</text></string>
+    <string id="ui_mcm_nemesis_npc_name_desc"><text>Name of the boss, a rare and stronger named hunter. Other hunters always get random names. Default: Bogdan Kravets</text></string>
+
+    <string id="ui_mcm_nemesis_boss_chance"><text>Boss chance (%)</text></string>
+    <string id="ui_mcm_nemesis_boss_chance_desc"><text>Chance that a named hunter is the boss: a tougher, cloaked hunter with his own look and messages. Only one boss at a time, at most one a day. Beating a hunt he was in makes the next hunt 2 cycles weaker. Default 2.</text></string>
+
+    <string id="ui_mcm_nemesis_boss_toughness"><text>Boss toughness (%)</text></string>
+    <string id="ui_mcm_nemesis_boss_toughness_desc"><text>How much tougher the boss is than a normal named hunter. 0 = no tougher. Default 30.</text></string>
+
+    <string id="ui_mcm_nemesis_boss_min_day"><text>Boss days after grace</text></string>
+    <string id="ui_mcm_nemesis_boss_min_day_desc"><text>In-game days after the grace period before a boss can appear. Default 3.</text></string>
+
+    <string id="ui_mcm_nemesis_boss_sneak_chance"><text>Boss sneak chance (%)</text></string>
+    <string id="ui_mcm_nemesis_boss_sneak_chance_desc"><text>Chance that a boss, when he spawns, tries to sneak up behind you instead of charging. If he gets within 20 m behind you unseen, he tells you so, and attacks 5 seconds later. A hit breaks the sneak. Default 50.</text></string>
+
+    <string id="ui_mcm_nemesis_hd_icon"><text>HD icon</text></string>
+    <string id="ui_mcm_nemesis_hd_icon_desc"><text>Use the high definition portrait on PDA messages. Off uses the original low definition icon.</text></string>
+
+    <string id="ui_mcm_nemesis_debug_mode"><text>Debug mode</text></string>
+    <string id="ui_mcm_nemesis_debug_mode_desc"><text>For testing: hunts start sooner (no grace period, 180 seconds between hunts) and can spawn anywhere, even near traders and bases. Turn it off for normal play.</text></string>
+
+    <string id="ui_mcm_nemesis_test_pda"><text>Send a test PDA message</text></string>
+    <string id="ui_mcm_nemesis_test_pda_desc"><text>Tick and apply: one Nemesis PDA message is sent at once, with the banner icon and the PDA sound. With Debug logs on, the console says whether it went out. The box unticks itself.</text></string>
+
+    <string id="ui_mcm_nemesis_force_boss"><text>Force a boss in the next hunt</text></string>
+    <string id="ui_mcm_nemesis_force_boss_desc"><text>For testing. Tick and apply: the next named hunter to spawn is the boss, ignoring the chance, the day limit and the once-a-day rule. The box unticks itself.</text></string>
+
+    <string id="ui_mcm_nemesis_debug_logs"><text>Debug logs</text></string>
+    <string id="ui_mcm_nemesis_debug_logs_desc"><text>Write Nemesis diagnostic and error lines to the console. Leave this off unless you are tracking a problem. Lines that start with an exclamation mark are errors.</text></string>
+
+    <string id="ui_mcm_nemesis_grace_period"><text>Grace period (days)</text></string>
+    <string id="ui_mcm_nemesis_grace_period_desc"><text>In-game days before the first hunt of a new game (or after installing the mod). Default 12.</text></string>
+
+    <string id="ui_mcm_nemesis_retreat_cooldown"><text>Time between hunts (hours)</text></string>
+    <string id="ui_mcm_nemesis_retreat_cooldown_desc"><text>In-game hours after a hunt ends before the next one can start. 0 = as soon as possible. Default 24.</text></string>
+
+    <string id="ui_mcm_nemesis_hunt_duration"><text>Hunt time limit (hours)</text></string>
+    <string id="ui_mcm_nemesis_hunt_duration_desc"><text>If you survive this many in-game hours, the hunters give up and teleport away, and the next hunt is not stronger. Default 4.</text></string>
+
+    <string id="ui_mcm_nemesis_retreat_health"><text>Retreat health (%)</text></string>
+    <string id="ui_mcm_nemesis_retreat_health_desc"><text>A named hunter breaks off and teleports away when his health drops this low. It gets lower each cycle, so he fights longer every time. Default 25.</text></string>
+
+    <string id="ui_mcm_nemesis_escalation_speed"><text>Escalation per cycle</text></string>
+    <string id="ui_mcm_nemesis_escalation_speed_desc"><text>Each hunt you beat makes the next one stronger. That step is called a cycle. This sets how much stronger each cycle is: higher means he takes less damage and retreats later. 1.0 = no growth. Default 1.1.</text></string>
+
+    <string id="ui_mcm_nemesis_max_escalation"><text>Max escalation</text></string>
+    <string id="ui_mcm_nemesis_max_escalation_desc"><text>The most the hunters can ever scale up, however many hunts you beat. Higher = tougher late hunts. Default 3.</text></string>
+
+    <string id="ui_mcm_nemesis_reset_on_death"><text>Reset escalation when a hunter kills you</text></string>
+    <string id="ui_mcm_nemesis_reset_on_death_desc"><text>If a hunter kills you, the hunts go back to their starting strength (cycle 1), even when you reload a save. Default on.</text></string>
+
+    <string id="ui_mcm_nemesis_reset_escalation_now"><text>Reset escalation now</text></string>
+    <string id="ui_mcm_nemesis_reset_escalation_now_desc"><text>Tick and apply to set the hunts back to their starting strength (cycle 1) right now. The box unticks itself.</text></string>
+
+    <string id="ui_mcm_nemesis_decay_days"><text>Escalation decay (days)</text></string>
+    <string id="ui_mcm_nemesis_decay_days_desc"><text>Every this many in-game days after the last hunt ended, the hunters get one cycle weaker (never below cycle 1). 0 = never. Default 1.</text></string>
+
+    <string id="ui_mcm_nemesis_br_escalation"><text>Armour growth speed</text></string>
+    <string id="ui_mcm_nemesis_br_escalation_desc"><text>How fast named hunters' armour catches up with yours. 0 = normal (full after about 10 hunts). Higher = faster, lower = slower. Regular squad members are not affected. Default 0.</text></string>
+    <string id="ui_mcm_nemesis_br_class_cap"><text>Extra BR cap</text></string>
+    <string id="ui_mcm_nemesis_br_class_cap_desc"><text>How much higher than yours a named hunter's ballistic rating (BR) can get. Default 0.20. 1.0 = almost bulletproof.</text></string>
+
+    <string id="ui_mcm_nemesis_br_pct_cap"><text>BR mitigation cap (%)</text></string>
+    <string id="ui_mcm_nemesis_br_pct_cap_desc"><text>How much more damage, in percent, a named hunter's armour can block than yours. Default 25. He never blocks more than 90 percent.</text></string>
+
+    <string id="ui_mcm_nemesis_obrien_armor"><text>Obrien GAMMA Overhaul armour</text></string>
+    <string id="ui_mcm_nemesis_obrien_armor_desc"><text>Turn on only if you use the Obrien GAMMA Overhaul mod. It makes hunters read your armour the way that mod does. Default off.</text></string>
+
+    <string id="ui_mcm_nemesis_last_known_chase"><text>Hunt your last known position</text></string>
+    <string id="ui_mcm_nemesis_last_known_chase_desc"><text>On: when a hunter loses track of you, he searches where he last saw or heard you, and finds you again after 60 seconds. Off: he always knows where you are. Default on.</text></string>
+
+    <string id="ui_mcm_nemesis_squad_tactics"><text>Squad tactics</text></string>
+    <string id="ui_mcm_nemesis_squad_tactics_desc"><text>Extra squad members approach from the sides on clear lanes instead of running straight at you, and those carrying sniper rifles stop short and take a firing position. Named hunters still come straight for you. Default on.</text></string>
+
+    <string id="ui_mcm_nemesis_retreat_to_cover"><text>Retreat to cover first</text></string>
+    <string id="ui_mcm_nemesis_retreat_to_cover_desc"><text>Before teleporting away, a hurt hunter first runs to nearby cover for up to 4 seconds. He cannot be hurt while he runs. Default on.</text></string>
+
+    <string id="ui_mcm_nemesis_hunter_cloak"><text>Hunter cloak (experimental)</text></string>
+    <string id="ui_mcm_nemesis_hunter_cloak_desc"><text>Named hunters turn invisible while they stalk you from more than 30 m, and reappear when they fight, get within 15 m or are hit. At most once every 20 seconds. Uses the same invisible model as the teleport. Experimental: a held weapon may stay visible. Default on.</text></string>
+
+    <string id="ui_mcm_nemesis_fight_range"><text>Fight range (m)</text></string>
+    <string id="ui_mcm_nemesis_fight_range_desc"><text>Hunters stop chasing and start fighting when they see you, or any other enemy, this close. Default 70.</text></string>
+
+    <string id="ui_mcm_nemesis_spawn_dist_min"><text>Spawn distance, min (m)</text></string>
+    <string id="ui_mcm_nemesis_spawn_dist_min_desc"><text>Hunters never spawn closer to you than this. Default 70.</text></string>
+
+    <string id="ui_mcm_nemesis_spawn_dist_max"><text>Spawn distance, max (m)</text></string>
+    <string id="ui_mcm_nemesis_spawn_dist_max_desc"><text>The farthest from you a hunt can spawn. Default 140.</text></string>
+
+    <string id="ui_mcm_nemesis_squad_w1"><text>Squad of 1, weight</text></string>
+    <string id="ui_mcm_nemesis_squad_w1_desc"><text>Relative chance the hunt is only the hunter. These five sliders are weights, not percents, so they do not need to add up to 100. Default 50.</text></string>
+
+    <string id="ui_mcm_nemesis_squad_w2"><text>Squad of 2, weight</text></string>
+    <string id="ui_mcm_nemesis_squad_w2_desc"><text>Relative chance he brings one extra normal stalker. The extra can be killed. Default 25.</text></string>
+
+    <string id="ui_mcm_nemesis_squad_w3"><text>Squad of 3, weight</text></string>
+    <string id="ui_mcm_nemesis_squad_w3_desc"><text>Relative chance of two extras with him. Default 14.</text></string>
+
+    <string id="ui_mcm_nemesis_squad_w4"><text>Squad of 4, weight</text></string>
+    <string id="ui_mcm_nemesis_squad_w4_desc"><text>Relative chance of three extras with him. Default 10.</text></string>
+
+    <string id="ui_mcm_nemesis_squad_w5"><text>Squad of 5, weight</text></string>
+    <string id="ui_mcm_nemesis_squad_w5_desc"><text>Relative chance of four extras with him. Default 6. Set a weight to 0 to stop that squad size.</text></string>
+
+    <string id="ui_mcm_nemesis_named_chance"><text>Extra is a named hunter (%)</text></string>
+    <string id="ui_mcm_nemesis_named_chance_desc"><text>Chance that each extra squad member is another named hunter instead of a normal stalker. Named hunters carry a rank in their name, are hard to kill, retreat when hurt and never leave a body. 0 = only the leader is named, 100 = the whole squad. Default 25.</text></string>
+
+</string_table>

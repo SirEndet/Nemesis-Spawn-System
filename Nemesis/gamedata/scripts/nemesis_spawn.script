@@ -1,0 +1,623 @@
+-- Nemesis Spawn
+
+local S = nemesis_state.S
+
+local function dbg(...) nemesis_utils.log_msg(...) end
+
+local SPAWN_RETRY_MS = 10000
+local block_until = 0
+local cooldown_logged = nil
+local warned_no_squad = false
+
+function block(gt_ms) block_until = gt_ms end
+function retry_later(gt) block_until = gt + SPAWN_RETRY_MS end
+
+---------------------------------------------------------------------------
+-- When
+---------------------------------------------------------------------------
+
+function apply_decay()
+    local days = nemesis_mcm.get_number("decay_days", 1)
+    if days <= 0 or (S.cycle or 1) <= 1 or not S.last_retreat then return end
+    local now = nemesis_utils.game_seconds()
+    local from = S.last_decay or S.last_retreat
+    if now < from then S.last_decay = now; return end
+    local step = days * 86400
+    local steps = math.floor((now - from) / step)
+    if steps <= 0 then return end
+    local before = S.cycle
+    S.cycle = math.max(1, S.cycle - steps)
+    S.last_decay = from + steps * step
+    nemesis_damage.unseed_br()
+    dbg("Nemesis: escalation decayed from cycle %s to %s (%s day(s) without a hunt).",
+        tostring(before), tostring(S.cycle), tostring(steps * days))
+end
+
+local function spawn_allowed(gt)
+    if gt < block_until then return false end
+    local debug_mode = nemesis_mcm.get_bool("debug_mode", false)
+    local now = nemesis_utils.game_seconds()
+    if not debug_mode and S.spawned_count == 0 and S.first_hunt then
+        local grace = nemesis_mcm.get_number("grace_period", 12) * 86400
+        if now - S.first_hunt < grace then return false end
+    end
+    if S.last_retreat then
+        if now < S.last_retreat then
+            S.last_retreat = now
+        end
+
+        local cooldown = nemesis_mcm.get_number("retreat_cooldown", 24)
+        if cooldown < 0 then cooldown = 0 end
+        if debug_mode then cooldown = 180 / 3600 end
+        if now - S.last_retreat < cooldown * 3600 then
+
+            local key = tostring(S.last_retreat) .. "/" .. tostring(cooldown)
+            if cooldown_logged ~= key then
+                cooldown_logged = key
+                local left = (S.last_retreat + cooldown * 3600 - now) / 3600
+                if debug_mode then
+                    dbg("Nemesis: next hunt in %.0f game seconds (Debug mode overrides Time between hunts).", left * 3600)
+                else
+                    dbg("Nemesis: next hunt in %.1f game hours (Time between hunts = %s h).", left, tostring(cooldown))
+                end
+            end
+            return false
+        end
+    end
+    return true
+end
+
+local SAFE_RADIUS_M   = 120
+local BASE_KEEP_OUT_M = 60
+
+local base_bypass_logged = false
+local function base_smarts_on_level()
+    local out = {}
+    if nemesis_mcm.get_bool("debug_mode", false) then
+        if not base_bypass_logged then
+            base_bypass_logged = true
+            dbg("Nemesis: debug mode, base and trader safe zones are ignored for spawning.")
+        end
+        return out
+    end
+    base_bypass_logged = false
+    if not (xsmart and xsmart.get_named_smarts and xsmart.is_base) then return out end
+    local sim_actor = alife():actor()
+    local ok, by_name = pcall(function() return xsmart.get_named_smarts() end)
+    if not ok or type(by_name) ~= "table" then return out end
+    for _, smart in pairs(by_name) do
+        local base = false
+        pcall(function() base = xsmart.is_base(smart) end)
+        if base and smart.position and nemesis_utils.same_level(smart, sim_actor) == true then
+            out[#out + 1] = smart
+        end
+    end
+    return out
+end
+
+local function near_base(pos, radius, bases)
+    for _, smart in ipairs(bases) do
+        if smart.position:distance_to(pos) < radius then return smart end
+    end
+    return nil
+end
+
+local blocked_logged = nil
+local function spawn_blocked(actor, ignore_bases)
+    local reason = nil
+    local talking, sleeping = false, false
+    pcall(function() talking = actor:is_talking() end)
+    pcall(function() sleeping = actor:has_info("actor_is_sleeping") end)
+    if talking then
+        reason = "in a dialogue"
+    elseif sleeping then
+        reason = "sleeping"
+    elseif not ignore_bases then
+        local base = near_base(actor:position(), SAFE_RADIUS_M, base_smarts_on_level())
+        if base then
+            local name = "?"
+            pcall(function() name = base:name() end)
+            reason = "within " .. SAFE_RADIUS_M .. " m of base " .. name
+        end
+    end
+    if reason ~= blocked_logged then
+        blocked_logged = reason
+        if reason then dbg("Nemesis: hunt held back, player is %s.", reason) end
+    end
+    return reason ~= nil
+end
+
+---------------------------------------------------------------------------
+-- Arrival warning
+---------------------------------------------------------------------------
+
+local WARN_MIN_S, WARN_MAX_S = 30, 120
+local WARN_STALE_MS = 600000
+local warn_spawn_at = nil
+local STATIC_SOUNDS = { "radio\\white_noise\\white_noise_heavy_fade_in", "radio\\white_noise\\white_noise_light", "ambient\\radar_1" }
+
+local function give_warning(gt)
+    local delay = math.random(WARN_MIN_S, WARN_MAX_S)
+    warn_spawn_at = gt + delay * 1000
+
+    nemesis_utils.set_hunt_faction(nemesis_utils.faction_for_player())
+    local boss = nemesis_boss.roll_for_warning()
+    local snd = nemesis_utils.pick_sound("warning static", STATIC_SOUNDS)
+    local vol = nemesis_utils.volume_setting("warning_volume", 70)
+    if boss then
+        nemesis_utils.send_news(nemesis_utils.boss_warning_line(nemesis_utils.get_npc_name()), "Unknown frequency")
+
+        if vol > 0 and xsound and xsound.play then
+            if snd then pcall(function() xsound.play(snd, { volume = vol }) end) end
+            pcall(function() xsound.play("anomaly\\psy_antenna_voices_1_l", { volume = vol }) end)
+            pcall(function() xsound.play("anomaly\\psy_antenna_voices_1_r", { volume = vol }) end)
+        end
+    else
+        nemesis_utils.send_news(nemesis_utils.warning_line(), "Unknown frequency")
+        if snd and vol > 0 and xsound and xsound.play then
+            pcall(function() xsound.play(snd, { volume = vol }) end)
+        end
+    end
+    dbg("Nemesis: arrival warning given%s, hunt in %s s.", boss and " (BOSS)" or "", tostring(delay))
+end
+
+---------------------------------------------------------------------------
+-- Names and relations
+---------------------------------------------------------------------------
+
+function apply_names()
+    for id, r in pairs(S.m) do
+        local name = r.name
+        local se = name and alife():object(id)
+        if se then
+            pcall(function()
+                if se.set_character_name and se:character_name() ~= name then
+                    se:set_character_name(name)
+                end
+            end)
+        end
+    end
+end
+
+function keep_squad_friendly()
+    local objs = {}
+    local function consider(id)
+        local obj = level.object_by_id(id)
+        if not obj or not nemesis_fx.alive_obj(obj) then return end
+        S.m[id].bound = true
+        objs[#objs + 1] = obj
+    end
+    for _, id in ipairs(S.hunter_ids) do consider(id) end
+    for _, id in ipairs(S.squad_ids) do consider(id) end
+    for i = 1, #objs do
+        for j = 1, #objs do
+            if i ~= j then
+                pcall(function() objs[i]:set_relation(game_object.friend, objs[j]) end)
+            end
+        end
+    end
+    local actor = db.actor
+    if not actor then return end
+    for _, obj in ipairs(objs) do
+        local r = S.m[obj:id()]
+        if r and not r.retreat_at then
+            pcall(function() obj:set_relation(game_object.enemy, actor) end)
+            pcall(function() actor:set_relation(game_object.enemy, obj) end)
+        end
+    end
+end
+
+function has_unbound_member()
+    for id, r in pairs(S.m) do
+        if not r.bound then
+            local o = level.object_by_id(id)
+            if o and nemesis_fx.alive_obj(o) then return true end
+        end
+    end
+    return false
+end
+
+---------------------------------------------------------------------------
+-- The squad
+---------------------------------------------------------------------------
+function member_ids(squad)
+    local ids = {}
+    if not squad then return ids end
+    pcall(function()
+        if xsquad and xsquad.iterate_member_ids then
+            for mid in xsquad.iterate_member_ids(squad) do
+                if type(mid) == "number" then ids[#ids + 1] = mid end
+            end
+            return
+        end
+        if not squad.squad_members then return end
+        for a, b in squad:squad_members() do
+            local mid = (b and b.id) or (type(a) == "number" and a) or (type(a) == "userdata" and a.id)
+            if type(mid) == "number" then ids[#ids + 1] = mid end
+        end
+    end)
+    return ids
+end
+
+local SQUAD_WEIGHTS = { 50, 25, 14, 10, 6 }
+
+local function roll_squad_size()
+    local total = 0
+    local weights = {}
+    for i = 1, 5 do
+        local w = nemesis_mcm.get_number("squad_w" .. i, SQUAD_WEIGHTS[i])
+        if w < 0 then w = 0 end
+        weights[i] = w
+        total = total + w
+    end
+    if total <= 0 then return 1 end
+    local roll = math.random() * total
+    local acc = 0
+    for i = 1, 5 do
+        acc = acc + weights[i]
+        if roll <= acc then return i end
+    end
+    return 1
+end
+
+local function named_chance()
+    local chance = nemesis_mcm.get_number("named_chance", 25)
+    if chance < 0 then chance = 0 end
+    if chance > 100 then chance = 100 end
+    return chance
+end
+
+local function vertex_pos(lv)
+    local raw = level.vertex_position(lv)
+    if not raw then return nil end
+    local pos = vector()
+    pos:set(raw.x, raw.y, raw.z)
+    return pos
+end
+
+local function spawn_extra(job)
+    local squad = S.sim_squad_id and alife():object(S.sim_squad_id)
+    if not squad or not squad.add_squad_member then return nil end
+    local origin = vertex_pos(job.origin_lv)
+    if not origin then return nil end
+    local before = {}
+    for _, mid in ipairs(member_ids(squad)) do before[mid] = true end
+    for attempt = 1, 12 do
+        local ang = math.random() * 6.28318
+        local dir = vector()
+        dir:set(math.cos(ang), 0, math.sin(ang))
+        local dist = 8 + attempt * 1.5
+        local node = level.vertex_in_direction(job.origin_lv, dir, dist)
+        if node and node < 4294967295 and node ~= job.origin_lv and not job.used[node] then
+            local pos = vertex_pos(node)
+            if pos and pos:distance_to(origin) >= 6 then
+                local ok, res = pcall(function()
+                    return squad:add_squad_member(job.section, pos, node, job.gvid)
+                end)
+                local new_id = nil
+                for _, mid in ipairs(member_ids(squad)) do
+                    if not before[mid] then new_id = mid end
+                end
+                if not new_id and ok then
+                    if type(res) == "number" and not before[res] then new_id = res end
+                    if type(res) == "userdata" and res.id and not before[res.id] then new_id = res.id end
+                end
+                if new_id then
+                    job.used[node] = true
+                    return new_id
+                end
+            end
+        end
+    end
+    return nil
+end
+
+function fill_squad()
+    local job = S.pending_squad
+    if not job or job.left <= 0 then return end
+    if not job.section or job.section == "" then
+        dbg("!Nemesis ERROR: no stalker section for the extra members.")
+        S.pending_squad = nil
+        return
+    end
+    local extra_id = spawn_extra(job)
+    if not extra_id then
+        job.misses = (job.misses or 0) + 1
+        if job.misses >= 8 then
+            dbg("Nemesis: stopped after %s squad members, no free vertex for the rest",
+                tostring(#S.hunter_ids + #S.squad_ids))
+            S.pending_squad = nil
+        end
+        return
+    end
+
+    local got = "?"
+    pcall(function()
+        local se_new = alife():object(extra_id)
+        if se_new then got = se_new:section_name() end
+    end)
+    if got ~= job.section then
+        dbg("!Nemesis ERROR: extra member %s is section %s, expected %s.", tostring(extra_id), tostring(got), tostring(job.section))
+    end
+    job.misses = 0
+    job.left = job.left - 1
+    local named = math.random(100) <= named_chance()
+    local ename = nemesis_utils.next_hunter_name(job.used_names, named)
+    nemesis_state.add_member(extra_id, named, ename)
+    if named then
+        dbg("Nemesis: named hunter '%s' joined the squad", ename)
+        if nemesis_boss.roll() then
+            nemesis_boss.make(extra_id)
+            nemesis_boss.news(nemesis_utils.boss_line())
+        end
+    else
+        dbg("Nemesis: stalker '%s' joined the squad", ename)
+    end
+    if job.left <= 0 then
+        dbg("Nemesis: squad complete, %s stalkers", tostring(#S.hunter_ids + #S.squad_ids))
+        S.pending_squad = nil
+    end
+end
+
+---------------------------------------------------------------------------
+-- The scripted target
+---------------------------------------------------------------------------
+
+local function arm_squad(squad)
+    if not squad then return end
+    local armed = false
+    if xsquad and xsquad.set_target_actor then
+        pcall(function() xsquad.set_target_actor(squad, true) end)
+        pcall(function() armed = squad.scripted_target == "actor" end)
+    end
+    if not armed then
+        pcall(function()
+            squad.scripted_target = "actor"
+            squad.__lock = nil
+            squad.rush_to_target = true
+            squad.current_action = 0
+        end)
+    end
+    if xsmart and xsmart.assign_squad_to_smart then
+        pcall(function() xsmart.assign_squad_to_smart(squad, nil) end)
+    end
+    dbg("Nemesis: squad %s is scripted on the player and off the smart roster.", tostring(squad.id))
+end
+
+function hold_guard_exemption()
+    local id = S.sim_squad_id
+    if not id then return end
+    local squad = alife():object(id)
+    if not squad then return end
+    local needs = false
+    pcall(function() needs = squad.scripted_target ~= "actor" end)
+    if needs then
+        pcall(function()
+            if xsquad and xsquad.set_target_actor then
+                xsquad.set_target_actor(squad, true)
+            else
+                squad.scripted_target = "actor"
+                squad.__lock = nil
+            end
+        end)
+        if not S.target_restore_logged then
+            S.target_restore_logged = true
+            dbg("Nemesis: restored the scripted target on squad %s.", tostring(id))
+        end
+    end
+end
+
+---------------------------------------------------------------------------
+-- Where
+---------------------------------------------------------------------------
+
+local function spawn_range()
+    local dmin = nemesis_mcm.get_number("spawn_dist_min", 70)
+    local dmax = nemesis_mcm.get_number("spawn_dist_max", 140)
+    if dmin > dmax then dmin, dmax = dmax, dmin end
+    return dmin, dmax
+end
+
+local function pick_spawn_smart(actor)
+    if not (xsmart and xsmart.get_named_smarts) then return nil end
+    local dmin, dmax = spawn_range()
+    local apos = actor:position()
+    local sim_actor = alife():actor()
+    local ok, by_name = pcall(function() return xsmart.get_named_smarts() end)
+    if not ok or type(by_name) ~= "table" then return nil end
+    local bases = base_smarts_on_level()
+    local ring = {}
+    for _, smart in pairs(by_name) do
+        if smart and smart.position and not near_base(smart.position, BASE_KEEP_OUT_M, bases)
+            and sim_actor and nemesis_utils.same_level(smart, sim_actor) == true then
+            local d = smart.position:distance_to(apos)
+            if d >= dmin and d <= dmax then ring[#ring + 1] = smart end
+        end
+    end
+    if #ring > 0 then return ring[math.random(#ring)] end
+    return nil
+end
+
+local function pick_ring_vertex(actor)
+    local dmin, dmax = spawn_range()
+    local alv, apos
+    pcall(function() alv = actor:level_vertex_id(); apos = actor:position() end)
+    if not alv or alv >= 4294967295 or not apos then return nil end
+    local best_lv, best_pos, best_d = nil, nil, 0
+    local bases = base_smarts_on_level()
+    for _ = 1, 32 do
+        local ang = math.random() * 6.28318
+        local dir = vector()
+        dir:set(math.cos(ang), 0, math.sin(ang))
+        local want = dmin + math.random() * (dmax - dmin)
+        local lv = nil
+        pcall(function() lv = level.vertex_in_direction(alv, dir, want) end)
+        if lv and lv < 4294967295 and lv ~= alv then
+            local pos = vertex_pos(lv)
+            if pos and not near_base(pos, BASE_KEEP_OUT_M, bases) then
+                local d = pos:distance_to(apos)
+                if d >= dmin and d <= dmax then return lv, pos end
+                if d > best_d and d >= 40 then best_lv, best_pos, best_d = lv, pos, d end
+            end
+        end
+    end
+    return best_lv, best_pos
+end
+
+local function create_squad_at(section, pos, lv, gv)
+    local squad = alife_create(section, pos, lv, gv)
+    if not squad then return nil end
+    squad:create_npc(nil, pos, lv, gv)
+    pcall(function() squad:set_squad_relation() end)
+    return squad
+end
+
+---------------------------------------------------------------------------
+-- How
+---------------------------------------------------------------------------
+local function try_spawn(gt)
+    local actor = db.actor
+    if not actor then return end
+
+    local spawn_smart = pick_spawn_smart(actor)
+    local ring_lv, ring_pos = nil, nil
+    if not spawn_smart then
+        ring_lv, ring_pos = pick_ring_vertex(actor)
+        if not ring_lv then
+            dbg("Nemesis: no smart and no free vertex in the spawn range, retrying later")
+            retry_later(gt)
+            return
+        end
+    end
+
+    local faction = nemesis_utils.faction_for_player()
+    nemesis_utils.set_hunt_faction(faction)
+    local squad_section = nemesis_utils.resolve_squad_section(faction)
+    if not squad_section then
+        if not warned_no_squad then
+            warned_no_squad = true
+            dbg("!Nemesis ERROR: no squad section found, nothing was spawned.")
+        end
+        block_until = gt + 60000
+        return
+    end
+
+    local pos, lv, gv
+    if spawn_smart then
+        pos, lv, gv = spawn_smart.position, spawn_smart.m_level_vertex_id, spawn_smart.m_game_vertex_id
+    else
+        pos, lv, gv = ring_pos, ring_lv, actor:game_vertex_id()
+    end
+    local ok, squad = pcall(function() return create_squad_at(squad_section, pos, lv, gv) end)
+    if not ok then dbg("!Nemesis ERROR: squad spawn failed (%s).", tostring(squad)) end
+    if not ok or not squad then
+        dbg("!Nemesis ERROR: squad creation failed for %s.", squad_section)
+        retry_later(gt)
+        return
+    end
+
+    nemesis_state.clear_members()
+    S.faction = faction
+    S.sim_squad_id = squad.id
+    S.pending_squad = nil
+    S.target_restore_logged = nil
+    S.retreat_announced = false
+    S.offline_since = nil
+    S.seen_online = nil
+    S.role_side = nil
+    S.fx = {}
+    S.boss_id = nil
+    S.boss_hunt = nil
+    S.boss_sneak = nil
+    nemesis_utils.reset_chase()
+    nemesis_chase.reset_all()
+    arm_squad(squad)
+
+    local members = member_ids(squad)
+    if #members == 0 then
+        dbg("!Nemesis ERROR: squad %s has no stalkers.", tostring(squad.id))
+        if xsquad and xsquad.release_squad then
+            pcall(function() xsquad.release_squad(squad) end)
+        end
+        S.sim_squad_id = nil
+        S.phase = "idle"
+        retry_later(gt)
+        return
+    end
+
+    local chance = named_chance()
+    local used_names = {}
+
+    local leader_boss = nemesis_boss.take_leader_roll(nemesis_mcm.get_bool("arrival_warning", true))
+    for i, mid in ipairs(members) do
+        local named = (i == 1) or (math.random(100) <= chance)
+        nemesis_state.add_member(mid, named, nemesis_utils.next_hunter_name(used_names, named))
+        if named and ((i == 1 and leader_boss) or (i > 1 and nemesis_boss.roll())) then
+            nemesis_boss.make(mid)
+        end
+    end
+    S.phase = "hunting"
+    S.spawned_count = S.spawned_count + 1
+    S.hunt_start = nemesis_utils.game_seconds()
+
+    local wanted = roll_squad_size()
+    if #members < wanted then
+        local section = nemesis_utils.pick_member_section(faction)
+        if not section then
+            dbg("!Nemesis ERROR: no generic section for the extra stalkers.")
+        else
+            local origin, gvid = 0, 0
+            pcall(function()
+                origin = squad.m_level_vertex_id or (spawn_smart and spawn_smart.m_level_vertex_id) or ring_lv or 0
+                gvid = squad.m_game_vertex_id or (spawn_smart and spawn_smart.m_game_vertex_id) or 0
+            end)
+            local used = {}
+            if origin ~= 0 then used[origin] = true end
+            S.pending_squad = {
+                section = section,
+                origin_lv = origin,
+                gvid = gvid,
+                left = wanted - #members,
+                used = used,
+                used_names = used_names,
+                misses = 0,
+            }
+        end
+    end
+
+    local leader = nemesis_state.name_of(nemesis_state.leader()) or "A hunter"
+    local sname = "navmesh vertex " .. tostring(ring_lv)
+    if spawn_smart then pcall(function() sname = spawn_smart:name() end) end
+    if S.boss_id then
+        nemesis_boss.news(nemesis_utils.boss_line())
+    else
+        nemesis_utils.send_news(nemesis_utils.taunt(S.cycle), leader)
+    end
+    local dist = (spawn_smart and spawn_smart.position or ring_pos):distance_to(actor:position())
+    dbg("Nemesis: '%s' squad spawned (%s) at %s, %s m away, %s stalkers, want %s [cycle %s, scripted, off the smart roster]",
+        leader, squad_section, tostring(sname), string.format("%.0f", dist), tostring(#members),
+        tostring(wanted), tostring(S.cycle))
+end
+
+function idle_tick(gt, actor, slow)
+    if slow then apply_decay() end
+    local warn_on = nemesis_mcm.get_bool("arrival_warning", true)
+
+    if warn_spawn_at and gt - warn_spawn_at > WARN_STALE_MS then warn_spawn_at = nil end
+    local committed = warn_on and warn_spawn_at ~= nil
+    if not (slow and spawn_allowed(gt) and not spawn_blocked(actor, committed)) then return end
+    if warn_on then
+        if not warn_spawn_at then
+            give_warning(gt)
+        elseif gt >= warn_spawn_at then
+            try_spawn(gt)
+            if S.phase ~= "idle" then warn_spawn_at = nil end
+        end
+    else
+        try_spawn(gt)
+    end
+end
+
+function reset_runtime()
+    warn_spawn_at = nil
+end

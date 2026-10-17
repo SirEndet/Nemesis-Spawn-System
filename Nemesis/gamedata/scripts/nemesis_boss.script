@@ -1,0 +1,187 @@
+-- Nemesis Boss
+
+local S = nemesis_state.S
+
+local function dbg(...) nemesis_utils.log_msg(...) end
+
+local force_next = false
+local warned = false
+
+function force() force_next = true end
+
+local function boss_day() return math.floor(nemesis_utils.game_seconds() / 86400) end
+
+function exists()
+    if S.boss_id then return true end
+    local g = S.boss_ghost
+    if not g then return false end
+    local alive = false
+    pcall(function()
+        local se = alife():object(g)
+        alive = se ~= nil and se:alive() and se:character_name() == nemesis_utils.get_npc_name()
+    end)
+    if alive then return true end
+    S.boss_ghost = nil
+    return false
+end
+
+function roll()
+    if exists() then return false end
+    if force_next then
+        force_next = false
+        return true
+    end
+    if S.last_boss_day == boss_day() then return false end
+
+    local grace = nemesis_mcm.get_number("grace_period", 12)
+    if grace < 0 then grace = 0 end
+    local min_days = nemesis_mcm.get_number("boss_min_day", 3)
+    if min_days < 1 then min_days = 1 end
+    if min_days > 7 then min_days = 7 end
+    if not S.first_hunt or nemesis_utils.game_seconds() - S.first_hunt < (grace + min_days) * 86400 then return false end
+    local chance = nemesis_mcm.get_number("boss_chance", 2)
+    if chance <= 0 then return false end
+    return math.random() * 100 < chance
+end
+
+function roll_for_warning()
+    warned = roll()
+    return warned
+end
+
+function take_leader_roll(warning_on)
+    local w = warned
+    warned = false
+
+    if not warning_on or (force_next and not w) then return roll() end
+    return w
+end
+
+function icon(id)
+    local ic = nil
+    pcall(function()
+        local obj = level.object_by_id(id)
+        ic = obj and obj:character_icon() or alife():object(id):character_icon()
+    end)
+    if type(ic) ~= "string" or ic == "" then return nil end
+    return ic
+end
+
+function news(text)
+    local id = S.boss_id
+    return nemesis_utils.send_news(text, nemesis_state.name_of(id) or nemesis_utils.get_npc_name(), id and icon(id))
+end
+
+local LOOKS = {
+    monolith = { { "actors\\stalker_monolith\\stalker_monolith_preacher", "actors\\stalker_monolith\\stalker_monolith_preacher_ghillie" },
+                 { "actors\\stalker_monolith\\stalker_monolith_skat9_ssp_mask" } },
+    isg = { { "actors\\stalker_isg\\stalker_isg_1_commando_1", "actors\\stalker_isg\\stalker_isg_1_commando_3" },
+            { "actors\\stalker_isg\\light_isg_shades" } },
+}
+
+local function roll_look()
+    for _, group in ipairs(LOOKS[S.faction or "monolith"] or LOOKS.monolith) do
+        local have = {}
+        for _, p in ipairs(group) do if nemesis_fx.mesh_exists(p) then have[#have + 1] = p end end
+        if #have > 0 then return have[math.random(#have)] end
+    end
+    return nil
+end
+
+function make(id)
+    local r = nemesis_state.member(id)
+    S.boss_id = id
+    S.boss_hunt = true
+    S.last_boss_day = boss_day()
+    if r then r.name = nemesis_utils.get_npc_name() end
+    local sneak_pct = nemesis_mcm.get_number("boss_sneak_chance", 50)
+    S.boss_sneak = math.random(100) <= sneak_pct or nil
+    S.sneak_started, S.sneak_said = nil, nil
+    S.boss_look = roll_look()
+    S.dread_next = time_global() + 20000
+    dbg("Nemesis: '%s' is the BOSS of this hunt (%s, look %s).", tostring(r and r.name),
+        S.boss_sneak and "sneaks" or "charges", tostring(S.boss_look))
+end
+
+function clear()
+    if S.boss_id then S.boss_ghost = S.boss_id end
+    S.boss_id = nil
+    S.boss_hunt = nil
+    S.boss_sneak = nil
+end
+
+---------------------------------------------------------------------------
+-- Per tick: focus, look, sneak, dread
+---------------------------------------------------------------------------
+local SNEAK_TRIGGER_M = 20
+local SNEAK_ATTACK_MS = 5000
+local SNEAK_GIVE_UP_MS = 120000
+local DREAD_M = 50
+
+local function behind_player(obj, actor)
+    local behind = false
+    pcall(function()
+        local apos, dir = actor:position(), actor:direction()
+        local bx, bz = obj:position().x - apos.x, obj:position().z - apos.z
+        local lb = math.sqrt(bx * bx + bz * bz)
+        local ld = math.sqrt(dir.x * dir.x + dir.z * dir.z)
+
+        behind = lb > 0.01 and ld > 0.01 and (bx * dir.x + bz * dir.z) / (lb * ld) < -0.5
+    end)
+    return behind
+end
+
+function update(obj, r, gt, actor)
+    local id = r.id
+    nemesis_utils.set_focus(id, true)
+
+    local look = S.boss_look
+    if look then
+        if r.cloak_vis then
+            r.cloak_vis = look
+        else
+            local vis = nemesis_fx.get_visual(obj)
+            if vis ~= look and vis ~= nemesis_fx.INVISIBLE_VISUAL then nemesis_fx.set_visual(obj, look) end
+        end
+    end
+    local d = 9999
+    pcall(function() d = obj:position():distance_to(actor:position()) end)
+    if S.boss_sneak then
+        if not S.sneak_started then
+            S.sneak_started = gt
+            nemesis_utils.set_sneak(id, true)
+            dbg("Nemesis: %s starts sneaking up behind you.", r.name or "The boss")
+        elseif not nemesis_utils.sneak_active(id) and not S.sneak_said then
+            nemesis_utils.set_sneak(id, true)
+        end
+        local hit = r.hit_at and gt - r.hit_at < 1500
+        if hit and not S.sneak_said then
+            nemesis_utils.end_sneak(id, false)
+            S.boss_sneak = nil
+            dbg("Nemesis: the sneak is broken by a hit.")
+        elseif not S.sneak_said and gt - S.sneak_started > SNEAK_GIVE_UP_MS then
+            nemesis_utils.end_sneak(id, false)
+            S.boss_sneak = nil
+            dbg("Nemesis: the sneak timed out, he hunts normally.")
+        elseif not S.sneak_said and d <= SNEAK_TRIGGER_M then
+            if behind_player(obj, actor) then
+                S.sneak_said = gt
+                news(nemesis_utils.sneak_line())
+                dbg("Nemesis: the boss is behind you; he attacks in 5 s.")
+            end
+        elseif S.sneak_said and gt - S.sneak_said >= SNEAK_ATTACK_MS then
+            nemesis_utils.end_sneak(id, true)
+            S.boss_sneak = nil
+            dbg("Nemesis: the boss attacks.")
+        end
+    end
+
+    if r.cloak_vis and d <= DREAD_M and not S.sneak_said and gt >= (S.dread_next or 0) then
+        S.dread_next = gt + math.random(45, 90) * 1000
+        news(nemesis_utils.dread_line())
+    end
+end
+
+function reset_runtime()
+    warned = false
+end

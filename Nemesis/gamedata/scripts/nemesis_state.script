@@ -1,0 +1,224 @@
+-- Nemesis State
+
+SAVE_VERSION = 3
+
+S = {}
+
+local function blank()
+    return {
+        phase = "idle",
+        cycle = 1,
+        spawned_count = 0,
+        first_hunt = nil,
+        last_retreat = nil,
+        last_decay = nil,
+        hunt_start = nil,
+        faction = nil,
+        hunter_ids = {},
+        squad_ids = {},
+        m = {},
+        dying = {},
+        sim_squad_id = nil,
+        pending_squad = nil,
+        retreat_announced = false,
+        offline_since = nil,
+        seen_online = nil,
+        target_restore_logged = nil,
+        role_side = nil,
+        fx = {},
+
+        boss_id = nil,
+        boss_hunt = nil,
+        boss_ghost = nil,
+        boss_sneak = nil,
+        boss_look = nil,
+        last_boss_day = nil,
+        sneak_started = nil,
+        sneak_said = nil,
+        dread_next = nil,
+    }
+end
+
+function reset()
+    for k in pairs(S) do S[k] = nil end
+    for k, v in pairs(blank()) do S[k] = v end
+end
+
+reset()
+
+---------------------------------------------------------------------------
+-- Members
+---------------------------------------------------------------------------
+
+function add_member(id, named, name)
+    local r = {
+        id = id,
+        named = named and true or false,
+        name = name,
+        inited = false,
+        hp_armed = false,
+        last_hp = nil,
+        grace_until = nil,
+        pre_hp = nil,
+        pending = false,
+        retreat_at = nil,
+        cover_until = nil,
+        teleport_at = nil,
+        cloak_vis = nil,
+        cloak_off_at = nil,
+        hit_at = nil,
+        death = nil,
+        dead = false,
+        bound = false,
+        role_set = false,
+        idle_warned = false,
+    }
+    S.m[id] = r
+    local list = r.named and S.hunter_ids or S.squad_ids
+    list[#list + 1] = id
+    return r
+end
+
+local function drop_from(list, id)
+    for i = #list, 1, -1 do
+        if list[i] == id then table.remove(list, i) end
+    end
+end
+
+function drop_member(id)
+    if not id then return end
+    S.m[id] = nil
+    S.dying[id] = nil
+    drop_from(S.hunter_ids, id)
+    drop_from(S.squad_ids, id)
+end
+
+function clear_members()
+    S.m = {}
+    S.hunter_ids = {}
+    S.squad_ids = {}
+    S.dying = {}
+end
+
+function member(id) return id ~= nil and S.m[id] or nil end
+function is_member(id) return id ~= nil and S.m[id] ~= nil end
+function is_hunter(id)
+    local r = id ~= nil and S.m[id]
+    return r and r.named or false
+end
+function name_of(id)
+    local r = id ~= nil and S.m[id]
+    return r and r.name or nil
+end
+function leader() return S.hunter_ids[1] end
+
+---------------------------------------------------------------------------
+-- Save / load
+---------------------------------------------------------------------------
+local function load_ids(text)
+    local ids = {}
+    if type(text) ~= "string" then return ids end
+    for id in string.gmatch(text, "%d+") do ids[#ids + 1] = tonumber(id) end
+    return ids
+end
+
+local function load_map(text)
+    local map = {}
+    if type(text) ~= "string" then return map end
+    for id, v in string.gmatch(text, "(%d+)=([^|]+)") do map[tonumber(id)] = v end
+    return map
+end
+
+function save(mdata, vanish_ids)
+    local names, cloak, retreating = {}, {}, {}
+    for id, r in pairs(S.m) do
+        if r.name then names[#names + 1] = tostring(id) .. "=" .. r.name end
+        if r.cloak_vis then cloak[#cloak + 1] = tostring(id) .. "=" .. r.cloak_vis end
+        if r.retreat_at then retreating[#retreating + 1] = id end
+    end
+    local p = S.pending_squad
+    mdata.nemesis_state = {
+        ver = SAVE_VERSION,
+        cycle = S.cycle,
+        spawned_count = S.spawned_count,
+        first_hunt = S.first_hunt,
+        last_retreat = S.last_retreat,
+        last_decay = S.last_decay,
+        hunt_start = S.hunt_start,
+        faction = S.faction,
+        boss_id = S.boss_id,
+        boss_hunt = S.boss_hunt and true or nil,
+        boss_sneak = S.boss_sneak and true or nil,
+        boss_ghost = S.boss_ghost,
+        boss_look = S.boss_look,
+        last_boss_day = S.last_boss_day,
+        hunter_ids = table.concat(S.hunter_ids, ","),
+        squad_ids = table.concat(S.squad_ids, ","),
+        retreating = table.concat(retreating, ","),
+        names = table.concat(names, "|"),
+        cloak_vis = table.concat(cloak, "|"),
+        squad_left = p and p.left or 0,
+        squad_section = p and p.section or "",
+        squad_origin = p and p.origin_lv or 0,
+        squad_gvid = p and p.gvid or 0,
+        sim_squad_id = S.sim_squad_id,
+        phase = S.phase,
+        vanish = table.concat(vanish_ids or {}, ","),
+    }
+end
+
+function load(mdata)
+    reset()
+    local s = mdata and mdata.nemesis_state
+    if not s then return {}, {} end
+    local vanish = load_ids(s.vanish)
+
+    S.cycle = s.cycle or 1
+    S.spawned_count = s.spawned_count or 0
+    S.first_hunt = s.first_hunt
+    S.last_retreat = s.last_retreat
+    S.last_decay = s.last_decay
+    S.hunt_start = s.hunt_start
+    S.last_boss_day = s.last_boss_day
+    S.boss_ghost = tonumber(s.boss_ghost)
+    S.faction = s.faction
+
+    local hunters = load_ids(s.hunter_ids)
+    local squad = load_ids(s.squad_ids)
+    if #hunters == 0 then return vanish, {} end
+
+    local names = load_map(s.names)
+    local cloak = load_map(s.cloak_vis)
+    S.phase = "hunting"
+    for _, id in ipairs(hunters) do add_member(id, true, names[id]) end
+    for _, id in ipairs(squad) do add_member(id, false, names[id]) end
+    for id, vis in pairs(cloak) do
+        if S.m[id] then S.m[id].cloak_vis = vis end
+    end
+    local now = time_global()
+    for _, id in ipairs(load_ids(s.retreating)) do
+        if S.m[id] then S.m[id].retreat_at = now end
+    end
+    S.boss_id = tonumber(s.boss_id)
+    S.boss_hunt = s.boss_hunt and true or nil
+    S.boss_sneak = s.boss_sneak and true or nil
+    S.boss_look = s.boss_look
+    S.sim_squad_id = tonumber(s.sim_squad_id)
+
+    local left = tonumber(s.squad_left) or 0
+    if left > 0 and type(s.squad_section) == "string" and s.squad_section ~= "" and (tonumber(s.squad_gvid) or 0) > 0 then
+        local used_names = {}
+        for _, name in pairs(names) do used_names[name] = true end
+        local origin = tonumber(s.squad_origin) or 0
+        S.pending_squad = {
+            section = s.squad_section,
+            origin_lv = origin,
+            gvid = tonumber(s.squad_gvid),
+            left = left,
+            used = { [origin] = true },
+            used_names = used_names,
+            misses = 0,
+        }
+    end
+    return vanish, {}
+end

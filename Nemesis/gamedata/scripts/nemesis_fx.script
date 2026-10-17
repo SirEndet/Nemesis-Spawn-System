@@ -1,0 +1,330 @@
+-- Nemesis FX
+
+local S = nemesis_state.S
+
+local function dbg(...) nemesis_utils.log_msg(...) end
+
+---------------------------------------------------------------------------
+-- Teleport burst
+---------------------------------------------------------------------------
+
+function play_retreat_fx(pos)
+    if not pos or not db.actor then return end
+    local spot = vector()
+    spot:set(pos.x, pos.y + 1, pos.z)
+    local ok = pcall(function()
+        local parti = particles_object("anomaly2\\teleport_out_00")
+        parti:play_at_pos(spot)
+        S.fx[#S.fx + 1] = parti
+    end)
+    if not ok then dbg("Nemesis: retreat particle failed") end
+    pcall(function()
+        local snd = sound_object("anomaly\\teleport_incoming")
+
+        snd.volume = nemesis_utils.volume_setting("teleport_volume", 40)
+        snd:play_at_pos(db.actor, spot)
+        snd.volume = nemesis_utils.volume_setting("teleport_volume", 40)
+        S.fx[#S.fx + 1] = snd
+    end)
+end
+
+---------------------------------------------------------------------------
+-- Invisible model
+---------------------------------------------------------------------------
+
+INVISIBLE_VISUAL  = "actors\\stalker_invisible\\stalker_invisible"
+DEAD_BODY_DELAY_MS = 0
+RETREAT_VANISH_MS  = 1000
+
+local invisible_ok = nil
+
+function invisible_model_exists()
+    if invisible_ok == nil then
+        invisible_ok = false
+        pcall(function()
+            invisible_ok = getFS():exist("$game_meshes$", INVISIBLE_VISUAL .. ".ogf") and true or false
+        end)
+        dbg("Nemesis: invisible model %s.", invisible_ok and "found" or "NOT found, teleports use the burst only")
+    end
+    return invisible_ok
+end
+
+local function _alive(obj) return obj:alive() end
+function alive_obj(obj)
+    if not obj then return false end
+    local ok, alive = pcall(_alive, obj)
+    return ok and alive == true
+end
+
+function mesh_exists(path)
+    local ok = false
+    pcall(function() ok = getFS():exist("$game_meshes$", path .. ".ogf") and true or false end)
+    return ok
+end
+
+local function _set_visual(obj, vis) obj:set_visual_name(vis) end
+local function _get_visual(obj) return obj:get_visual_name() end
+
+function set_visual(obj, vis)
+    if not alive_obj(obj) then return false end
+    return pcall(_set_visual, obj, vis)
+end
+
+function get_visual(obj)
+    local ok, vis = pcall(_get_visual, obj)
+    if ok and type(vis) == "string" then return vis end
+    return nil
+end
+
+function make_invisible(obj)
+    if not obj or not alive_obj(obj) or not invisible_model_exists() then return false end
+    local ok, err = pcall(_set_visual, obj, INVISIBLE_VISUAL)
+    if not ok then dbg("!Nemesis ERROR: invisible model swap failed (%s).", tostring(err)) end
+    return ok
+end
+
+---------------------------------------------------------------------------
+-- Removal: vanish queue, offline members, empty squads
+---------------------------------------------------------------------------
+local vanish_queue = {}
+local squad_cleanup = {}
+local SQUAD_CLEANUP_MS = 3000
+
+function queue_vanish(id, delay_ms)
+    if not id then return end
+    vanish_queue[id] = time_global() + (delay_ms or 0)
+end
+
+function vanish_ids()
+    local ids = {}
+    for id in pairs(vanish_queue) do ids[#ids + 1] = id end
+    return ids
+end
+
+function remove_object(se)
+    if not se then return false end
+    return pcall(function()
+        if type(alife_release) == "function" then
+            alife_release(se)
+        else
+            alife():release(se, true)
+        end
+    end)
+end
+
+function queue_squad_cleanup(id)
+    if id then squad_cleanup[id] = time_global() + SQUAD_CLEANUP_MS end
+end
+
+local function process_squad_cleanup(gt)
+    for id, at in pairs(squad_cleanup) do
+        if gt >= at then
+            squad_cleanup[id] = nil
+            local sq = alife():object(id)
+            local n, is_squad = 1, false
+            pcall(function()
+                n = sq:npc_count()
+                is_squad = sq:clsid() == clsid.online_offline_group_s
+            end)
+            if sq and is_squad and n == 0 and id ~= S.sim_squad_id then
+                if remove_object(sq) then dbg("Nemesis: empty hunt squad %s removed.", tostring(id)) end
+            end
+        end
+    end
+end
+
+local function process_vanish(gt)
+    for id, at in pairs(vanish_queue) do
+        if gt >= at then
+            vanish_queue[id] = nil
+            local se = alife():object(id)
+            local is_npc = false
+            pcall(function() is_npc = IsStalker(nil, se:clsid()) end)
+            if se and is_npc then
+                local ok, err = remove_object(se)
+                if ok then
+                    dbg("Nemesis: %s teleported out (removed).", tostring(id))
+                else
+                    dbg("!Nemesis ERROR: could not remove %s (%s).", tostring(id), tostring(err))
+                end
+            end
+        end
+    end
+end
+
+function process_queues(gt)
+    if next(vanish_queue) ~= nil then process_vanish(gt) end
+    if next(squad_cleanup) ~= nil then process_squad_cleanup(gt) end
+end
+
+function remove_offline(ids)
+    for _, id in ipairs(ids) do
+        local se = alife():object(id)
+        local alive, online = false, true
+        pcall(function() alive = se:alive(); online = se.online end)
+        if se and alive and not online then
+            if remove_object(se) then dbg("Nemesis: offline hunt member %s removed.", tostring(id)) end
+        end
+    end
+end
+
+---------------------------------------------------------------------------
+-- Cloak
+---------------------------------------------------------------------------
+
+local CLOAK_MIN_M = 30
+local REVEAL_M = 15
+local CLOAK_COOLDOWN_MS = 20000
+local HIT_REVEAL_MS = 1500
+
+function reveal(obj, r, gt, why)
+    if not r or not r.cloak_vis then return end
+    set_visual(obj, r.cloak_vis)
+    r.cloak_vis = nil
+    r.cloak_off_at = gt or time_global()
+    dbg("Nemesis: %s reappears (%s).", r.name or "A hunter", why or "?")
+end
+
+local function cloak(obj, r)
+    local vis = get_visual(obj)
+    if not vis or vis == "" or vis == INVISIBLE_VISUAL then return end
+    r.cloak_vis = vis
+    if not make_invisible(obj) then
+        r.cloak_vis = nil
+        return
+    end
+    dbg("Nemesis: %s cloaks.", r.name or "A hunter")
+end
+
+local function _dist(a, b) return a:position():distance_to(b:position()) end
+
+function cloak_update(obj, r, gt, actor)
+    local id = r.id
+    local enabled = (id == S.boss_id or nemesis_mcm.get_bool("hunter_cloak", true)) and invisible_model_exists()
+    local hit = r.hit_at and gt - r.hit_at < HIT_REVEAL_MS
+    local ok, d = pcall(_dist, obj, actor)
+    if not ok then d = 9999 end
+    local fighting = nemesis_utils.combat_owns(obj) == true
+    if r.cloak_vis then
+        if not enabled then reveal(obj, r, gt, "option off")
+        elseif fighting then reveal(obj, r, gt, "fighting")
+        elseif d <= REVEAL_M and not nemesis_utils.sneak_active(id) then reveal(obj, r, gt, "close")
+        elseif hit then reveal(obj, r, gt, "hit") end
+    elseif enabled and not fighting and not hit and d > CLOAK_MIN_M
+        and gt - (r.cloak_off_at or -CLOAK_COOLDOWN_MS) >= CLOAK_COOLDOWN_MS then
+        cloak(obj, r)
+    end
+end
+
+function reveal_all()
+    for id, r in pairs(S.m) do
+        if r.cloak_vis then
+            local obj = level.object_by_id(id)
+            if obj then reveal(obj, r, nil, "hunt over") end
+            r.cloak_vis = nil
+        end
+    end
+end
+
+---------------------------------------------------------------------------
+-- Psy whispers
+---------------------------------------------------------------------------
+
+local WHISPER_RANGE_M = 60
+local WHISPER_L, WHISPER_R = "anomaly\\psy_antenna_voices_1_l", "anomaly\\psy_antenna_voices_1_r"
+local whisper = nil
+
+function whisper_stop()
+    if not whisper then return end
+    pcall(function() xsound.release(whisper.l) end)
+    pcall(function() xsound.release(whisper.r) end)
+    whisper = nil
+end
+
+function whisper_update(actor)
+    if not (xsound and xsound.create_sound) then return end
+    local nearest = nil
+    if actor and S.phase == "hunting" then
+        for _, id in ipairs(S.hunter_ids) do
+            local r = S.m[id]
+            local obj = level.object_by_id(id)
+            if obj and r and not r.retreat_at and alive_obj(obj) then
+                local ok, d = pcall(_dist, obj, actor)
+                if ok and (not nearest or d < nearest) then nearest = d end
+            end
+        end
+    end
+    local slider = nemesis_utils.volume_setting("whisper_volume", 60)
+    local target = 0
+    if nearest and nearest < WHISPER_RANGE_M then
+        target = slider * (1 - nearest / WHISPER_RANGE_M)
+    end
+    if target <= 0.001 then
+        whisper_stop()
+        return
+    end
+    if not whisper then
+        local l, rr = nil, nil
+        pcall(function()
+            l = xsound.create_sound(WHISPER_L, { looped = true, s2d = true, smoothing = 0.6 })
+            rr = xsound.create_sound(WHISPER_R, { looped = true, s2d = true, smoothing = 0.6 })
+        end)
+        if not (l and rr) then return end
+        whisper = { l = l, r = rr }
+    end
+    pcall(function()
+        xsound.set_volume(whisper.l, target)
+        xsound.set_volume(whisper.r, target)
+    end)
+end
+
+---------------------------------------------------------------------------
+-- "Last seen" marker
+---------------------------------------------------------------------------
+
+local MARK_RADIUS_M = 150
+local MARK_GAME_S = 600
+local MARK_TYPE = "red_location"
+local marks = {}
+
+function mark_last_seen(pos, name)
+    if not (pos and level.present() and xsmart and xsmart.get_named_smarts) then return end
+    local sim_actor = alife():actor()
+    local best, best_d = nil, MARK_RADIUS_M
+    local ok, by_name = pcall(function() return xsmart.get_named_smarts() end)
+    if not ok or type(by_name) ~= "table" then return end
+    for _, smart in pairs(by_name) do
+        if smart and smart.position and smart.id then
+            local d = smart.position:distance_to(pos)
+            if d < best_d and nemesis_utils.same_level(smart, sim_actor) == true then
+                best, best_d = smart, d
+            end
+        end
+    end
+    if not best then
+        dbg("Nemesis: no smart within %s m to mark the last known position.", tostring(MARK_RADIUS_M))
+        return
+    end
+    if level.map_has_object_spot(best.id, MARK_TYPE) ~= 0 then return end
+    level.map_add_object_spot(best.id, MARK_TYPE, "Last seen: " .. tostring(name or "Nemesis"))
+    marks[best.id] = nemesis_utils.game_seconds() + MARK_GAME_S
+    dbg("Nemesis: last known position marked near smart %s (%.0f m).", tostring(best.id), best_d)
+end
+
+function expire_marks()
+    if next(marks) == nil or not level.present() then return end
+    local now = nemesis_utils.game_seconds()
+    for id, at in pairs(marks) do
+        if now >= at then
+            level.map_remove_object_spot(id, MARK_TYPE)
+            marks[id] = nil
+        end
+    end
+end
+
+function reset_runtime()
+    whisper = nil
+    marks = {}
+    vanish_queue = {}
+    squad_cleanup = {}
+end
