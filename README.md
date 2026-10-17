@@ -36,7 +36,7 @@ Works with:
 2. Download the mod from the **[Latest Release](https://github.com/SirEndet/Nemesis-Wave-Spawn-System/releases/latest)**: under *Assets*, click the `NemesisWaveSpawnSystem_*.zip` file. (Older versions are on the [releases page](https://github.com/SirEndet/Nemesis-Wave-Spawn-System/releases).)
 3. In Mod Organizer 2, click **Install a new mod from an archive** (the CD icon) and pick the downloaded zip.
 4. Name the mod `Nemesis Wave Spawn System` and click **OK**. The zip is already laid out for MO2, so there is nothing else to set.
-5. Tick the mod in the left pane to enable it. Load order doesn't matter.
+5. Tick the mod in the left pane to enable it. Load order doesn't matter, as long as xlibs is installed and enabled.
 6. Start the game. Settings are under **MCM → Nemesis Wave Spawn System**.
 
 **Manual install:** unpack the release zip and copy its `gamedata` folder into an empty MO2 mod (right-click the left pane → *Create empty mod*), or into your Anomaly folder.
