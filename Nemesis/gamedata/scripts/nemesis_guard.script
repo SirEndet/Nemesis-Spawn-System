@@ -14,6 +14,7 @@ local refused_count = 0
 
 local function log_refusal(what, se_obj)
     refused_count = refused_count + 1
+    if not nemesis_utils.debug_on() then return end
     if refused_count <= 20 or refused_count % 25 == 0 then
         local tb = ""
         pcall(function() tb = debug.traceback("", 4) end)
@@ -61,7 +62,7 @@ local function install_release_guard()
 end
 
 ---------------------------------------------------------------------------
--- South cleanup exemption
+-- GAMMA "No Exos in the South"
 ---------------------------------------------------------------------------
 
 local south_exempt_installed = false
@@ -83,7 +84,7 @@ local function install_south_exemption()
 end
 
 ---------------------------------------------------------------------------
--- AlifePlus
+-- AlifePlus: this hunt's squad is ours
 ---------------------------------------------------------------------------
 local ap_owner_ready = false
 local function install_ap_owner()
@@ -101,7 +102,7 @@ local function install_ap_owner()
 end
 
 ---------------------------------------------------------------------------
--- MCM action boxes
+-- MCM action boxes: each acts once when ticked (rising edge), then unticks itself.
 ---------------------------------------------------------------------------
 local box_was = {}
 local function box(id)
@@ -141,7 +142,7 @@ function tick()
 end
 
 ---------------------------------------------------------------------------
--- Death reset
+-- Death reset: killed by a hunter -> the next loaded save starts again at cycle 1
 ---------------------------------------------------------------------------
 
 local DEATH_HIT_WINDOW_MS = 30000

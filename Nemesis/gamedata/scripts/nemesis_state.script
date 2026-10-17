@@ -102,10 +102,6 @@ end
 
 function member(id) return id ~= nil and S.m[id] or nil end
 function is_member(id) return id ~= nil and S.m[id] ~= nil end
-function is_hunter(id)
-    local r = id ~= nil and S.m[id]
-    return r and r.named or false
-end
 function name_of(id)
     local r = id ~= nil and S.m[id]
     return r and r.name or nil
@@ -170,7 +166,7 @@ end
 function load(mdata)
     reset()
     local s = mdata and mdata.nemesis_state
-    if not s then return {}, {} end
+    if not s then return {} end
     local vanish = load_ids(s.vanish)
 
     S.cycle = s.cycle or 1
@@ -185,7 +181,7 @@ function load(mdata)
 
     local hunters = load_ids(s.hunter_ids)
     local squad = load_ids(s.squad_ids)
-    if #hunters == 0 then return vanish, {} end
+    if #hunters == 0 then return vanish end
 
     local names = load_map(s.names)
     local cloak = load_map(s.cloak_vis)
@@ -220,5 +216,5 @@ function load(mdata)
             misses = 0,
         }
     end
-    return vanish, {}
+    return vanish
 end

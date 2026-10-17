@@ -8,6 +8,12 @@ local function dbg(...) nemesis_utils.log_msg(...) end
 -- Teleport burst
 ---------------------------------------------------------------------------
 
+local FX_KEEP = 16
+local function keep_fx(o)
+    S.fx[#S.fx + 1] = o
+    if #S.fx > FX_KEEP then table.remove(S.fx, 1) end
+end
+
 function play_retreat_fx(pos)
     if not pos or not db.actor then return end
     local spot = vector()
@@ -15,7 +21,7 @@ function play_retreat_fx(pos)
     local ok = pcall(function()
         local parti = particles_object("anomaly2\\teleport_out_00")
         parti:play_at_pos(spot)
-        S.fx[#S.fx + 1] = parti
+        keep_fx(parti)
     end)
     if not ok then dbg("Nemesis: retreat particle failed") end
     pcall(function()
@@ -24,7 +30,7 @@ function play_retreat_fx(pos)
         snd.volume = nemesis_utils.volume_setting("teleport_volume", 40)
         snd:play_at_pos(db.actor, spot)
         snd.volume = nemesis_utils.volume_setting("teleport_volume", 40)
-        S.fx[#S.fx + 1] = snd
+        keep_fx(snd)
     end)
 end
 
@@ -169,7 +175,7 @@ function remove_offline(ids)
 end
 
 ---------------------------------------------------------------------------
--- Cloak
+-- Cloak (MCM, on by default; always on for the boss)
 ---------------------------------------------------------------------------
 
 local CLOAK_MIN_M = 30
@@ -242,7 +248,6 @@ function whisper_stop()
 end
 
 function whisper_update(actor)
-    if not (xsound and xsound.create_sound) then return end
     local nearest = nil
     if actor and S.phase == "hunting" then
         for _, id in ipairs(S.hunter_ids) do
@@ -288,10 +293,10 @@ local MARK_TYPE = "red_location"
 local marks = {}
 
 function mark_last_seen(pos, name)
-    if not (pos and level.present() and xsmart and xsmart.get_named_smarts) then return end
+    if not (pos and level.present()) then return end
     local sim_actor = alife():actor()
     local best, best_d = nil, MARK_RADIUS_M
-    local ok, by_name = pcall(function() return xsmart.get_named_smarts() end)
+    local ok, by_name = pcall(xsmart.get_named_smarts)
     if not ok or type(by_name) ~= "table" then return end
     for _, smart in pairs(by_name) do
         if smart and smart.position and smart.id then

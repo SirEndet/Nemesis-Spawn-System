@@ -35,7 +35,7 @@ function roll()
 
     local grace = nemesis_mcm.get_number("grace_period", 12)
     if grace < 0 then grace = 0 end
-    local min_days = nemesis_mcm.get_number("boss_min_day", 3)
+    local min_days = nemesis_mcm.get_number("boss_min_day", 7)
     if min_days < 1 then min_days = 1 end
     if min_days > 7 then min_days = 7 end
     if not S.first_hunt or nemesis_utils.game_seconds() - S.first_hunt < (grace + min_days) * 86400 then return false end
@@ -111,7 +111,7 @@ function clear()
 end
 
 ---------------------------------------------------------------------------
--- Per tick: focus, look, sneak, dread
+-- Per tick (online, alive, not retreating): focus, look, sneak, dread
 ---------------------------------------------------------------------------
 local SNEAK_TRIGGER_M = 20
 local SNEAK_ATTACK_MS = 5000

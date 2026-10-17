@@ -48,7 +48,7 @@ local function spawn_allowed(gt)
 
         local cooldown = nemesis_mcm.get_number("retreat_cooldown", 24)
         if cooldown < 0 then cooldown = 0 end
-        if debug_mode then cooldown = 180 / 3600 end
+        if debug_mode then cooldown = 120 / 3600 end
         if now - S.last_retreat < cooldown * 3600 then
 
             local key = tostring(S.last_retreat) .. "/" .. tostring(cooldown)
@@ -70,34 +70,50 @@ end
 local SAFE_RADIUS_M   = 120
 local BASE_KEEP_OUT_M = 60
 
+local NO_BASES = {}
+local BASE_CACHE_MS = 60000
 local base_bypass_logged = false
+local base_cache, base_cache_level, base_cache_at = nil, nil, 0
+
+function forget_bases() base_cache, base_cache_level = nil, nil end
 local function base_smarts_on_level()
-    local out = {}
     if nemesis_mcm.get_bool("debug_mode", false) then
         if not base_bypass_logged then
             base_bypass_logged = true
             dbg("Nemesis: debug mode, base and trader safe zones are ignored for spawning.")
         end
-        return out
+        return NO_BASES
     end
     base_bypass_logged = false
-    if not (xsmart and xsmart.get_named_smarts and xsmart.is_base) then return out end
     local sim_actor = alife():actor()
-    local ok, by_name = pcall(function() return xsmart.get_named_smarts() end)
+    local ok_l, lname = pcall(xlevel.get_level_id, sim_actor)
+    if not ok_l then lname = nil end
+    local now = time_global()
+    if base_cache and lname ~= nil and base_cache_level == lname and now - base_cache_at < BASE_CACHE_MS then
+        return base_cache
+    end
+    local out = {}
+    local ok, by_name = pcall(xsmart.get_named_smarts)
     if not ok or type(by_name) ~= "table" then return out end
     for _, smart in pairs(by_name) do
         local base = false
         pcall(function() base = xsmart.is_base(smart) end)
         if base and smart.position and nemesis_utils.same_level(smart, sim_actor) == true then
-            out[#out + 1] = smart
+            local name = "?"
+            pcall(function() name = smart:name() end)
+            local p = smart.position
+            local pos = vector()
+            pos:set(p.x, p.y, p.z)
+            out[#out + 1] = { position = pos, name = name }
         end
     end
+    if lname ~= nil then base_cache, base_cache_level, base_cache_at = out, lname, now end
     return out
 end
 
 local function near_base(pos, radius, bases)
-    for _, smart in ipairs(bases) do
-        if smart.position:distance_to(pos) < radius then return smart end
+    for _, b in ipairs(bases) do
+        if b.position:distance_to(pos) < radius then return b end
     end
     return nil
 end
@@ -114,11 +130,7 @@ local function spawn_blocked(actor, ignore_bases)
         reason = "sleeping"
     elseif not ignore_bases then
         local base = near_base(actor:position(), SAFE_RADIUS_M, base_smarts_on_level())
-        if base then
-            local name = "?"
-            pcall(function() name = base:name() end)
-            reason = "within " .. SAFE_RADIUS_M .. " m of base " .. name
-        end
+        if base then reason = "within " .. SAFE_RADIUS_M .. " m of base " .. base.name end
     end
     if reason ~= blocked_logged then
         blocked_logged = reason
@@ -136,29 +148,35 @@ local WARN_STALE_MS = 600000
 local warn_spawn_at = nil
 local STATIC_SOUNDS = { "radio\\white_noise\\white_noise_heavy_fade_in", "radio\\white_noise\\white_noise_light", "ambient\\radar_1" }
 
+local function warning_pda() return nemesis_mcm.get_bool("warning_pda", false) end
+local function warning_audio() return nemesis_mcm.get_bool("warning_audio", true) end
+function warning_on() return warning_pda() or warning_audio() end
+
 local function give_warning(gt)
     local delay = math.random(WARN_MIN_S, WARN_MAX_S)
     warn_spawn_at = gt + delay * 1000
 
-    nemesis_utils.set_hunt_faction(nemesis_utils.faction_for_player())
+    S.faction = nemesis_utils.faction_for_player()
     local boss = nemesis_boss.roll_for_warning()
-    local snd = nemesis_utils.pick_sound("warning static", STATIC_SOUNDS)
-    local vol = nemesis_utils.volume_setting("warning_volume", 70)
+    local pda, audio = warning_pda(), warning_audio()
+    local snd = audio and nemesis_utils.pick_sound("warning static", STATIC_SOUNDS)
+    local vol = audio and nemesis_utils.volume_setting("warning_volume", 70) or 0
     if boss then
-        nemesis_utils.send_news(nemesis_utils.boss_warning_line(nemesis_utils.get_npc_name()), "Unknown frequency")
+        if pda then nemesis_utils.send_news(nemesis_utils.boss_warning_line(nemesis_utils.get_npc_name()), "Unknown frequency") end
 
-        if vol > 0 and xsound and xsound.play then
+        if vol > 0 then
             if snd then pcall(function() xsound.play(snd, { volume = vol }) end) end
             pcall(function() xsound.play("anomaly\\psy_antenna_voices_1_l", { volume = vol }) end)
             pcall(function() xsound.play("anomaly\\psy_antenna_voices_1_r", { volume = vol }) end)
         end
     else
-        nemesis_utils.send_news(nemesis_utils.warning_line(), "Unknown frequency")
-        if snd and vol > 0 and xsound and xsound.play then
+        if pda then nemesis_utils.send_news(nemesis_utils.warning_line(), "Unknown frequency") end
+        if snd and vol > 0 then
             pcall(function() xsound.play(snd, { volume = vol }) end)
         end
     end
-    dbg("Nemesis: arrival warning given%s, hunt in %s s.", boss and " (BOSS)" or "", tostring(delay))
+    dbg("Nemesis: arrival warning given%s (PDA %s, audio %s), hunt in %s s.", boss and " (BOSS)" or "",
+        pda and "on" or "off", audio and "on" or "off", tostring(delay))
 end
 
 ---------------------------------------------------------------------------
@@ -224,15 +242,7 @@ function member_ids(squad)
     local ids = {}
     if not squad then return ids end
     pcall(function()
-        if xsquad and xsquad.iterate_member_ids then
-            for mid in xsquad.iterate_member_ids(squad) do
-                if type(mid) == "number" then ids[#ids + 1] = mid end
-            end
-            return
-        end
-        if not squad.squad_members then return end
-        for a, b in squad:squad_members() do
-            local mid = (b and b.id) or (type(a) == "number" and a) or (type(a) == "userdata" and a.id)
+        for mid in xsquad.iterate_member_ids(squad) do
             if type(mid) == "number" then ids[#ids + 1] = mid end
         end
     end)
@@ -365,22 +375,8 @@ end
 
 local function arm_squad(squad)
     if not squad then return end
-    local armed = false
-    if xsquad and xsquad.set_target_actor then
-        pcall(function() xsquad.set_target_actor(squad, true) end)
-        pcall(function() armed = squad.scripted_target == "actor" end)
-    end
-    if not armed then
-        pcall(function()
-            squad.scripted_target = "actor"
-            squad.__lock = nil
-            squad.rush_to_target = true
-            squad.current_action = 0
-        end)
-    end
-    if xsmart and xsmart.assign_squad_to_smart then
-        pcall(function() xsmart.assign_squad_to_smart(squad, nil) end)
-    end
+    pcall(xsquad.set_target_actor, squad, true)
+    pcall(xsmart.assign_squad_to_smart, squad, nil)
     dbg("Nemesis: squad %s is scripted on the player and off the smart roster.", tostring(squad.id))
 end
 
@@ -392,14 +388,7 @@ function hold_guard_exemption()
     local needs = false
     pcall(function() needs = squad.scripted_target ~= "actor" end)
     if needs then
-        pcall(function()
-            if xsquad and xsquad.set_target_actor then
-                xsquad.set_target_actor(squad, true)
-            else
-                squad.scripted_target = "actor"
-                squad.__lock = nil
-            end
-        end)
+        pcall(xsquad.set_target_actor, squad, true)
         if not S.target_restore_logged then
             S.target_restore_logged = true
             dbg("Nemesis: restored the scripted target on squad %s.", tostring(id))
@@ -419,11 +408,10 @@ local function spawn_range()
 end
 
 local function pick_spawn_smart(actor)
-    if not (xsmart and xsmart.get_named_smarts) then return nil end
     local dmin, dmax = spawn_range()
     local apos = actor:position()
     local sim_actor = alife():actor()
-    local ok, by_name = pcall(function() return xsmart.get_named_smarts() end)
+    local ok, by_name = pcall(xsmart.get_named_smarts)
     if not ok or type(by_name) ~= "table" then return nil end
     local bases = base_smarts_on_level()
     local ring = {}
@@ -491,7 +479,6 @@ local function try_spawn(gt)
     end
 
     local faction = nemesis_utils.faction_for_player()
-    nemesis_utils.set_hunt_faction(faction)
     local squad_section = nemesis_utils.resolve_squad_section(faction)
     if not squad_section then
         if not warned_no_squad then
@@ -536,9 +523,7 @@ local function try_spawn(gt)
     local members = member_ids(squad)
     if #members == 0 then
         dbg("!Nemesis ERROR: squad %s has no stalkers.", tostring(squad.id))
-        if xsquad and xsquad.release_squad then
-            pcall(function() xsquad.release_squad(squad) end)
-        end
+        pcall(xsquad.release_squad, squad)
         S.sim_squad_id = nil
         S.phase = "idle"
         retry_later(gt)
@@ -548,7 +533,7 @@ local function try_spawn(gt)
     local chance = named_chance()
     local used_names = {}
 
-    local leader_boss = nemesis_boss.take_leader_roll(nemesis_mcm.get_bool("arrival_warning", true))
+    local leader_boss = nemesis_boss.take_leader_roll(warning_on())
     for i, mid in ipairs(members) do
         local named = (i == 1) or (math.random(100) <= chance)
         nemesis_state.add_member(mid, named, nemesis_utils.next_hunter_name(used_names, named))
@@ -601,7 +586,7 @@ end
 
 function idle_tick(gt, actor, slow)
     if slow then apply_decay() end
-    local warn_on = nemesis_mcm.get_bool("arrival_warning", true)
+    local warn_on = warning_on()
 
     if warn_spawn_at and gt - warn_spawn_at > WARN_STALE_MS then warn_spawn_at = nil end
     local committed = warn_on and warn_spawn_at ~= nil
@@ -620,4 +605,5 @@ end
 
 function reset_runtime()
     warn_spawn_at = nil
+    forget_bases()
 end

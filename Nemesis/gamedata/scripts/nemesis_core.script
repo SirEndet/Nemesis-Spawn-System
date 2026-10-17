@@ -12,12 +12,39 @@ local RETREAT_COVER_MS = 4000
 
 local loaded_flag = false
 local load_vanish = {}
-local load_cleanup = {}
 local next_tick = 0
 local next_slow = 0
 local chase_install_warned = false
 
 local function dbg(...) nemesis_utils.log_msg(...) end
+
+local XLIBS_API = {
+    xsquad = { "set_target_actor", "iterate_member_ids", "release_squad" },
+    xsmart = { "get_named_smarts", "is_base", "assign_squad_to_smart" },
+    xlevel = { "get_level_id" },
+    xsound = { "play", "create_sound", "set_volume", "release" },
+    xcombat = { "find_cover", "register_cover", "release_cover", "find_flee_lane", "get_track_pos",
+                "get_weapon_kind", "set_destination", "show_enemy", "COVER", "SNIPER_KINDS" },
+    xgraft = { "get_blocked_planners", "is_takeover_current" },
+}
+local xlibs_ok = nil
+local function check_xlibs()
+    if xlibs_ok ~= nil then return xlibs_ok end
+    local missing = {}
+    for mod, names in pairs(XLIBS_API) do
+        local lib = nil
+        pcall(function() lib = _G[mod] end)
+        for _, n in ipairs(names) do
+            if type(lib) ~= "table" or lib[n] == nil then missing[#missing + 1] = mod .. "." .. n end
+        end
+    end
+    xlibs_ok = #missing == 0
+    if not xlibs_ok then
+        table.sort(missing)
+        printf("!Nemesis ERROR: xlibs 1.9.1 or newer is required (missing: %s). The mod is off.", table.concat(missing, ", "))
+    end
+    return xlibs_ok
+end
 
 local function never_ignore_player(obj)
     pcall(function() save_var(obj, "xr_combat_ignore_enabled", false) end)
@@ -30,28 +57,33 @@ end
 local function release_id(id)
     local obj = level.object_by_id(id)
     if obj then pcall(function() obj:invulnerable(false) end) end
+    local cover = nemesis_utils.get_retreat_dest(id)
+    if cover then pcall(xcombat.release_cover, cover, id) end
     nemesis_utils.reset_chase(id)
     nemesis_chase.forget(id)
 end
 
+local function teleport_away(obj, id)
+    nemesis_fx.play_retreat_fx(obj:position())
+    pcall(function() obj:set_relation(game_object.neutral, db.actor) end)
+    nemesis_fx.make_invisible(obj)
+    nemesis_fx.queue_vanish(id, nemesis_fx.RETREAT_VANISH_MS)
+end
+
 local function release_extras()
-    local leaving, offline = {}, {}
-    for _, id in ipairs(S.squad_ids) do
+    local offline, ids = {}, {}
+    for i, id in ipairs(S.squad_ids) do ids[i] = id end
+    for _, id in ipairs(ids) do
         local obj = level.object_by_id(id)
         if obj and nemesis_fx.alive_obj(obj) then
-            nemesis_fx.play_retreat_fx(obj:position())
-            pcall(function() obj:set_relation(game_object.neutral, db.actor) end)
-            nemesis_fx.make_invisible(obj)
-            leaving[#leaving + 1] = id
+            teleport_away(obj, id)
         elseif not obj then
             offline[#offline + 1] = id
         end
         release_id(id)
+        nemesis_state.drop_member(id)
     end
-    for _, id in ipairs(leaving) do nemesis_state.drop_member(id) end
-    for _, id in ipairs(offline) do nemesis_state.drop_member(id) end
     S.squad_ids = {}
-    for _, id in ipairs(leaving) do nemesis_fx.queue_vanish(id, nemesis_fx.RETREAT_VANISH_MS) end
     nemesis_fx.remove_offline(offline)
 end
 
@@ -59,9 +91,7 @@ local function release_sim_squad()
     local id = S.sim_squad_id
     if id then
         local squad = alife():object(id)
-        if squad and xsquad and xsquad.release_squad then
-            pcall(function() xsquad.release_squad(squad) end)
-        end
+        if squad then pcall(xsquad.release_squad, squad) end
         if ap_api and ap_api.release_squad then
             pcall(function() ap_api.release_squad(id) end)
         end
@@ -72,22 +102,23 @@ end
 
 local function release_npc()
     nemesis_fx.reveal_all()
-
-    local b = S.boss_id
-    if b then
-        local o = level.object_by_id(b)
-        if o and nemesis_fx.alive_obj(o) then
-            nemesis_fx.play_retreat_fx(o:position())
-            nemesis_fx.make_invisible(o)
-            nemesis_fx.queue_vanish(b, nemesis_fx.RETREAT_VANISH_MS)
-        end
-    end
-    nemesis_boss.clear()
     local offline = {}
     for _, id in ipairs(S.hunter_ids) do
-        if not level.object_by_id(id) then offline[#offline + 1] = id end
+        local obj = level.object_by_id(id)
+        if not obj then
+            offline[#offline + 1] = id
+        elseif nemesis_fx.alive_obj(obj) then
+            local r = S.m[id]
+
+            if r and r.teleport_at then
+                nemesis_fx.queue_vanish(id, nemesis_fx.RETREAT_VANISH_MS)
+            else
+                teleport_away(obj, id)
+            end
+        end
         release_id(id)
     end
+    nemesis_boss.clear()
     S.hunter_ids = {}
     S.offline_since = nil
     S.pending_squad = nil
@@ -105,18 +136,11 @@ local function end_hunt(reason, escaped)
     elseif S.boss_hunt then next_cycle = math.max(1, S.cycle - 2) end
     dbg("Nemesis: hunt ended (%s). Cycle %s -> %s", reason, S.cycle, next_cycle)
     S.phase = "idle"
-    nemesis_fx.reveal_all()
-    release_extras()
-    release_sim_squad()
-    for _, id in ipairs(S.hunter_ids) do release_id(id) end
-    nemesis_state.clear_members()
+    release_npc()
     nemesis_utils.reset_chase()
-    S.offline_since = nil
     S.retreat_announced = false
     S.seen_online = nil
-    S.pending_squad = nil
     S.hunt_start = nil
-    nemesis_boss.clear()
     local now = nemesis_utils.game_seconds()
     if escaped then
 
@@ -126,7 +150,6 @@ local function end_hunt(reason, escaped)
         S.last_decay = nil
     end
     S.last_retreat = now
-    nemesis_damage.unseed_br()
 end
 
 ---------------------------------------------------------------------------
@@ -136,7 +159,7 @@ end
 local function teleport_out(obj, r)
     local id = r.id
     local cover = nemesis_utils.get_retreat_dest(id)
-    if cover and type(xcombat) == "table" and xcombat.release_cover then pcall(function() xcombat.release_cover(cover, id) end) end
+    if cover then pcall(xcombat.release_cover, cover, id) end
     nemesis_utils.set_retreat_dest(id, nil)
     nemesis_chase.set_wanted(id, false)
     pcall(function() obj:set_movement_type(move.stand) end)
@@ -161,12 +184,12 @@ local function begin_retreat(obj, r)
     pcall(function() obj:set_relation(game_object.neutral, db.actor) end)
 
     local cover = nil
-    if nemesis_mcm.get_bool("retreat_to_cover", true) and type(xcombat) == "table" and xcombat.find_cover then
+    if nemesis_mcm.get_bool("retreat_to_cover", true) then
         pcall(function()
             cover = xcombat.find_cover(obj, db.actor:position(), { selection = xcombat.COVER.NEAREST,
                 firing = false, radius = RETREAT_COVER_RADIUS_M, search_pos = obj:position() })
         end)
-        if cover and xcombat.register_cover and not xcombat.register_cover(cover, id) then cover = nil end
+        if cover and not xcombat.register_cover(cover, id) then cover = nil end
     end
     if cover then
         r.cover_until = time_global() + RETREAT_COVER_MS
@@ -199,8 +222,7 @@ local function process_deaths()
             if r.death.teleport then
                 local corpse = level.object_by_id(id)
                 if corpse then nemesis_fx.play_retreat_fx(corpse:position()) end
-                nemesis_utils.reset_chase(id)
-                nemesis_chase.forget(id)
+                release_id(id)
                 nemesis_state.drop_member(id)
                 nemesis_fx.queue_vanish(id, nemesis_fx.DEAD_BODY_DELAY_MS)
                 if S.phase == "hunting" and #S.hunter_ids == 0 then last_gone = true end
@@ -248,18 +270,6 @@ local function hunt_time_up()
     local boss_alive = boss_obj ~= nil and nemesis_fx.alive_obj(boss_obj)
     local boss_name = boss and nemesis_state.name_of(boss)
     local boss_pic = boss_alive and nemesis_boss.icon(boss) or nil
-    local ids = {}
-    for _, id in ipairs(S.hunter_ids) do ids[#ids + 1] = id end
-    release_npc()
-    for _, id in ipairs(ids) do
-        local obj = level.object_by_id(id)
-        if obj and nemesis_fx.alive_obj(obj) then
-            nemesis_fx.play_retreat_fx(obj:position())
-            pcall(function() obj:set_relation(game_object.neutral, db.actor) end)
-            nemesis_fx.make_invisible(obj)
-            nemesis_fx.queue_vanish(id, nemesis_fx.RETREAT_VANISH_MS)
-        end
-    end
     if boss_alive then
         nemesis_utils.send_news(nemesis_utils.boss_escape_line(), boss_name, boss_pic)
     else
@@ -269,7 +279,7 @@ local function hunt_time_up()
 end
 
 local function time_limit_reached()
-    local hours = nemesis_mcm.get_number("hunt_duration", 4)
+    local hours = nemesis_mcm.get_number("hunt_duration", 6)
     if hours < 4 then hours = 4 end
     if hours > 12 then hours = 12 end
     local now = nemesis_utils.game_seconds()
@@ -315,6 +325,7 @@ local function manage_hunter(id, r, gt, actor, retreat_health)
     local obj = level.object_by_id(id)
     if not alife():object(id) then
         dbg("Nemesis: hunter %s has no server object, dropping.", tostring(id))
+        release_id(id)
         nemesis_state.drop_member(id)
         return false, false
     end
@@ -324,8 +335,7 @@ local function manage_hunter(id, r, gt, actor, retreat_health)
         if r.death and r.death.teleport then return true, true end
         if r.death or r.dead or r.inited then
             dbg("Nemesis: hunter %s is dead, body stays, dropping from the hunt.", tostring(id))
-            nemesis_utils.reset_chase(id)
-            nemesis_chase.forget(id)
+            release_id(id)
             nemesis_state.drop_member(id)
             return false, false
         end
@@ -344,8 +354,7 @@ local function manage_hunter(id, r, gt, actor, retreat_health)
         end
         dbg("Nemesis: '%s' is online (health %s). No retreat for %ss.", r.name or "A hunter",
             (hp0 and string.format("%.2f", hp0)) or "unread", tostring(RETREAT_GRACE_MS / 1000))
-        pcall(function() obj:set_relation(game_object.enemy, actor) end)
-        pcall(function() actor:set_relation(game_object.enemy, obj) end)
+
         never_ignore_player(obj)
     end
 
@@ -393,8 +402,6 @@ local function manage_extra(id, r, actor)
     if not (extra and nemesis_fx.alive_obj(extra)) then return end
     if not r.inited then
         r.inited = true
-        pcall(function() extra:set_relation(game_object.enemy, actor) end)
-        pcall(function() actor:set_relation(game_object.enemy, extra) end)
         never_ignore_player(extra)
     end
     if not r.role_set then
@@ -440,9 +447,11 @@ local function manage(gt, actor, slow)
         call_off(gt, "player left the level, removing the squad.", 10000)
         return
     end
-    if slow then nemesis_spawn.apply_names() end
+    if slow then
+        nemesis_spawn.apply_names()
 
-    nemesis_spawn.hold_guard_exemption()
+        nemesis_spawn.hold_guard_exemption()
+    end
 
     local any_online = false
     local retreat_health = nemesis_utils.get_retreat_health(S.cycle)
@@ -484,6 +493,7 @@ end
 -- Tick and callbacks
 ---------------------------------------------------------------------------
 local function tick()
+    if not check_xlibs() then return end
     nemesis_guard.tick()
     local actor = db.actor
     if not actor or not actor:alive() or not alife() then return end
@@ -517,7 +527,7 @@ end
 
 local function on_se_unregister(se_obj, type_name)
     local id = se_obj and se_obj.id
-    if not id or S.phase == "idle" or not nemesis_state.is_member(id) then return end
+    if not id or S.phase == "idle" or not nemesis_utils.debug_on() or not nemesis_state.is_member(id) then return end
     local tb = ""
     pcall(function() tb = debug.traceback("", 2) end)
     dbg("!Nemesis DIAG: hunt member %s unregistered (%s).%s", tostring(id), tostring(type_name), tb or "")
@@ -540,16 +550,16 @@ local function on_first_update()
     if not loaded_flag then
 
         nemesis_state.reset()
-        load_vanish, load_cleanup = {}, {}
+        load_vanish = {}
     end
     nemesis_fx.reset_runtime()
     nemesis_spawn.reset_runtime()
     nemesis_boss.reset_runtime()
     for _, id in ipairs(load_vanish) do nemesis_fx.queue_vanish(id, 2000) end
-    for _, id in ipairs(load_cleanup) do nemesis_fx.queue_squad_cleanup(id) end
-    load_vanish, load_cleanup = {}, {}
+    load_vanish = {}
     nemesis_guard.apply_death_reset()
     nemesis_mcm.invalidate()
+    nemesis_mcm.sync_difficulty()
     nemesis_chase.reset_all()
     loaded_flag = false
     next_tick = 0
@@ -564,8 +574,7 @@ end
 local function load_state(mdata)
     nemesis_chase.reset_all()
     loaded_flag = true
-    load_vanish, load_cleanup = nemesis_state.load(mdata)
-    nemesis_utils.set_hunt_faction(S.faction or "monolith")
+    load_vanish = nemesis_state.load(mdata)
 end
 
 function on_game_start()
@@ -578,11 +587,9 @@ function on_game_start()
     RegisterScriptCallback("npc_on_net_destroy", on_npc_net_destroy)
     RegisterScriptCallback("npc_on_before_hit", nemesis_damage.on_before_hit)
     RegisterScriptCallback("npc_on_hit_callback", nemesis_damage.on_hunter_hit)
+    RegisterScriptCallback("npc_shot_dispersion", nemesis_damage.on_shot_dispersion)
     RegisterScriptCallback("npc_on_death_callback", on_death)
     RegisterScriptCallback("actor_on_hit_callback", nemesis_guard.on_actor_hit)
     RegisterScriptCallback("actor_on_before_death", nemesis_guard.on_actor_before_death)
     RegisterScriptCallback("server_entity_on_unregister", on_se_unregister)
 end
-
-function is_named_hunter_obj(obj) return nemesis_damage.is_named_hunter_obj(obj) end
-function hunter_br_now() return nemesis_damage.hunter_br_now() end

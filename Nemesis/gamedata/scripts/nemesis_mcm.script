@@ -6,21 +6,26 @@ local function options()
         gr = {
             { id = "general", sh = true, text = "ui_mcm_nemesis_page_general", gr = {
                 { id = "title", type = "slide", link = "ui_options_slider_player", text = "ui_mcm_nemesis_title", size = {512, 50}, spacing = 20 },
+                { id = "difficulty", type = "list", val = 0, def = "medium", no_str = true, hint = "nemesis_difficulty",
+                  on_selection_functor = { on_difficulty_selected },
+                  content = { { "easy", "ui_mcm_nemesis_difficulty_easy" }, { "medium", "ui_mcm_nemesis_difficulty_medium" },
+                              { "hard", "ui_mcm_nemesis_difficulty_hard" }, { "custom", "ui_mcm_nemesis_difficulty_custom" } } },
                 { id = "teleport_volume", type = "track", val = 2, def = 40, min = 0, max = 100, step = 5, prec = 0, hint = "nemesis_teleport_volume" },
                 { id = "whisper_volume", type = "track", val = 2, def = 60, min = 0, max = 100, step = 5, prec = 0, hint = "nemesis_whisper_volume" },
                 { id = "warning_volume", type = "track", val = 2, def = 70, min = 0, max = 100, step = 5, prec = 0, hint = "nemesis_warning_volume" },
-                { id = "arrival_warning", type = "check", val = 1, def = true, hint = "nemesis_arrival_warning" },
+                { id = "warning_audio", type = "check", val = 1, def = true, hint = "nemesis_warning_audio" },
+                { id = "warning_pda", type = "check", val = 1, def = false, hint = "nemesis_warning_pda" },
                 { id = "hd_icon", type = "check", val = 1, def = false, hint = "nemesis_hd_icon" },
                 { id = "grace_period", type = "track", val = 2, def = 12, min = 0, max = 21, step = 1, prec = 0, hint = "nemesis_grace_period" },
                 { id = "retreat_cooldown", type = "track", val = 2, def = 24, min = 0, max = 72, step = 1, prec = 0, hint = "nemesis_retreat_cooldown" },
-                { id = "hunt_duration", type = "track", val = 2, def = 4, min = 4, max = 12, step = 1, prec = 0, hint = "nemesis_hunt_duration" },
+                { id = "hunt_duration", type = "track", val = 2, def = 6, min = 4, max = 12, step = 1, prec = 0, hint = "nemesis_hunt_duration" },
             } },
             { id = "boss", sh = true, text = "ui_mcm_nemesis_page_boss", gr = {
                 { id = "title", type = "slide", link = "ui_options_slider_player", text = "ui_mcm_nemesis_title", size = {512, 50}, spacing = 20 },
                 { id = "npc_name", type = "input", val = 0, def = "Bogdan Kravets", hint = "nemesis_npc_name" },
                 { id = "boss_chance", type = "track", val = 2, def = 2, min = 0, max = 20, step = 1, prec = 0, hint = "nemesis_boss_chance" },
                 { id = "boss_toughness", type = "track", val = 2, def = 30, min = 0, max = 100, step = 5, prec = 0, hint = "nemesis_boss_toughness" },
-                { id = "boss_min_day", type = "track", val = 2, def = 3, min = 1, max = 7, step = 1, prec = 0, hint = "nemesis_boss_min_day" },
+                { id = "boss_min_day", type = "track", val = 2, def = 7, min = 1, max = 7, step = 1, prec = 0, hint = "nemesis_boss_min_day" },
                 { id = "boss_sneak_chance", type = "track", val = 2, def = 50, min = 0, max = 100, step = 5, prec = 0, hint = "nemesis_boss_sneak_chance" },
             } },
             { id = "combat", sh = true, text = "ui_mcm_nemesis_page_combat", gr = {
@@ -28,6 +33,7 @@ local function options()
                 { id = "retreat_health", type = "track", val = 2, def = 25, min = 5, max = 60, step = 5, prec = 0, hint = "nemesis_retreat_health" },
                 { id = "escalation_speed", type = "track", val = 2, def = 1.1, min = 1.0, max = 2.0, step = 0.05, prec = 2, hint = "nemesis_escalation_speed" },
                 { id = "max_escalation", type = "track", val = 2, def = 3, min = 1, max = 10, step = 0.5, prec = 1, hint = "nemesis_max_escalation" },
+                { id = "accuracy_boost", type = "track", val = 2, def = 20, min = 0, max = 40, step = 1, prec = 0, hint = "nemesis_accuracy_boost" },
                 { id = "reset_on_death", type = "check", val = 1, def = true, hint = "nemesis_reset_on_death" },
                 { id = "reset_escalation_now", type = "check", val = 1, def = false, hint = "nemesis_reset_escalation_now" },
                 { id = "decay_days", type = "track", val = 2, def = 1, min = 0, max = 14, step = 1, prec = 0, hint = "nemesis_decay_days" },
@@ -64,58 +70,170 @@ local function options()
 end
 
 function on_mcm_load()
+    register_apply_handler()
     return options()
 end
 
 local PAGE_OF = {}
 for _, page in ipairs(options().gr) do
     for _, o in ipairs(page.gr) do
-        if o.val then PAGE_OF[o.id] = { page = page.id, val = o.val } end
+        if o.val then PAGE_OF[o.id] = page.id end
     end
 end
 
 function path(id)
-    local e = PAGE_OF[id]
-    return e and ("nemesis/" .. e.page .. "/" .. id) or ("nemesis/" .. id)
+    local page = PAGE_OF[id]
+    return page and ("nemesis/" .. page .. "/" .. id) or ("nemesis/" .. id)
 end
 
-local migrated = false
-function migrate()
-    if migrated then return end
-    local cfg = axr_main and axr_main.config
-    if not cfg then return end
-    migrated = true
-    local moved = 0
+DIFFICULTY = {
+    easy = { grace_period = 18, retreat_cooldown = 48, hunt_duration = 4, escalation_speed = 1.05,
+             max_escalation = 2, decay_days = 1, retreat_health = 30, br_pct_cap = 15, accuracy_boost = 10,
+             boss_chance = 1, boss_min_day = 7, named_chance = 15,
+             squad_w1 = 50, squad_w2 = 25, squad_w3 = 14, squad_w4 = 10, squad_w5 = 6 },
+    medium = { grace_period = 12, retreat_cooldown = 24, hunt_duration = 6, escalation_speed = 1.1,
+               max_escalation = 3, decay_days = 1, retreat_health = 25, br_pct_cap = 25, accuracy_boost = 20,
+               boss_chance = 2, boss_min_day = 7, named_chance = 25,
+               squad_w1 = 50, squad_w2 = 25, squad_w3 = 14, squad_w4 = 10, squad_w5 = 6 },
+    hard = { grace_period = 9, retreat_cooldown = 24, hunt_duration = 8, escalation_speed = 1.2,
+             max_escalation = 5, decay_days = 1, retreat_health = 20, br_pct_cap = 35, accuracy_boost = 30,
+             boss_chance = 4, boss_min_day = 4, named_chance = 40,
+             squad_w1 = 30, squad_w2 = 25, squad_w3 = 20, squad_w4 = 15, squad_w5 = 10 },
+}
+
+local APPLIED_SECTION, APPLIED_KEY = "nemesis", "difficulty_applied"
+local applied_mem = nil
+
+local function read_applied()
+    local ok, v = pcall(function() return axr_main.config:r_value(APPLIED_SECTION, APPLIED_KEY, 0) end)
+    if not ok then return applied_mem end
+    if type(v) == "string" and v ~= "" then return v end
+    return nil
+end
+
+local function write_applied(level)
+    applied_mem = level
     pcall(function()
-        for id, e in pairs(PAGE_OF) do
-            local new = path(id)
-            if cfg:r_value("mcm", new, e.val) == nil then
-                local old = cfg:r_value("mcm", "nemesis/" .. id, e.val)
-                if old ~= nil then
-                    cfg:w_value("mcm", new, old)
-                    moved = moved + 1
-                end
-            end
-        end
-        if moved > 0 then cfg:save() end
+        axr_main.config:w_value(APPLIED_SECTION, APPLIED_KEY, level)
+        axr_main.config:save()
     end)
-    if moved > 0 and printf then printf("Nemesis: %s settings moved to the new MCM pages.", tostring(moved)) end
+end
+
+local function set_value(id, v)
+    pcall(function() ui_mcm.set(path(id), v) end)
+end
+
+local function raw_number(id)
+    local v = nil
+    pcall(function() v = tonumber(ui_mcm.get(path(id))) end)
+    return v
+end
+
+local function matches(level)
+    local preset = DIFFICULTY[level]
+    if not preset then return false end
+    for id, want in pairs(preset) do
+        local have = raw_number(id)
+        if have == nil or math.abs(have - want) > 0.001 then return false end
+    end
+    return true
+end
+
+local function current_difficulty()
+    local v = nil
+    pcall(function() v = ui_mcm.get(path("difficulty")) end)
+    if v == "easy" or v == "medium" or v == "hard" or v == "custom" then return v end
+    return "medium"
+end
+
+local function log(...)
+    if printf and get_bool("debug_logs", false) then printf(...) end
+end
+
+function sync_difficulty(picked)
+    if not ui_mcm then return end
+    local cur = current_difficulty()
+    local last = read_applied()
+    local apply = cur ~= "custom" and (picked or (last ~= nil and cur ~= last) or (last == nil and cur ~= "medium"))
+    if apply then
+        for id, v in pairs(DIFFICULTY[cur]) do set_value(id, v) end
+        write_applied(cur)
+        invalidate()
+        log("Nemesis: difficulty %s applied (last applied: %s).", cur, tostring(last))
+        return
+    end
+    if cur ~= "custom" and not matches(cur) then
+        set_value("difficulty", "custom")
+        write_applied("custom")
+        invalidate()
+        log("Nemesis: difficulty %s no longer matches its settings (changed by hand): Custom.", cur)
+        return
+    end
+    if last ~= cur then write_applied(cur) end
 end
 
 local cache = {}
 local cache_at = nil
 local CACHE_MS = 5000
 
+local version = 0
+
 function invalidate()
     cache = {}
     cache_at = nil
+    version = version + 1
 end
 
-function on_option_change() invalidate() end
+function settings_version() return version end
+
+function on_option_change()
+    invalidate()
+    sync_difficulty()
+end
+
+local main_menu_ref = nil
+local function remember_main_menu(mm) main_menu_ref = mm end
+
+local function mcm_window()
+    local w = nil
+    pcall(function() w = main_menu_ref and main_menu_ref.mcm_dlg end)
+    if w and w.CacheValue and w.Reset_opt then return w end
+    return nil
+end
+
+function on_difficulty_selected(opt_path, opt, value, v)
+    local preset = DIFFICULTY[value]
+    if not preset then return end
+    local gui = mcm_window()
+    if not gui then return end
+    for id, val in pairs(preset) do
+        local page = PAGE_OF[id]
+        if page then
+            pcall(function()
+                local p = "nemesis/" .. page
+                gui:CacheValue(p, id, val, ui_mcm.get_opt_table(p .. "/" .. id))
+            end)
+        end
+    end
+    pcall(function() gui:Reset_opt(gui.last_curr_tree, gui.last_path) end)
+    pcall(function() gui:UpdatePending() end)
+end
+
+function on_mcm_option_change(changes)
+    invalidate()
+    local picked = type(changes) == "table" and changes[path("difficulty")] ~= nil
+    sync_difficulty(picked)
+end
+
+function register_apply_handler()
+    if not (ui_mcm and ui_mcm.get) then return end
+    RegisterScriptCallback("mcm_option_change", on_mcm_option_change)
+    RegisterScriptCallback("main_menu_on_init", remember_main_menu)
+end
 
 function on_game_start()
-    migrate()
     RegisterScriptCallback("on_option_change", on_option_change)
+    register_apply_handler()
 end
 
 function get_setting(id, default)

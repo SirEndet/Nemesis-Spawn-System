@@ -4,8 +4,10 @@ local DEFAULT_NAME = "Bogdan Kravets"
 
 local epoch = nil
 
+function debug_on() return nemesis_mcm.get_bool("debug_logs", false) end
+
 function log_msg(...)
-    if not nemesis_mcm.get_bool("debug_logs", false) then return end
+    if not debug_on() then return end
     printf(...)
 end
 
@@ -22,7 +24,7 @@ function game_seconds()
 end
 
 function same_level(se_a, se_b)
-    if not se_a or not se_b or not xlevel then return nil end
+    if not se_a or not se_b then return nil end
     local ok, a, b = pcall(function()
         return xlevel.get_level_id(se_a), xlevel.get_level_id(se_b)
     end)
@@ -70,7 +72,7 @@ local RANKS = {
 }
 
 local function rank()
-    local list = RANKS[nemesis_state.S.faction or "monolith"] or RANKS.monolith
+    local list = RANKS[nemesis_state.S.faction] or RANKS.monolith
     return list[math.random(#list)]
 end
 
@@ -201,26 +203,9 @@ function player_br_stats()
 end
 
 ---------------------------------------------------------------------------
--- Spawn section lookup
+-- Spawn sections
 ---------------------------------------------------------------------------
 
-local function section_ok(sect)
-    return sect and sect ~= "" and ini_sys:section_exist(sect)
-end
-
-local function ini_string(sect, key)
-    local ok, val = pcall(function() return ini_sys:r_string_ex(sect, key) end)
-    if ok and type(val) == "string" and val ~= "" then return val end
-    return nil
-end
-
-local function has_story_id(sect)
-    return ini_string(sect, "story_id") ~= nil
-end
-
-local hunt_faction = "monolith"
-function set_hunt_faction(f) hunt_faction = (f == "isg") and "isg" or "monolith" end
-function get_hunt_faction() return hunt_faction end
 function faction_for_player()
     local comm = nil
     pcall(function() comm = get_actor_true_community() end)
@@ -229,82 +214,14 @@ function faction_for_player()
     return comm == "monolith" and "isg" or "monolith"
 end
 
-local function generic_member(sect, faction)
-    faction = faction or "monolith"
-    if not section_ok(sect) or has_story_id(sect) then return false end
+local function hunt_faction() return nemesis_state.S.faction == "isg" and "isg" or "monolith" end
 
-    local cd = ini_string(sect, "custom_data")
-    if cd and cd ~= "default_custom_data.ltx" then return false end
-    local low = string.lower(sect)
-    if string.find(low, "phantom", 1, true) then return false end
-    if ini_string(sect, "class") ~= "AI_STL_S" then return false end
-    if string.find(low, faction, 1, true) then return true end
-    if faction == "monolith" and string.find(low, "nemesis_stalker", 1, true) then return true end
-    return ini_string(sect, "community") == faction
-end
-
-local FALLBACK_SQUADS = {
-    monolith = { "monolith_sim_squad_novice", "monolith_sim_squad_advanced", "monolith_sim_squad_veteran", "simulation_monolith_squad" },
-    isg = { "isg_sim_squad_novice", "isg_sim_squad_advanced", "isg_sim_squad_veteran" },
-}
-local warned_squad_fallback = false
-
-local function squad_target_is_free(sec)
-    if not ini_sys:line_exist(sec, "target_smart") then return true end
-    local v = ini_sys:r_string_ex(sec, "target_smart")
-    if not v or v == "" then return true end
-    return string.lower(v) == "nil"
-end
-
-local function listed_sections_exist(sec, key)
-    local v = ini_sys:r_string_ex(sec, key)
-    if not v or v == "" then return false end
-    for s in string.gmatch(v, "[^,%s]+") do
-        if not ini_sys:section_exist(s) then return false end
-    end
-    return true
-end
-
-local function squad_is_safe(sec, faction)
-    faction = faction or "monolith"
-    if not section_ok(sec) then return false end
-    if ini_sys:line_exist(sec, "story_id") then return false end
-    if not squad_target_is_free(sec) then return false end
-    local low = string.lower(sec)
-    if string.find(low, "protector", 1, true) then return false end
-    if string.find(low, "camper", 1, true) then return false end
-    if string.find(low, "brain", 1, true) then return false end
-    if string.find(low, "ambush", 1, true) then return false end
-
-    local match
-    if ini_sys:line_exist(sec, "faction") then
-        match = ini_sys:r_string(sec, "faction") == faction
-    else
-        match = string.find(low, faction, 1, true) ~= nil
-    end
-    if not match then return false end
-    local listed = false
-    if ini_sys:line_exist(sec, "npc") then listed = listed_sections_exist(sec, "npc") end
-    if not listed and ini_sys:line_exist(sec, "npc_random") then listed = listed_sections_exist(sec, "npc_random") end
-    return listed
-end
+local SQUADS = { monolith = "nemesis_hunter_squad", isg = "nemesis_hunter_squad_isg" }
 
 function resolve_squad_section(faction)
-    faction = faction or "monolith"
-    local own = faction == "isg" and "nemesis_hunter_squad_isg" or "nemesis_hunter_squad"
-    if squad_is_safe(own, faction) then
-        return own
-    end
-    for _, sec in ipairs(FALLBACK_SQUADS[faction] or {}) do
-        if squad_is_safe(sec, faction) then
-            if not warned_squad_fallback then
-                warned_squad_fallback = true
-                log_msg("Nemesis: %s is not usable, using %s.", own, sec)
-            end
-            return sec
-        end
-    end
-    log_msg("!Nemesis ERROR: no safe %s squad section, nothing was spawned.", faction)
+    local sec = SQUADS[faction] or SQUADS.monolith
+    if ini_sys:section_exist(sec) then return sec end
+    log_msg("!Nemesis ERROR: squad section %s not found (squad_descr_nemesis.ltx is not loaded).", sec)
     return nil
 end
 
@@ -315,10 +232,9 @@ local MEMBER_POOL = {
 }
 
 function pick_member_section(faction)
-    faction = faction or "monolith"
     local pool = {}
-    for _, sect in ipairs(MEMBER_POOL[faction] or {}) do
-        if generic_member(sect, faction) then pool[#pool + 1] = sect end
+    for _, sect in ipairs(MEMBER_POOL[faction] or MEMBER_POOL.monolith) do
+        if ini_sys:section_exist(sect) then pool[#pool + 1] = sect end
     end
     if #pool == 0 then return nil end
     return pool[math.random(#pool)]
@@ -335,7 +251,12 @@ local SNEAK_REFRESH_MS = 1500
 local SNEAK_SLOW_M = 45
 local SPRINT_FROM_M = 50
 local CLOSE_THREAT_M = 30
-local SIGHT_LINGER_MS = 12000
+
+local CONTACT_LINGER_MS = 8000
+local HIT_CONTACT_MS = 1500
+
+local SHOW_EVERY_MS = 1000
+local HOLD_MAX_MS = 4000
 local SCAN_MS = 500
 local fight_memo = {}
 
@@ -474,29 +395,56 @@ function combat_owns(npc)
     return memo.res
 end
 
+local function hit_contact(id, now)
+    local r = nemesis_state.member(id)
+    if not (r and r.hit_at and now - r.hit_at < HIT_CONTACT_MS) then return false end
+    return r.hit_by_player == true or not focus[id]
+end
+
+local function _show_enemy(npc, enemy) return xcombat.show_enemy(npc, enemy) end
+
 function combat_owns_now(npc, memo, now)
     local id = npc:id()
     if sneak_active(id) then return false end
-    local okb, be = pcall(_best_enemy, npc)
-    if not okb or not be then return false end
     local range = fight_range()
-    local fight = sees_player(npc, range)
-    if not fight and not focus[id] then
+    local sees = sees_player(npc, range)
+    local hit = hit_contact(id, now)
+    local contact = sees or hit
+    if not contact and not focus[id] then
         if now - memo.scan_at >= SCAN_MS then
             memo.scan_at = now
             memo.scan_hit = hostile_near(npc, range)
         end
-        fight = memo.scan_hit
+        contact = memo.scan_hit
     end
-    if fight then
-        memo.last_fight = now
-        return true
+    if contact then memo.last_fight = now end
+    local okb, be = pcall(_best_enemy, npc)
+    if okb and be then
+        memo.hold_start, memo.holding = nil, false
+        return contact or now - memo.last_fight < CONTACT_LINGER_MS
     end
-    return now - memo.last_fight < SIGHT_LINGER_MS
+    local r = (sees or hit) and nemesis_state.member(id)
+    local player_contact = sees or (hit and r and r.hit_by_player == true)
+    if player_contact and db.actor then
+        if now - (memo.shown_at or -1000000) >= SHOW_EVERY_MS then
+            memo.shown_at = now
+            pcall(_show_enemy, npc, db.actor)
+        end
+        memo.hold_start = memo.hold_start or now
+        memo.holding = now - memo.hold_start < HOLD_MAX_MS
+    else
+        memo.hold_start, memo.holding = nil, false
+    end
+    return false
+end
+
+function contact_hold(id)
+    local memo = id and fight_memo[id]
+    return memo ~= nil and memo.holding == true
 end
 
 ---------------------------------------------------------------------------
--- Tactics
+-- Tactics (Batch D), built on xlibs xcombat (the primitives AlifeTactics uses)
 ---------------------------------------------------------------------------
 
 local LKP_GIVE_UP_MS = 60000
@@ -507,11 +455,9 @@ function set_role(id, role) if id then roles[id] = role end end
 function set_retreat_dest(id, vid) if id then retreat_dest[id] = vid end end
 function get_retreat_dest(id) return id and retreat_dest[id] or nil end
 
-local function has_xcombat(fn) return type(xcombat) == "table" and type(xcombat[fn]) == "function" end
-
 local function player_target(npc, actor)
     local live_pos, live_lv = actor:position(), actor:level_vertex_id()
-    if not nemesis_mcm.get_bool("last_known_chase", true) or not has_xcombat("get_track_pos") then
+    if not nemesis_mcm.get_bool("last_known_chase", true) then
         return live_pos, live_lv, "live"
     end
     local mt, sees = 0, false
@@ -526,7 +472,6 @@ local function player_target(npc, actor)
 end
 
 local function flank_vertex(npc, tpos, role)
-    if not has_xcombat("find_flee_lane") then return nil end
     local npos = npc:position()
     local dx, dz = tpos.x - npos.x, tpos.z - npos.z
     local d = math.sqrt(dx * dx + dz * dz)
@@ -541,10 +486,9 @@ local function flank_vertex(npc, tpos, role)
 end
 
 local function sniper_vertex(npc, tpos)
-    if not (has_xcombat("get_weapon_kind") and has_xcombat("find_cover")) then return nil end
     local kind = nil
     pcall(function() kind = xcombat.get_weapon_kind(npc) end)
-    if not (kind and xcombat.SNIPER_KINDS and xcombat.SNIPER_KINDS[kind]) then return nil end
+    if not (kind and xcombat.SNIPER_KINDS[kind]) then return nil end
     local hold = math.max(30, fight_range() - SNIPER_MARGIN_M)
     if npc:position():distance_to(tpos) > hold then return nil end
     local vid = nil
@@ -614,13 +558,23 @@ local function state_exists(name)
     return ok and res == true
 end
 
+local STATE_ORDER = {
+    far = { "sprint", "rush", "assault", "run" },
+    near = { "rush", "assault", "run" },
+    sneak = { "sneak_run", "sneak", "assault", "run" },
+}
+local picked_state = {}
 local function pick_state(far, sneaky)
-    local order = far and { "sprint", "rush", "assault", "run" } or { "rush", "assault", "run" }
-    if sneaky then order = { "sneak_run", "sneak", "assault", "run" } end
-    for _, name in ipairs(order) do
-        if state_exists(name) then return name end
+    local key = sneaky and "sneak" or (far and "far" or "near")
+    local name = picked_state[key]
+    if name == nil then
+        name = false
+        for _, n in ipairs(STATE_ORDER[key]) do
+            if state_exists(n) then name = n; break end
+        end
+        if name then picked_state[key] = name end
     end
-    return nil
+    return name or nil
 end
 
 local route_logged = {}
@@ -632,10 +586,12 @@ local function apply_state(npc, slot, far, sneaky)
             state_mgr.set_state(npc, name, nil, nil, nil, { fast_set = true })
         end)
     end
-    local route = ok and ("state_mgr " .. tostring(name)) or "raw run (no state manager)"
-    if route_logged[npc:id()] ~= route then
-        route_logged[npc:id()] = route
-        log_msg("Nemesis: chase movement for %s via %s.", tostring(npc:id()), route)
+    if debug_on() then
+        local route = ok and ("state_mgr " .. tostring(name)) or "raw run (no state manager)"
+        if route_logged[npc:id()] ~= route then
+            route_logged[npc:id()] = route
+            log_msg("Nemesis: chase movement for %s via %s.", tostring(npc:id()), route)
+        end
     end
     if ok then
         slot.state = name
@@ -680,18 +636,32 @@ function drive_chase(npc, actor)
             npc:set_desired_position()
             npc:set_desired_direction()
         end)
-        if has_xcombat("set_destination") then
-            pcall(function() xcombat.set_destination(npc, cover) end)
-        else
-            send_to(npc, cover)
-        end
+        pcall(function() xcombat.set_destination(npc, cover) end)
         return apply_state(npc, slot, true), false
     end
 
     if combat_owns(npc) then
         slot.was_fighting = true
+        slot.holding = nil
         return nil, nil
     end
+
+    if contact_hold(id) then
+        if not slot.holding then
+            slot.holding = true
+            pcall(function()
+                npc:set_desired_position()
+                npc:set_desired_direction()
+            end)
+            local here = nil
+            pcall(function() here = npc:level_vertex_id() end)
+            if here and here < 4294967295 then send_to(npc, here) end
+            apply_state(npc, slot, false, false)
+            slot.was_fighting = true
+        end
+        return true, false
+    end
+    slot.holding = nil
 
     if slot.was_fighting then
         slot.was_fighting = nil
@@ -715,10 +685,6 @@ function drive_chase(npc, actor)
         slot.pos = pos
         slot.at = gt
         refreshed = true
-        pcall(function() npc:set_relation(game_object.enemy, actor) end)
-        pcall(function() actor:set_relation(game_object.enemy, npc) end)
-
-        pcall(function() npc:enable_vision(true) end)
     end
 
     if not refreshed and slot.sent_lv == slot.lv and gt - (slot.sent_at or -1000000) < RESEND_MS then
@@ -811,7 +777,7 @@ local function player_name()
 end
 
 ---------------------------------------------------------------------------
--- PDA lines
+-- Lines, per hunt faction. %name% is the player's name, %boss% the boss's.
 ---------------------------------------------------------------------------
 local LINES = {
     monolith = {
@@ -972,7 +938,7 @@ local function fill(line, boss)
 end
 
 local function pick(kind, boss)
-    local set = (LINES[hunt_faction] or LINES.monolith)[kind]
+    local set = LINES[hunt_faction()][kind]
     return fill(set[math.random(#set)], boss)
 end
 
@@ -988,7 +954,7 @@ function sneak_line() return pick("sneak") end
 
 function taunt(cycle)
     cycle = cycle or 1
-    for _, tier in ipairs((LINES[hunt_faction] or LINES.monolith).taunt) do
+    for _, tier in ipairs(LINES[hunt_faction()].taunt) do
         if cycle <= tier.max then return fill(tier.lines[math.random(#tier.lines)]) end
     end
     return "I am coming."

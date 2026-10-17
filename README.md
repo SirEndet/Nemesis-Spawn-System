@@ -4,18 +4,18 @@ A recurring Monolith hunter for S.T.A.L.K.E.R. Anomaly / G.A.M.M.A.
 
 Every so often, a hunter comes for you. He spawns out of sight, sprints after you and is very hard to kill. Hurt him badly enough and he teleports away in a Monolith burst. He always comes back, and each time he is stronger.
 
-**Status:** Release Candidate 1.
+**Status:** Release Candidate 2.
 
 ## Features
 
-- **Hunts with a warning.** A strange PDA message and radio static, then a Monolith squad spawns 70 to 140 m away and comes straight for you.
+- **Hunts with a warning.** Radio static (and, if you want it, a strange PDA message), then a Monolith squad spawns 70 to 140 m away and comes straight for you.
 - **Named hunters.** Ranked Monolith hunters (Acolyte, Disciple, Zealot, Sentinel, Templar, Herald) that normal hits can't kill. When badly hurt they run for cover and teleport out, leaving a "Last seen" marker. They never leave a body.
 - **Escalation.** Every hunt you beat makes the next one tougher: less damage taken, later retreats, and armour that catches up with yours. It slowly fades if you go a while without a hunt, and resets if a hunter kills you.
 - **Squads.** Up to four extra stalkers who flank you, with snipers keeping their distance. Some can be named hunters too.
 - **The boss.** A rare, tougher, always-cloaked hunter with his own look and messages, who may sneak up behind you before he strikes.
 - **Atmosphere.** Monolith whispers when a named hunter is near, an optional cloak while they stalk you, and PDA taunts that get personal over time.
 - **Playing as Monolith?** The hunters are UNISG instead, with military ranks.
-- **Fully configurable** in MCM: every setting is listed in [Nemesis/Nemesis_README.md](Nemesis/Nemesis_README.md).
+- **Fully configurable** in MCM, with an Easy / Medium / Hard difficulty setting: every setting is listed in [Nemesis/Nemesis_README.md](Nemesis/Nemesis_README.md).
 
 ## Requirements
 

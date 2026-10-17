@@ -30,17 +30,6 @@ local function in_grace(r)
     return (not r.hp_armed) or (r.grace_until ~= nil and time_global() < r.grace_until)
 end
 
-function active_hunter(id)
-    if S.phase ~= "hunting" then return nil end
-    local r = nemesis_state.member(id)
-    if not r or not r.named or r.retreat_at then return nil end
-    return r
-end
-
-function is_named_hunter_obj(obj)
-    return obj ~= nil and active_hunter(obj:id()) ~= nil
-end
-
 function hunter_br_now()
     local add_br, add_pct = nemesis_utils.br_gains(S.cycle)
     local body, head, body_pct, head_pct, body_hf, head_hf = nemesis_utils.player_br_stats()
@@ -69,20 +58,24 @@ end
 -- Engine hits
 ---------------------------------------------------------------------------
 local gbo_wrapped = false
-function is_wrapped() return gbo_wrapped end
 
 function on_before_hit(npc, shit, bone_id, flags)
     if not npc then return end
     local id = npc:id()
     local r = nemesis_state.member(id)
-    if not r or not r.named then return end
+    if not r then return end
+
+    if S.phase == "hunting" and not r.retreat_at then
+        r.hit_at = time_global()
+        r.hit_by_player = from_player(shit)
+    end
+    if not r.named then return end
     if r.retreat_at then
 
         if flags then flags.ret_value = false end
         return
     end
     if S.phase ~= "hunting" then return end
-    r.hit_at = time_global()
 
     if gbo_wrapped and from_player(shit) then return end
 
@@ -117,6 +110,41 @@ function on_hunter_hit(npc, amount, dir, who, bone)
         r.pending = true
     end
     if hp > 0.05 then r.last_hp = hp end
+end
+
+---------------------------------------------------------------------------
+-- Accuracy boost
+---------------------------------------------------------------------------
+
+local BOSS_ACCURACY_EXTRA = 15
+local cone_version = nil
+local cone = nil
+
+local function cone_for(p) return 1 / math.sqrt(1 + p / 100) end
+
+local function accuracy_cones()
+    local v = nemesis_mcm.settings_version()
+    if v ~= cone_version then
+        cone_version = v
+        local p = nemesis_mcm.get_number("accuracy_boost", 20)
+        if p > 40 then p = 40 end
+        if p <= 0 then
+            cone = false
+        else
+            cone = { regular = cone_for(p / 2), named = cone_for(p), boss = cone_for(p + BOSS_ACCURACY_EXTRA) }
+        end
+    end
+    return cone
+end
+
+function on_shot_dispersion(obj, wpn, body_state, move_type, t)
+    if S.phase ~= "hunting" or not obj or type(t) ~= "table" then return end
+    local r = S.m[obj:id()]
+    if not r or r.retreat_at or type(t.dispersion) ~= "number" then return end
+    local c = accuracy_cones()
+    if not c then return end
+    local k = (r.id == S.boss_id and c.boss) or (r.named and c.named) or c.regular
+    t.dispersion = t.dispersion * k
 end
 
 ---------------------------------------------------------------------------

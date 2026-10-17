@@ -5,6 +5,7 @@ local CHASE_ID = 188590
 local wanted = {}
 local installed = {}
 local blocked = {}
+local complete = {}
 local ran = {}
 local refs = {}
 
@@ -18,39 +19,28 @@ local function extra_ids()
 end
 
 local planner_list = nil
-local planner_source_logged = false
+local planner_warned = false
 local function planner_ids()
     if planner_list then return planner_list end
-    for _, mod in ipairs({ "xgraft", "xcombat" }) do
-        local lib = rawget(_G, mod)
-        if lib == nil then pcall(function() lib = _G[mod] end) end
-        if type(lib) == "table" and type(lib.get_blocked_planners) == "function" then
-            local ok, list = pcall(function() return lib.get_blocked_planners() end)
-            if ok and type(list) == "table" and #list > 0 then
-                local all = {}
-                for i = 1, #list do all[#all + 1] = list[i] end
-                local extra = extra_ids()
-                for i = 1, #extra do all[#all + 1] = extra[i] end
-                planner_list = all
-                if not planner_source_logged then
-                    planner_source_logged = true
-                    nemesis_utils.log_msg("Nemesis: chase blocks %s vanilla planners (%s, plus %s loot/help).", tostring(#all), mod, tostring(#extra))
-                end
-                return planner_list
-            end
+    local ok, list = pcall(xgraft.get_blocked_planners)
+    if not (ok and type(list) == "table" and #list > 0) then
+        if not planner_warned then
+            planner_warned = true
+            nemesis_utils.log_msg("!Nemesis ERROR: xgraft returned no planner list; vanilla AI may override the chase.")
         end
+        return {}
     end
-    if not planner_source_logged then
-        planner_source_logged = true
-        nemesis_utils.log_msg("!Nemesis ERROR: xlibs planner list not found (needs xlibs 1.9.1+); vanilla AI may override the chase.")
-    end
-    return {}
+    local all = {}
+    for i = 1, #list do all[#all + 1] = list[i] end
+    local extra = extra_ids()
+    for i = 1, #extra do all[#all + 1] = extra[i] end
+    planner_list = all
+    nemesis_utils.log_msg("Nemesis: chase blocks %s vanilla planners (xgraft, plus %s loot/help).", tostring(#all), tostring(#extra))
+    return planner_list
 end
 
-local function _takeover(npc) return xgraft.is_takeover_current(npc) end
 local function takeover_running(npc)
-    if type(xgraft) ~= "table" or type(xgraft.is_takeover_current) ~= "function" then return false end
-    local ok, busy = pcall(_takeover, npc)
+    local ok, busy = pcall(xgraft.is_takeover_current, npc)
     return ok and busy == true
 end
 
@@ -100,6 +90,7 @@ end
 function install(npc)
     if not npc then return false end
     local id = npc:id()
+    if complete[id] then return true end
     local manager = npc:motivation_action_manager()
     if not manager then return false end
 
@@ -127,15 +118,20 @@ function install(npc)
     end
 
     local done = blocked[id]
-    for _, pid in ipairs(planner_ids()) do
+    local list = planner_ids()
+    local missing = false
+    for _, pid in ipairs(list) do
         if not done[pid] then
             local planner = manager:action(pid)
             if planner then
                 planner:add_precondition(world_property(CHASE_ID, false))
                 done[pid] = true
+            else
+                missing = true
             end
         end
     end
+    if not missing and #list > 0 then complete[id] = true end
     return true
 end
 
@@ -150,6 +146,7 @@ function forget(id)
     wanted[id] = nil
     installed[id] = nil
     blocked[id] = nil
+    complete[id] = nil
     ran[id] = nil
     refs[id] = nil
 end
@@ -158,6 +155,7 @@ function offline(id)
     if not id then return end
     installed[id] = nil
     blocked[id] = nil
+    complete[id] = nil
     ran[id] = nil
     refs[id] = nil
 end
@@ -166,6 +164,7 @@ function reset_all()
     wanted = {}
     installed = {}
     blocked = {}
+    complete = {}
     ran = {}
     refs = {}
 end

@@ -6,14 +6,14 @@ Every so often, a hunter comes for you. He spawns out of sight, sprints after yo
 
 ## What happens in a hunt
 
-- **The warning.** A strange PDA message and radio static tell you something is coming. A short while later the hunt begins.
+- **The warning.** Radio static tells you something is coming (you can also turn on a strange PDA message). A short while later the hunt begins.
 - **The hunter.** He spawns 70 to 140 m away and heads straight for you. Named hunters carry a Monolith rank in their name (Acolyte, Disciple, Zealot, Sentinel, Templar, Herald), so you can tell them apart from ordinary stalkers.
 - **His squad.** Sometimes he brings company: up to four more Monolith stalkers. Some of them can be named hunters too. The rest are normal stalkers you can kill.
-- **The fight.** When he sees you, he fights like any GAMMA stalker. Normal hits can't kill a named hunter. When his health gets low, he runs for cover and teleports out. A red "Last seen" marker shows where he went.
+- **The fight.** When he sees you, he fights like any GAMMA stalker, only a better shot. Normal hits can't kill a named hunter. When his health gets low, he runs for cover and teleports out. A red "Last seen" marker shows where he went.
 - **He never leaves a body.** However a named hunter goes down, the Zone takes him back.
 - **He learns.** Every hunt you beat makes the next one tougher: he takes less damage, holds on longer, and his armour catches up with yours. Go a while without a hunt and he slowly weakens again. If he kills you, he starts over from his weakest.
 - **Whispers.** When a named hunter is close, you hear Monolith whispers in your head.
-- **Escaping.** Survive long enough (4 in-game hours by default) and the hunters give up.
+- **Escaping.** Survive long enough (6 in-game hours by default) and the hunters give up.
 
 **No safe havens, but some rules.** A hunt never starts while you are in a base or trader camp, in a dialogue or asleep. Once the warning has come through, though, the hunt is on: walking into a base won't stop it.
 
@@ -27,17 +27,39 @@ Rarely, a hunter is the boss: **Bogdan Kravets** (you can rename him). He is tou
 
 Everything is in **MCM → Nemesis Wave Spawn System**, on five pages.
 
+### Difficulty
+
+The **Difficulty** setting at the top of the General page picks Easy, Medium (the default) or Hard in one go. The sliders change as soon as you pick, and Apply saves them. If you change one of these settings by hand afterwards, Difficulty shows Custom.
+
+| Setting | Easy | Medium | Hard |
+|---|---|---|---|
+| Grace period (days) | 18 | 12 | 9 |
+| Time between hunts (hours) | 48 | 24 | 24 |
+| Hunt time limit (hours) | 4 | 6 | 8 |
+| Escalation per cycle | 1.05 | 1.1 | 1.2 |
+| Max escalation | 2 | 3 | 5 |
+| Escalation decay (days) | 1 | 1 | 1 |
+| Retreat health (%) | 30 | 25 | 20 |
+| BR mitigation cap (%) | 15 | 25 | 35 |
+| Accuracy boost (%) | 10 | 20 | 30 |
+| Boss chance (%) | 1 | 2 | 4 |
+| Boss days after grace | 7 | 7 | 4 |
+| Extra is a named hunter (%) | 15 | 25 | 40 |
+| Squad of 1 to 5, weight | 50 / 25 / 14 / 10 / 6 | 50 / 25 / 14 / 10 / 6 | 30 / 25 / 20 / 15 / 10 |
+
 ### General
 | Setting | Default | What it does |
 |---|---|---|
+| Difficulty | Medium | Easy, Medium or Hard; sets the settings in the table above. |
 | Teleport sound volume | 40 | Loudness of the teleport sound. 0 mutes it. |
 | Psy whisper volume | 60 | Loudness of the whispers near a named hunter. |
 | Arrival warning volume | 70 | Loudness of the warning static. |
-| Arrival warning | On | A PDA message and static shortly before a hunt. |
+| Arrival warning audio | On | Radio static shortly before a hunt (for the boss, psy voices too). |
+| Arrival warning PDA | Off | A PDA message from an unknown frequency shortly before a hunt. |
 | HD icon | Off | Sharper portrait on the PDA messages. |
 | Grace period (days) | 12 | Days of peace before the first hunt of a new game. |
 | Time between hunts (hours) | 24 | Rest time after a hunt before the next one. |
-| Hunt time limit (hours) | 4 | Survive this long and the hunters give up. |
+| Hunt time limit (hours) | 6 | Survive this long and the hunters give up. |
 
 ### Boss
 | Setting | Default | What it does |
@@ -45,7 +67,7 @@ Everything is in **MCM → Nemesis Wave Spawn System**, on five pages.
 | Boss name | Bogdan Kravets | The boss's name. |
 | Boss chance (%) | 2 | Chance that a named hunter is the boss. |
 | Boss toughness (%) | 30 | How much tougher the boss is than a normal named hunter. |
-| Boss days after grace | 3 | Days after the grace period before a boss can appear. |
+| Boss days after grace | 7 | Days after the grace period before a boss can appear. |
 | Boss sneak chance (%) | 50 | Chance the boss sneaks up behind you instead of charging. |
 
 ### Combat and armour
@@ -54,6 +76,7 @@ Everything is in **MCM → Nemesis Wave Spawn System**, on five pages.
 | Retreat health (%) | 25 | Health at which a named hunter breaks off and teleports away. |
 | Escalation per cycle | 1.1 | How much stronger each hunt gets. 1.0 = no growth. |
 | Max escalation | 3 | The most the hunters can ever scale up. |
+| Accuracy boost (%) | 20 | How much better they shoot than normal stalkers. Squadmates get half, the boss 15 more. 0 = off. |
 | Reset escalation when a hunter kills you | On | Dying to a hunter sets them back to their weakest. |
 | Reset escalation now | – | Tick to set the hunters back to their weakest right away. |
 | Escalation decay (days) | 1 | Days without a hunt before they get one step weaker. 0 = never. |
