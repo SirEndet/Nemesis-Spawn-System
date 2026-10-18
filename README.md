@@ -4,13 +4,14 @@ A recurring Monolith hunter for S.T.A.L.K.E.R. Anomaly / G.A.M.M.A.
 
 Every so often, a hunter comes for you. He spawns out of sight, sprints after you and is very hard to kill. Hurt him badly enough and he teleports away in a Monolith burst. He always comes back, and each time he is stronger.
 
-**Status:** Release Candidate 3.
+**Status:** Release Candidate 4.
 
 ## Features
 
 - **Hunts with a warning.** Radio static (and, if you want it, a strange PDA message), then a Monolith squad spawns 70 to 140 m away and comes straight for you.
 - **Named hunters.** Ranked Monolith hunters (Acolyte, Disciple, Zealot, Sentinel, Templar, Herald) that normal hits can't kill. When badly hurt they run for cover and teleport out. They never leave a body.
-- **Escalation.** Every hunt you beat makes the next one tougher: less damage taken, later retreats, and armour that catches up with yours. It slowly fades if you go a while without a hunt, and resets if a hunter kills you.
+- **Escalation.** Every hunt you beat makes the next one tougher: less damage taken, later retreats, and armour that catches up with yours. Escaping a hunt eases it one step; dying to a hunter or beating the boss halves it.
+- **No running away.** Change maps any way you like and they follow you. They remember where you beat them, and if you hide in a building they wait outside, then storm in.
 - **Squads.** Up to four extra stalkers who flank you, with snipers keeping their distance. Some can be named hunters too.
 - **The boss.** A rare, tougher, always-cloaked hunter with his own look and messages, who teleports in with an escort of named hunters and sneaks up to assassinate you while they keep you busy.
 - **Atmosphere.** Monolith whispers when a named hunter is near, an optional cloak while they stalk you, and PDA taunts that get personal over time.

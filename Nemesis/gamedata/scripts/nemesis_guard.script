@@ -129,7 +129,7 @@ local function check_boxes()
     end
     if box("force_boss") then
         nemesis_boss.force()
-        dbg("Nemesis: the next named hunter to spawn will be the boss (MCM).")
+        dbg("Nemesis: the next hunt brings the boss (MCM).")
     end
 end
 
@@ -142,7 +142,7 @@ function tick()
 end
 
 ---------------------------------------------------------------------------
--- Death reset: killed by a hunter -> the next loaded save starts again at cycle 1
+-- Death halving: killed by a hunter -> the next loaded save has half the escalation (cycle / 2, at least 1)
 ---------------------------------------------------------------------------
 
 local DEATH_HIT_WINDOW_MS = 30000
@@ -151,7 +151,7 @@ local last_hunter_hit = nil
 
 local function death_marker_path()
     local path = nil
-    pcall(function() path = getFS():update_path("$app_data_root$", "nemesis_death_reset.txt") end)
+    pcall(function() path = getFS():update_path("$game_data$", "nemesis_death_reset.txt") end)
     return path
 end
 
@@ -199,7 +199,7 @@ function on_actor_before_death(who_id, flags)
     if not by_hunter then return end
     death_reset_pending = true
     write_death_marker()
-    dbg("Nemesis: killed by a hunter at cycle %s. The next loaded save starts again at cycle 1.", tostring(S.cycle))
+    dbg("Nemesis: killed by a hunter at cycle %s. The next loaded save has its escalation halved.", tostring(S.cycle))
 end
 
 function apply_death_reset()
@@ -208,9 +208,11 @@ function apply_death_reset()
     death_reset_pending = false
     last_hunter_hit = nil
     if not nemesis_mcm.get_bool("reset_on_death", true) then return end
-    if (S.cycle or 1) > 1 then
-        dbg("Nemesis: you died to a hunter; escalation reset from cycle %s to 1.", tostring(S.cycle))
+
+    local before = S.cycle or 1
+    S.cycle = math.max(1, math.floor(before / 2))
+    if before ~= S.cycle then
+        dbg("Nemesis: you died to a hunter; escalation halved from cycle %s to %s.", tostring(before), tostring(S.cycle))
     end
-    S.cycle = 1
     nemesis_damage.unseed_br()
 end

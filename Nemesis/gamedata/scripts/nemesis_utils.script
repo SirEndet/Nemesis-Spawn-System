@@ -23,6 +23,14 @@ function game_seconds()
     return game.get_game_time():diffSec(epoch)
 end
 
+function on_underground_map()
+    local under = false
+    pcall(function() under = xcombat.INDOOR_LEVELS[level.name()] == true end)
+    if under then return true end
+    pcall(function() under = GetEvent("underground") and true or false end)
+    return under
+end
+
 function same_level(se_a, se_b)
     if not se_a or not se_b then return nil end
     local ok, a, b = pcall(function()
@@ -275,12 +283,17 @@ local function copy_vec(v)
     return c
 end
 
+local known_spot_on = false
+local indoor_since = nil
+local siege_spot = {}
+
 function reset_chase(id)
     if id then
         chase[id] = nil
     else
         chase = {}
         fight_memo = {}
+        known_spot_on, indoor_since, siege_spot = false, nil, {}
     end
 end
 
@@ -314,25 +327,13 @@ function set_sneak_hold(id, on) local s = id and sneak[id]; if s then s.hold = o
 local function sneak_holding(id) local s = id and sneak[id]; return s ~= nil and s.hold == true end
 local function sneak_closing(id) local s = id and sneak[id]; return s ~= nil and s.closing == true end
 
-local MOVE_SAMPLE_MS = 500
-local MOVE_RUN_MPS = 2.5
-local MOVE_JUMP_M = 50
-local move_at, move_x, move_z, move_running = nil, nil, nil, false
+local MOVE_ANY, MOVE_CROUCH, MOVE_WALK, MOVE_SPRINT = 15, 16, 32, 4096
 function player_running(actor)
-    local now = time_global()
-    if move_at and now - move_at < MOVE_SAMPLE_MS and now >= move_at then return move_running end
-    local p = nil
-    pcall(function() p = actor:position() end)
-    if not p then return move_running end
-    if move_at and now > move_at then
-        local dx, dz = p.x - move_x, p.z - move_z
-        local d = math.sqrt(dx * dx + dz * dz)
-        if d <= MOVE_JUMP_M then move_running = d / ((now - move_at) / 1000) > MOVE_RUN_MPS end
-    end
-    move_at, move_x, move_z = now, p.x, p.z
-    return move_running
+    local ok, st = pcall(level.actor_moving_state)
+    if not ok or type(st) ~= "number" then return false end
+    if bit_and(st, MOVE_SPRINT) ~= 0 then return true end
+    return bit_and(st, MOVE_ANY) ~= 0 and bit_and(st, MOVE_CROUCH + MOVE_WALK) == 0
 end
-function reset_movement() move_at, move_x, move_z, move_running = nil, nil, nil, false end
 function end_sneak(id, fight)
     local s = id and sneak[id]
     if s then s.done = true end
@@ -486,6 +487,8 @@ local function player_target(npc, actor)
     if not nemesis_mcm.get_bool("last_known_chase", true) then
         return live_pos, live_lv, "live"
     end
+
+    if known_spot_on then return live_pos, live_lv, "remembered spot" end
     local mt, sees = 0, false
     pcall(function() mt = npc:memory_time(actor) end)
     pcall(function() sees = npc:see(actor) end)
@@ -497,12 +500,14 @@ local function player_target(npc, actor)
     return pos, nil, "last known"
 end
 
+local FLANK_WIDE_DEG = 75
 local function flank_vertex(npc, tpos, role)
     local npos = npc:position()
     local dx, dz = tpos.x - npos.x, tpos.z - npos.z
     local d = math.sqrt(dx * dx + dz * dz)
     if d < FLANK_MIN_M then return nil end
-    local a = math.rad(role.angle * role.side)
+    local angle = known_spot_on and math.max(role.angle, FLANK_WIDE_DEG) or role.angle
+    local a = math.rad(angle * role.side)
     local ca, sa = math.cos(a), math.sin(a)
     local dir = vector()
     dir:set((dx * ca - dz * sa) / d, 0, (dx * sa + dz * ca) / d)
@@ -546,6 +551,8 @@ local function sneak_target(npc, actor)
     local back = math.atan2(-dir.z / l, -dir.x / l)
     local now = time_global()
     local p = vector()
+
+    if indoor_since and not s.homing then s.homing = true end
     if s.homing then
         if not s.face_at or now - s.face_at >= SNEAK_FACING_MS or now < s.face_at then
             s.face_at, s.face_back = now, back
@@ -570,7 +577,52 @@ local function sneak_target(npc, actor)
     return p, "circling behind you"
 end
 
+local SIEGE_MS = 90000
+local SIEGE_RING_M = 25
+local SIEGE_MOVE_M = 5
+local SIEGE_TURNS = { 0, 30, -30, 60, -60, 90, -90 }
+
+function set_player_indoor(on, now)
+    if on then indoor_since = indoor_since or now
+    else indoor_since, siege_spot = nil, {} end
+end
+function player_indoor() return indoor_since ~= nil end
+function siege_active(now)
+    return indoor_since ~= nil and (now or time_global()) - indoor_since < SIEGE_MS
+end
+function set_known_spot(on) known_spot_on = on and true or false end
+
+local function siege_vertex(npc, actor)
+    local id, apos = npc:id(), actor:position()
+    local c = siege_spot[id]
+    if c then
+        local dx, dz = apos.x - c.ax, apos.z - c.az
+        if dx * dx + dz * dz <= SIEGE_MOVE_M * SIEGE_MOVE_M then return c.lv end
+    end
+    local npos = npc:position()
+    local base = math.atan2(npos.z - apos.z, npos.x - apos.x)
+    local lv = nil
+    for _, t in ipairs(SIEGE_TURNS) do
+        local a = base + math.rad(t)
+        local p = vector()
+        p:set(apos.x + math.cos(a) * SIEGE_RING_M, apos.y, apos.z + math.sin(a) * SIEGE_RING_M)
+        local v = nil
+        pcall(function() v = level.vertex_id(p) end)
+        if v and v < 4294967295 then
+            local inside = true
+            pcall(function() inside = xcombat.is_indoor(level.vertex_position(v)) end)
+            if not inside then lv = v; break end
+        end
+    end
+    siege_spot[id] = { lv = lv, ax = apos.x, az = apos.z }
+    return lv
+end
+
 local function chase_target(npc, actor)
+    if siege_active() and not sneak_active(npc:id()) then
+        local lv = siege_vertex(npc, actor)
+        if lv then return level.vertex_position(lv), lv, "waiting outside" end
+    end
     if sneak_active(npc:id()) then
 
         if sneak_holding(npc:id()) then
@@ -909,6 +961,15 @@ local LINES = {
         sneak = { "%name%, you don't see me because I'm behind you right now." },
         rush = { "Run, %name%. Every step brings you closer to me." },
         close = { "%name%. Close enough to hear you breathe." },
+        follow = {
+            "You cannot outrun the Monolith, %name%.",
+            "New ground. Same prey.",
+            "The Monolith walks every road you walk, %name%.",
+        },
+        known_spot = {
+            "Same place as last time, %name%. The Monolith remembers.",
+            "You fought us here before, %name%. We know this ground now.",
+        },
     },
     isg = {
         warning = {
@@ -982,6 +1043,15 @@ local LINES = {
         sneak = { "%name%. Don't turn around. I'm right behind you." },
         rush = { "Keep running, %name%. You're only making this easier." },
         close = { "Close enough, %name%. Lights out." },
+        follow = {
+            "Changing maps won't save you, %name%.",
+            "Target relocated. Pursuit continues.",
+            "You moved. So did we, %name%.",
+        },
+        known_spot = {
+            "Same position as last time, %name%? Sloppy.",
+            "We mapped this spot last time, %name%. Predictable.",
+        },
     },
 }
 
@@ -1008,6 +1078,8 @@ function dread_line() return pick("dread") end
 function sneak_line() return pick("sneak") end
 function rush_line() return pick("rush") end
 function close_line() return pick("close") end
+function known_spot_line() return pick("known_spot") end
+function follow_line() return pick("follow") end
 
 function taunt(cycle)
     cycle = cycle or 1

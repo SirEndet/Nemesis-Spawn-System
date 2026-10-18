@@ -25,6 +25,23 @@ function exists()
     return false
 end
 
+local BOSS_RAMP_PCT = 2
+local BOSS_RAMP_HUNTS = 4
+local BOSS_GUARANTEE_HUNT = 30
+
+function chance_now()
+    local base = nemesis_mcm.get_number("boss_chance", 2)
+    if base <= 0 then return 0 end
+    local n = S.hunts_since_boss or 0
+    if n + 1 >= BOSS_GUARANTEE_HUNT then return 100 end
+    return math.min(100, base + BOSS_RAMP_PCT * math.floor(n / BOSS_RAMP_HUNTS))
+end
+
+function count_hunt(had_boss)
+    if had_boss then S.hunts_since_boss = 0
+    else S.hunts_since_boss = (S.hunts_since_boss or 0) + 1 end
+end
+
 function roll()
     if exists() then return false end
     if force_next then
@@ -39,8 +56,9 @@ function roll()
     if min_days < 1 then min_days = 1 end
     if min_days > 7 then min_days = 7 end
     if not S.first_hunt or nemesis_utils.game_seconds() - S.first_hunt < (grace + min_days) * 86400 then return false end
-    local chance = nemesis_mcm.get_number("boss_chance", 2)
+    local chance = chance_now()
     if chance <= 0 then return false end
+    if chance >= 100 then return true end
     return math.random() * 100 < chance
 end
 
@@ -98,7 +116,6 @@ function make(id)
     S.boss_sneak = true
     S.sneak_started, S.sneak_said, S.sneak_wait = nil, nil, nil
     S.boss_shots, S.boss_hit_frames, S.boss_hit_frame = 0, 0, nil
-    nemesis_utils.reset_movement()
     S.boss_look = roll_look()
     S.dread_next = time_global() + 20000
     dbg("Nemesis: '%s' is the BOSS of this hunt (look %s).", tostring(r and r.name), tostring(S.boss_look))

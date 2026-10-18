@@ -11,17 +11,20 @@ Every so often, a hunter comes for you. He spawns out of sight, sprints after yo
 - **His squad.** Sometimes he brings company: up to four more Monolith stalkers. Some of them can be named hunters too. The rest are normal stalkers you can kill.
 - **The fight.** When he sees you, he fights like any GAMMA stalker, only a better shot. Normal hits can't kill a named hunter. When his health gets low, he runs for cover and teleports out.
 - **He never leaves a body.** However a named hunter goes down, the Zone takes him back.
-- **He learns.** Every hunt you beat makes the next one tougher: he takes less damage, holds on longer, and his armour catches up with yours. Go a while without a hunt and he slowly weakens again. If he kills you, he starts over from his weakest.
+- **He learns.** Every hunt you beat makes the next one tougher: he takes less damage, holds on longer, and his armour catches up with yours. Escape him by outlasting the hunt and he comes back one step weaker. If he kills you, he loses half his strength.
 - **Whispers.** When a named hunter is close, you hear Monolith whispers in your head.
+- **He remembers.** Beat a hunter somewhere and they remember the spot for a week. Fight from there again and they know exactly where you are.
+- **Buildings.** Hide inside and they don't come in after you straight away. They wait outside for a minute and a half, then storm in.
 - **Escaping.** Survive long enough (6 in-game hours by default) and the hunters give up.
+- **No running to another map.** Change maps any way you like (on foot, a shortcut, fast travel, a guide) and they follow: a minute or two after you walk away from where you arrived, the same hunters teleport in, still as hurt as you left them. They follow twice; change maps a third time and you've shaken them off.
 
-**No safe havens, but some rules.** A hunt never starts while you are in a base or trader camp that is friendly or neutral to you, in a dialogue or asleep. Enemy bases are no shelter. Once the warning has come through, though, the hunt is on: walking into a base won't stop it.
+**No safe havens, but some rules.** A hunt never starts while you are in a base or trader camp that is friendly or neutral to you, in a dialogue or asleep, or on an underground map. Squads are smaller in rookie areas like Cordon and Garbage, and in the far north more of them are named hunters. Enemy bases are no shelter. Once the warning has come through, though, the hunt is on: walking into a base won't stop it.
 
 **Playing as Monolith?** Then the hunters are UNISG instead, with military ranks.
 
 ### The boss
 
-Rarely, a hunter is the boss: **Bogdan Kravets** (you can rename him). He is tougher, always cloaked, has his own look and his own messages, and only cares about you. He never comes alone: four named hunters (Boss escort size) keep you busy while he hunts you. You'll know he's here: they teleport in, in a Monolith burst. While cloaked he slips past everyone else unnoticed, and seeing him changes nothing; only your shot gives him away. Stand still and he sneaks around behind you; run and he runs you down. Either way he tells you before he strikes, and his first 3 shots at you always miss. Beat a hunt he was in and the hunters get two steps weaker.
+Rarely, a hunter is the boss: **Bogdan Kravets** (you can rename him). He is tougher, always cloaked, has his own look and his own messages, and only cares about you. He never comes alone: four named hunters (Boss escort size) keep you busy while he hunts you. You'll know he's here: they teleport in, in a Monolith burst. While cloaked he slips past everyone else unnoticed, and seeing him changes nothing; only your shot gives him away. Stand still and he sneaks around behind you; run and he runs you down. Either way he tells you before he strikes, and his first 3 shots at you always miss. Beat a hunt he was in and the hunters lose half their strength. The longer he stays away, the likelier he gets: by the 30th hunt without him, he comes for sure.
 
 ## Settings
 
@@ -38,7 +41,6 @@ The **Difficulty** setting at the top of the General page picks Easy, Medium (th
 | Hunt time limit (hours) | 4 | 6 | 8 |
 | Escalation per cycle | 1.05 | 1.1 | 1.2 |
 | Max escalation | 2 | 3 | 5 |
-| Escalation decay (days) | 1 | 1 | 1 |
 | Retreat health (%) | 30 | 25 | 20 |
 | BR mitigation cap (%) | 15 | 25 | 35 |
 | Accuracy boost (%) | 10 | 20 | 30 |
@@ -65,7 +67,7 @@ The **Difficulty** setting at the top of the General page picks Easy, Medium (th
 | Setting | Default | What it does |
 |---|---|---|
 | Boss name | Bogdan Kravets | The boss's name. |
-| Boss chance (%) | 2 | Chance that a named hunter is the boss. |
+| Boss chance (%) | 2 | Chance that a hunt brings the boss. Grows 2 every 4 hunts without him; certain by the 30th. 0 = no boss. |
 | Boss toughness (%) | 30 | How much tougher the boss is than a normal named hunter. |
 | Boss extra BR | 0 | Extra armour class for the boss only, on top of the other hunters' (not the % mitigation). |
 | Boss days after grace | 7 | Days after the grace period before a boss can appear. |
@@ -77,10 +79,10 @@ The **Difficulty** setting at the top of the General page picks Easy, Medium (th
 | Retreat health (%) | 25 | Health at which a named hunter breaks off and teleports away. |
 | Escalation per cycle | 1.1 | How much stronger each hunt gets. 1.0 = no growth. |
 | Max escalation | 3 | The most the hunters can ever scale up. |
+| Max damage reduction (%) | 80 | The most of your damage a hunter can ever shrug off. |
 | Accuracy boost (%) | 20 | How much better they shoot than normal stalkers. Squadmates get half, the boss 15 more. 0 = off. |
-| Reset escalation when a hunter kills you | On | Dying to a hunter sets them back to their weakest. |
+| Halve escalation when a hunter kills you | On | Dying to a hunter halves their strength. |
 | Reset escalation now | – | Tick to set the hunters back to their weakest right away. |
-| Escalation decay (days) | 1 | Days without a hunt before they get one step weaker. 0 = never. |
 | Armour growth speed | 0 | How fast named hunters' armour catches up with yours. |
 | Extra BR cap | 0.20 | How much higher than yours their ballistic rating can get. |
 | BR mitigation cap (%) | 25 | How much more damage their armour can block than yours. |
@@ -98,6 +100,7 @@ The **Difficulty** setting at the top of the General page picks Easy, Medium (th
 | Spawn distance, max (m) | 140 | Farthest a hunt can spawn from you. |
 | Squad of 1 to 5, weight | 50 / 25 / 14 / 10 / 6 | How often each squad size appears. They don't need to add up to 100. |
 | Extra is a named hunter (%) | 25 | Chance each squadmate is another named hunter. |
+| Scale hunts by area | On | Smaller squads in rookie areas, more named hunters in the far north. |
 
 ### Debug
 | Setting | Default | What it does |
@@ -105,7 +108,7 @@ The **Difficulty** setting at the top of the General page picks Easy, Medium (th
 | Debug mode | Off | For testing: hunts come quickly and can start anywhere, and a map marker follows the boss. |
 | Debug logs | Off | Writes Nemesis lines to the console, for bug reports. |
 | Send a test PDA message | – | Checks that Nemesis messages show up. |
-| Force a boss in the next hunt | – | The next named hunter is the boss. |
+| Force a boss in the next hunt | – | The next hunt brings the boss. |
 | Prepare for uninstall | Off | Ends any hunt and removes every Nemesis squad, so you can save and uninstall safely. No hunts while ticked. |
 
 ## Requirements
@@ -129,7 +132,7 @@ Install with Mod Organizer like any other mod. Load order doesn't matter. Settin
 
 (Without the checkbox: finish the hunt by beating it or letting it time out, wait until the hunters are gone, then save.) If you keep the mod after all, untick the box and the hunts come back.
 
-Everything else is harmless: the mod's own data in your saves is ignored once the mod is gone, and old Nemesis PDA messages may show without their icon. A small file, `nemesis_death_reset.txt`, can be left in your `appdata` folder; it is only read by this mod and can be deleted.
+Everything else is harmless: the mod's own data in your saves is ignored once the mod is gone, and old Nemesis PDA messages may show without their icon. A small file, `nemesis_death_reset.txt`, can be left in your `gamedata` folder; it is only read by this mod and can be deleted.
 
 ## Reporting a bug
 

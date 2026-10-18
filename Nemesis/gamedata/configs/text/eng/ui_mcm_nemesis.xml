@@ -43,7 +43,7 @@
     <string id="ui_mcm_nemesis_npc_name_desc"><text>Name of the boss, a rare and stronger named hunter. Other hunters always get random names. Default: Bogdan Kravets</text></string>
 
     <string id="ui_mcm_nemesis_boss_chance"><text>Boss chance (%)</text></string>
-    <string id="ui_mcm_nemesis_boss_chance_desc"><text>Chance that a named hunter is the boss: a tougher, cloaked hunter with his own look and messages. Only one boss at a time, at most one a day. Beating a hunt he was in makes the next hunt 2 cycles weaker. Default 2.</text></string>
+    <string id="ui_mcm_nemesis_boss_chance_desc"><text>Chance that a hunt brings the boss: a tougher, cloaked hunter with his own look and messages and an escort. It climbs by 2 every 4 hunts without him, and the 30th hunt without him brings him for sure. Only one boss at a time, at most one a day. Beating a hunt he was in halves the escalation. 0 = no boss at all. Default 2.</text></string>
 
     <string id="ui_mcm_nemesis_boss_toughness"><text>Boss toughness (%)</text></string>
     <string id="ui_mcm_nemesis_boss_toughness_desc"><text>How much tougher the boss is than a normal named hunter. 0 = no tougher. Default 30.</text></string>
@@ -67,7 +67,7 @@
     <string id="ui_mcm_nemesis_force_boss"><text>Force a boss in the next hunt</text></string>
     <string id="ui_mcm_nemesis_prepare_uninstall"><text>Prepare for uninstall</text></string>
     <string id="ui_mcm_nemesis_prepare_uninstall_desc"><text>Tick and apply before you remove the mod: any running hunt is called off, every Nemesis squad is removed from the world, and no new hunt starts while the box stays ticked. A PDA message tells you when it is safe to save. Then save, remove the mod and load that save. Untick it to let the hunts come back.</text></string>
-    <string id="ui_mcm_nemesis_force_boss_desc"><text>For testing. Tick and apply: the next named hunter to spawn is the boss, ignoring the chance, the day limit and the once-a-day rule. The box unticks itself.</text></string>
+    <string id="ui_mcm_nemesis_force_boss_desc"><text>For testing. Tick and apply: the next hunt brings the boss, ignoring the chance, the day limit and the once-a-day rule. The box unticks itself.</text></string>
 
     <string id="ui_mcm_nemesis_debug_logs"><text>Debug logs</text></string>
     <string id="ui_mcm_nemesis_debug_logs_desc"><text>Write Nemesis diagnostic and error lines to the console. Leave this off unless you are tracking a problem. Lines that start with an exclamation mark are errors.</text></string>
@@ -94,20 +94,19 @@
 
     <string id="ui_mcm_nemesis_accuracy_boost_desc"><text>How many more of their shots hit you at range than a normal stalker with the same weapon, in percent. Named hunters get this value, regular squad members half of it, and the boss this value plus 15. 0 turns it off. Default 20.</text></string>
 
-    <string id="ui_mcm_nemesis_reset_on_death"><text>Reset escalation when a hunter kills you</text></string>
-    <string id="ui_mcm_nemesis_reset_on_death_desc"><text>If a hunter kills you, the hunts go back to their starting strength (cycle 1), even when you reload a save. Default on.</text></string>
+    <string id="ui_mcm_nemesis_reset_on_death"><text>Halve escalation when a hunter kills you</text></string>
+    <string id="ui_mcm_nemesis_reset_on_death_desc"><text>If a hunter kills you, the escalation is halved (cycle 8 becomes 4, never below 1), even when you reload a save. Default on.</text></string>
 
     <string id="ui_mcm_nemesis_reset_escalation_now"><text>Reset escalation now</text></string>
     <string id="ui_mcm_nemesis_reset_escalation_now_desc"><text>Tick and apply to set the hunts back to their starting strength (cycle 1) right now. The box unticks itself.</text></string>
-
-    <string id="ui_mcm_nemesis_decay_days"><text>Escalation decay (days)</text></string>
-    <string id="ui_mcm_nemesis_decay_days_desc"><text>Every this many in-game days after the last hunt ended, the hunters get one cycle weaker (never below cycle 1). 0 = never. Default 1.</text></string>
 
     <string id="ui_mcm_nemesis_br_escalation"><text>Armour growth speed</text></string>
     <string id="ui_mcm_nemesis_br_escalation_desc"><text>How fast named hunters' armour catches up with yours. 0 = normal (full after about 10 hunts). Higher = faster, lower = slower. Regular squad members are not affected. Default 0.</text></string>
     <string id="ui_mcm_nemesis_br_class_cap"><text>Extra BR cap</text></string>
     <string id="ui_mcm_nemesis_br_class_cap_desc"><text>How much higher than yours a named hunter's ballistic rating (BR) can get. Default 0.20. 1.0 = almost bulletproof.</text></string>
 
+    <string id="ui_mcm_nemesis_max_damage_reduction"><text>Max damage reduction (%)</text></string>
+    <string id="ui_mcm_nemesis_max_damage_reduction_desc"><text>The most of your damage a named hunter or the boss can ever shrug off, however escalation, BR mitigation and boss toughness stack. At 80 they always take at least a fifth of your damage, so a long run never becomes unwinnable. Default 80.</text></string>
     <string id="ui_mcm_nemesis_br_pct_cap"><text>BR mitigation cap (%)</text></string>
     <string id="ui_mcm_nemesis_br_pct_cap_desc"><text>How much more damage, in percent, a named hunter's armour can block than yours. Default 25. He never blocks more than 90 percent.</text></string>
 
@@ -152,5 +151,7 @@
 
     <string id="ui_mcm_nemesis_named_chance"><text>Extra is a named hunter (%)</text></string>
     <string id="ui_mcm_nemesis_named_chance_desc"><text>Chance that each extra squad member is another named hunter instead of a normal stalker. Named hunters carry a rank in their name, are hard to kill, retreat when hurt and never leave a body. 0 = only the leader is named, 100 = the whole squad. Default 25.</text></string>
+    <string id="ui_mcm_nemesis_area_scaling"><text>Scale hunts by area</text></string>
+    <string id="ui_mcm_nemesis_area_scaling_desc"><text>On: hunts in rookie areas are smaller (Cordon and Swamps: at most 2 hunters; Garbage, Dark Valley and similar: at most 3), and in late areas extras are more often named hunters (+10 in Red Forest, Radar and similar; +20 in Pripyat, Jupiter, Zaton and the CNPP). Boss hunts are not affected. Default on.</text></string>
 
 </string_table>

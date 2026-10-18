@@ -17,8 +17,30 @@ function damage_div(id)
     return m
 end
 
-function absorb(obj, r, prev, hp)
-    local mult = damage_div(r.id)
+local function damage_floor()
+    local cap = nemesis_mcm.get_number("max_damage_reduction", 80)
+    if cap < 50 then cap = 50 end
+    if cap > 95 then cap = 95 end
+    return 1 - cap / 100
+end
+
+local function capped_div(id)
+    return math.min(damage_div(id), 1 / damage_floor())
+end
+
+local function capped_pair(id, pct)
+    local floor = damage_floor()
+    pct = pct or 0
+    local div = damage_div(id)
+    if (1 - pct) / div < floor then
+        if 1 - pct <= floor then pct, div = 1 - floor, 1
+        else div = (1 - pct) / floor end
+    end
+    return pct, div
+end
+
+function absorb(obj, r, prev, hp, div)
+    local mult = div or capped_div(r.id)
     if r.hp_armed and prev and mult > 1 and hp < prev and hp > LETHAL_FLOOR then
         hp = math.min(1, hp + (prev - hp) * (1 - 1 / mult))
         nemesis_utils.set_health(obj, hp)
@@ -89,33 +111,36 @@ function on_before_hit(npc, shit, bone_id, flags)
 
     if gbo_wrapped and from_player(shit) then return end
 
+    local div = capped_div(id)
     if not gbo_wrapped and shit then
-        local _, _, body_pct, head_pct = hunter_br_now()
+        local _, _, body_pct, head_pct = hunter_br_now(id)
         local pct = (is_head(bone_id) and head_pct or body_pct) or 0
+        pct, div = capped_pair(id, pct)
         if pct > 0 then shit.power = (shit.power or 0) * (1 - pct) end
     end
 
     local hp = tonumber(npc.health)
     if not hp then return end
     local power = (shit and shit.power) or 0
-    if hp - (power / damage_div(id)) <= LETHAL_FLOOR then
+    if hp - (power / div) <= LETHAL_FLOOR then
         if flags then flags.ret_value = false end
         if not in_grace(r) then r.pending = true end
         return
     end
     r.pre_hp = hp
+    r.hit_div = div
 end
 
 function on_hunter_hit(npc, amount, dir, who, bone)
     if not npc then return end
     local r = nemesis_state.member(npc:id())
     if not r or not r.pre_hp then return end
-    local pre = r.pre_hp
-    r.pre_hp = nil
+    local pre, div = r.pre_hp, r.hit_div
+    r.pre_hp, r.hit_div = nil, nil
     if S.phase ~= "hunting" or r.retreat_at then return end
     local hp = tonumber(npc.health)
     if not hp or hp <= 0 then return end
-    hp = absorb(npc, r, pre, hp)
+    hp = absorb(npc, r, pre, hp, div)
     if not in_grace(r) and hp < pre - 0.02 and hp <= nemesis_utils.get_retreat_health(S.cycle) then
         r.pending = true
     end
@@ -264,7 +289,9 @@ function install_br_wrap()
         local dmg = 1 - hp1
         if dmg < 0 then dmg = 0 end
         local pct = (is_head(bone_id) and head_pct or body_pct) or 0
-        local hp = hp0 - dmg * (1 - pct) / damage_div(id)
+        local div
+        pct, div = capped_pair(id, pct)
+        local hp = hp0 - dmg * (1 - pct) / div
         if hp < LETHAL_FLOOR then hp = LETHAL_FLOOR end
         nemesis_utils.set_health(npc, hp)
         r.last_hp = hp

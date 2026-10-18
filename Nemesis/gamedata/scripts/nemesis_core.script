@@ -21,10 +21,11 @@ local function dbg(...) nemesis_utils.log_msg(...) end
 local XLIBS_API = {
     xsquad = { "set_target_actor", "iterate_member_ids", "release_squad" },
     xsmart = { "get_named_smarts", "is_base", "assign_squad_to_smart" },
-    xlevel = { "get_level_id" },
+    xlevel = { "get_level_id", "get_danger_tier" },
     xsound = { "play", "create_sound", "set_volume", "release" },
     xcombat = { "find_cover", "register_cover", "release_cover", "find_flee_lane", "get_track_pos",
-                "get_weapon_kind", "set_destination", "show_enemy", "COVER", "SNIPER_KINDS" },
+                "get_weapon_kind", "set_destination", "show_enemy", "COVER", "SNIPER_KINDS",
+                "is_indoor", "INDOOR_LEVELS" },
     xgraft = { "get_blocked_planners", "is_takeover_current" },
 }
 local xlibs_ok = nil
@@ -131,9 +132,10 @@ local function release_npc()
 end
 
 local function end_hunt(reason, escaped)
+
     local next_cycle = S.cycle + 1
-    if escaped then next_cycle = S.cycle
-    elseif S.boss_hunt then next_cycle = math.max(1, S.cycle - 2) end
+    if escaped then next_cycle = math.max(1, S.cycle - 1)
+    elseif S.boss_hunt then next_cycle = math.max(1, math.floor(S.cycle / 2)) end
     dbg("Nemesis: hunt ended (%s). Cycle %s -> %s", reason, S.cycle, next_cycle)
     S.phase = "idle"
     release_npc()
@@ -142,13 +144,8 @@ local function end_hunt(reason, escaped)
     S.seen_online = nil
     S.hunt_start = nil
     local now = nemesis_utils.game_seconds()
-    if escaped then
-
-        S.last_decay = S.last_decay or S.last_retreat or now
-    else
-        S.cycle = next_cycle
-        S.last_decay = nil
-    end
+    if next_cycle ~= S.cycle then nemesis_damage.unseed_br() end
+    S.cycle = next_cycle
     S.last_retreat = now
 end
 
@@ -175,6 +172,10 @@ local function begin_retreat(obj, r)
     r.pending = false
     r.retreat_at = time_global()
     nemesis_chase.set_wanted(id, false)
+
+    if r.hit_by_player then
+        pcall(function() nemesis_state.remember_spot(level.name(), db.actor:position(), nemesis_utils.game_seconds()) end)
+    end
     dbg("Nemesis: %s is wounded and breaks off the fight.", r.name or "A hunter")
     pcall(function() obj:invulnerable(true) end)
     pcall(function()
@@ -350,6 +351,12 @@ local function manage_hunter(id, r, gt, actor, retreat_health)
             r.last_hp = hp0
             r.hp_armed = true
         end
+
+        if r.follow_hp and r.follow_hp > 0.05 and r.follow_hp < 1 then
+            nemesis_utils.set_health(obj, r.follow_hp)
+            r.last_hp = r.follow_hp
+        end
+        r.follow_hp = nil
         dbg("Nemesis: '%s' is online (health %s). No retreat for %ss.", r.name or "A hunter",
             (hp0 and string.format("%.2f", hp0)) or "unread", tostring(RETREAT_GRACE_MS / 1000))
 
@@ -401,6 +408,8 @@ local function manage_extra(id, r, actor)
     if not r.inited then
         r.inited = true
         never_ignore_player(extra)
+        if r.follow_hp and r.follow_hp > 0.05 and r.follow_hp < 1 then nemesis_utils.set_health(extra, r.follow_hp) end
+        r.follow_hp = nil
     end
     if not r.role_set then
 
@@ -415,8 +424,9 @@ end
 local function player_left_level()
     for _, id in ipairs(S.hunter_ids) do
         local anchor = alife():object(id)
-        if anchor then
-            return S.seen_online and nemesis_utils.same_level(anchor, alife():actor()) == false
+        local r = S.m[id]
+        if anchor and not (r and r.retreat_at) then
+            return nemesis_utils.same_level(anchor, alife():actor()) == false
         end
     end
     return false
@@ -462,6 +472,10 @@ local function uninstall_tick(gt)
     end
     if not uninstall then
         if S.phase ~= "idle" then call_off(gt, "preparing for uninstall: the hunt is called off.", 0) end
+        if S.follow then
+            S.follow = nil
+            dbg("Nemesis: preparing for uninstall: the squad following you is called off.")
+        end
         nemesis_spawn.reset_runtime()
         nemesis_guard.forget_death_marker()
         uninstall = { squads = our_squads_in_world(), at = gt + UNINSTALL_SWEEP_MS, said = false }
@@ -492,6 +506,121 @@ local function uninstall_tick(gt)
     return true
 end
 
+local function read_surroundings(gt, actor)
+    local pos = nil
+    pcall(function() pos = actor:position() end)
+    if not pos then return end
+    local inside = false
+    pcall(function() inside = xcombat.is_indoor(pos) == true end)
+    local was = nemesis_utils.player_indoor()
+    nemesis_utils.set_player_indoor(inside, gt)
+    if inside ~= was then
+        dbg("Nemesis: player is %s.", inside and "indoors, the hunters wait outside" or "outdoors again")
+    end
+    local lname = nil
+    pcall(function() lname = level.name() end)
+    local known = lname ~= nil and nemesis_state.known_spot(lname, pos, nemesis_utils.game_seconds())
+    nemesis_utils.set_known_spot(known)
+    if known and not S.spot_said then
+        S.spot_said = true
+        dbg("Nemesis: player is at a remembered spot.")
+        for _, id in ipairs(S.hunter_ids) do
+            local r = S.m[id]
+            if r and r.named and id ~= S.boss_id and not r.retreat_at then
+                nemesis_utils.send_news(nemesis_utils.known_spot_line(), r.name)
+                break
+            end
+        end
+    end
+end
+
+---------------------------------------------------------------------------
+-- They follow you to another map (user design)
+---------------------------------------------------------------------------
+
+local FOLLOW_MAX = 2
+local FOLLOW_CLEAR_M = 40
+local FOLLOW_MIN_S, FOLLOW_MAX_S = 60, 120
+
+local function here(actor)
+    local lname, pos = nil, nil
+    pcall(function() lname = level.name() end)
+    pcall(function() pos = actor:position() end)
+    return lname, pos
+end
+
+local function escape_follow(why, caption)
+    nemesis_utils.send_news(nemesis_utils.time_up_line(), caption or "A hunter")
+    S.follow = nil
+    end_hunt(why, true)
+end
+
+local function begin_follow(gt, actor)
+    local leader = nemesis_state.name_of(nemesis_state.leader())
+    if (S.follows or 0) >= FOLLOW_MAX then
+        escape_follow("you changed maps again; they lost your trail, you escaped", leader)
+        return
+    end
+    local members = {}
+    local function add(id, named)
+        local r = S.m[id]
+        if not r or r.retreat_at or r.dead or r.death then return end
+        local e = { name = r.name or "?", named = named, boss = (id == S.boss_id), hp = r.last_hp or 1 }
+        if e.boss then table.insert(members, 1, e) else members[#members + 1] = e end
+    end
+    for _, id in ipairs(S.hunter_ids) do add(id, true) end
+    for _, id in ipairs(S.squad_ids) do add(id, false) end
+    if #members == 0 or not members[1].named then
+        end_hunt("every hunter was breaking off when you left the map")
+        return
+    end
+    local lname, pos = here(actor)
+    local f = { members = members, faction = S.faction, boss_look = S.boss_look, boss_hunt = S.boss_hunt,
+                hunt_start = S.hunt_start, lvl = lname, ax = pos and pos.x or 0, az = pos and pos.z or 0 }
+    dbg("Nemesis: player changed maps; %s hunter(s) follow (%s of %s).", tostring(#members),
+        tostring((S.follows or 0) + 1), tostring(FOLLOW_MAX))
+    release_npc()
+    nemesis_utils.reset_chase()
+    S.phase = "idle"
+    S.retreat_announced = false
+    S.seen_online = nil
+    S.follow = f
+    S.follows = (S.follows or 0) + 1
+end
+
+local function follow_tick(gt, actor, slow)
+    local f = S.follow
+    if not slow or not f then return end
+    local caption = f.members[1] and f.members[1].name
+    if time_limit_reached() then
+        escape_follow("time limit while they followed you, you escaped", caption)
+        return
+    end
+    local lname, pos = here(actor)
+    if not pos then return end
+    if lname and f.lvl and lname ~= f.lvl then
+
+        if (S.follows or 0) >= FOLLOW_MAX then
+            escape_follow("you changed maps again; they lost your trail, you escaped", caption)
+            return
+        end
+        S.follows = (S.follows or 0) + 1
+        f.lvl, f.ax, f.az, f.spawn_at = lname, pos.x, pos.z, nil
+        dbg("Nemesis: player changed maps again; they follow (%s of %s).", tostring(S.follows), tostring(FOLLOW_MAX))
+        return
+    end
+    if not f.spawn_at then
+        local dx, dz = pos.x - f.ax, pos.z - f.az
+        if dx * dx + dz * dz < FOLLOW_CLEAR_M * FOLLOW_CLEAR_M then return end
+        f.spawn_at = gt + math.random(FOLLOW_MIN_S, FOLLOW_MAX_S) * 1000
+        dbg("Nemesis: player left the arrival area; the hunters arrive in %.0f s.", (f.spawn_at - gt) / 1000)
+        return
+    end
+    if gt < f.spawn_at or nemesis_spawn.follow_blocked(actor) then return end
+    nemesis_spawn.spawn_follow(gt, f)
+    if S.phase ~= "idle" then S.follow = nil end
+end
+
 local function manage(gt, actor, slow)
     if #S.hunter_ids == 0 then
         call_off(gt, "hunter object no longer exists; resetting.", 10000)
@@ -505,13 +634,14 @@ local function manage(gt, actor, slow)
         return
     end
     if slow and player_left_level() then
-        call_off(gt, "player left the level, removing the squad.", 10000)
+        begin_follow(gt, actor)
         return
     end
     if slow then
         nemesis_spawn.apply_names()
 
         nemesis_spawn.hold_guard_exemption()
+        read_surroundings(gt, actor)
     end
 
     local any_online = false
@@ -570,7 +700,8 @@ local function tick()
     if uninstall_tick(gt) then return end
     if S.phase == "idle" then
         nemesis_fx.whisper_stop()
-        nemesis_spawn.idle_tick(gt, actor, slow)
+        if S.follow then follow_tick(gt, actor, slow)
+        else nemesis_spawn.idle_tick(gt, actor, slow) end
     else
         nemesis_spawn.fill_squad()
         manage(gt, actor, slow)

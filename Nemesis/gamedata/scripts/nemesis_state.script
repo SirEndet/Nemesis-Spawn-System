@@ -11,7 +11,6 @@ local function blank()
         spawned_count = 0,
         first_hunt = nil,
         last_retreat = nil,
-        last_decay = nil,
         hunt_start = nil,
         faction = nil,
         hunter_ids = {},
@@ -33,6 +32,7 @@ local function blank()
         boss_sneak = nil,
         boss_look = nil,
         last_boss_day = nil,
+        hunts_since_boss = 0,
         sneak_started = nil,
         sneak_said = nil,
         sneak_wait = nil,
@@ -40,7 +40,99 @@ local function blank()
         boss_hit_frames = nil,
         boss_hit_frame = nil,
         dread_next = nil,
+
+        spots = {},
+        spot_said = nil,
+
+        follow = nil,
+        follows = 0,
     }
+end
+
+local SPOT_MAX = 5
+local SPOT_DAYS = 7
+local SPOT_MERGE_M = 20
+local SPOT_NEAR_M = 40
+
+local function forget_old_spots(now)
+    local keep = {}
+    for _, p in ipairs(S.spots) do
+        if now - p.t < SPOT_DAYS * 86400 and now >= p.t then keep[#keep + 1] = p end
+    end
+    S.spots = keep
+end
+
+local function flat_dist2(p, pos)
+    local dx, dz = p.x - pos.x, p.z - pos.z
+    return dx * dx + dz * dz
+end
+
+function remember_spot(lvl, pos, now)
+    if not lvl or not pos or not now then return end
+    forget_old_spots(now)
+    for _, p in ipairs(S.spots) do
+        if p.lvl == lvl and flat_dist2(p, pos) <= SPOT_MERGE_M * SPOT_MERGE_M then
+            p.x, p.y, p.z, p.t = pos.x, pos.y, pos.z, now
+            return
+        end
+    end
+    S.spots[#S.spots + 1] = { lvl = lvl, x = pos.x, y = pos.y, z = pos.z, t = now }
+    local on_level, oldest = 0, nil
+    for i, p in ipairs(S.spots) do
+        if p.lvl == lvl then
+            on_level = on_level + 1
+            if not oldest or p.t < S.spots[oldest].t then oldest = i end
+        end
+    end
+    if on_level > SPOT_MAX then table.remove(S.spots, oldest) end
+end
+
+function known_spot(lvl, pos, now)
+    if not lvl or not pos or not now then return false end
+    for _, p in ipairs(S.spots) do
+        if p.lvl == lvl and now - p.t < SPOT_DAYS * 86400 and now >= p.t
+            and flat_dist2(p, pos) <= SPOT_NEAR_M * SPOT_NEAR_M then
+            return true
+        end
+    end
+    return false
+end
+
+local function save_follow_list(list)
+    if not list then return nil end
+    local out = {}
+    for _, e in ipairs(list) do
+        out[#out + 1] = string.format("%s~%d~%d~%.2f", tostring(e.name), e.named and 1 or 0, e.boss and 1 or 0, tonumber(e.hp) or 1)
+    end
+    return table.concat(out, "|")
+end
+
+local function load_follow_list(str)
+    if not str or str == "" then return nil end
+    local out = {}
+    for item in string.gmatch(tostring(str), "[^|]+") do
+        local n, a, b, h = string.match(item, "^([^~]+)~([01])~([01])~([^~]+)$")
+        if n then out[#out + 1] = { name = n, named = a == "1", boss = b == "1", hp = tonumber(h) or 1 } end
+    end
+    return out
+end
+
+local function save_spots()
+    local out = {}
+    for _, p in ipairs(S.spots) do
+        out[#out + 1] = string.format("%s:%.1f:%.1f:%.1f:%d", p.lvl, p.x, p.y, p.z, p.t)
+    end
+    return table.concat(out, "|")
+end
+
+local function load_spots(str)
+    local out = {}
+    for item in string.gmatch(tostring(str or ""), "[^|]+") do
+        local l, x, y, z, t = string.match(item, "^([^:]+):([^:]+):([^:]+):([^:]+):([^:]+)$")
+        x, y, z, t = tonumber(x), tonumber(y), tonumber(z), tonumber(t)
+        if l and x and y and z and t then out[#out + 1] = { lvl = l, x = x, y = y, z = z, t = t } end
+    end
+    return out
 end
 
 function reset()
@@ -143,7 +235,6 @@ function save(mdata, vanish_ids)
         spawned_count = S.spawned_count,
         first_hunt = S.first_hunt,
         last_retreat = S.last_retreat,
-        last_decay = S.last_decay,
         hunt_start = S.hunt_start,
         faction = S.faction,
         boss_id = S.boss_id,
@@ -152,6 +243,19 @@ function save(mdata, vanish_ids)
         boss_ghost = S.boss_ghost,
         boss_look = S.boss_look,
         last_boss_day = S.last_boss_day,
+        hunts_since_boss = S.hunts_since_boss,
+        spots = save_spots(),
+        follows = S.follows,
+        follow = S.follow and save_follow_list(S.follow.members) or nil,
+        follow_faction = S.follow and S.follow.faction or nil,
+        follow_look = S.follow and S.follow.boss_look or nil,
+        follow_boss_hunt = S.follow and S.follow.boss_hunt and true or nil,
+        follow_start = S.follow and S.follow.hunt_start or nil,
+        follow_lvl = S.follow and S.follow.lvl or nil,
+        follow_ax = S.follow and S.follow.ax or nil,
+        follow_az = S.follow and S.follow.az or nil,
+        squad_follow = p and save_follow_list(p.follow) or nil,
+        squad_all_named = p and p.all_named and true or nil,
         hunter_ids = table.concat(S.hunter_ids, ","),
         squad_ids = table.concat(S.squad_ids, ","),
         retreating = table.concat(retreating, ","),
@@ -177,9 +281,17 @@ function load(mdata)
     S.spawned_count = s.spawned_count or 0
     S.first_hunt = s.first_hunt
     S.last_retreat = s.last_retreat
-    S.last_decay = s.last_decay
     S.hunt_start = s.hunt_start
     S.last_boss_day = s.last_boss_day
+    S.hunts_since_boss = tonumber(s.hunts_since_boss) or 0
+    S.spots = load_spots(s.spots)
+    S.follows = tonumber(s.follows) or 0
+    local fl = load_follow_list(s.follow)
+    if fl and #fl > 0 then
+        S.follow = { members = fl, faction = s.follow_faction, boss_look = s.follow_look, boss_hunt = s.follow_boss_hunt and true or nil,
+                     hunt_start = s.follow_start, lvl = s.follow_lvl, ax = tonumber(s.follow_ax) or 0, az = tonumber(s.follow_az) or 0 }
+        S.hunt_start = S.hunt_start or s.follow_start
+    end
     S.boss_ghost = tonumber(s.boss_ghost)
     S.faction = s.faction
 
@@ -218,6 +330,8 @@ function load(mdata)
             used = { [origin] = true },
             used_names = used_names,
             misses = 0,
+            all_named = s.squad_all_named and true or nil,
+            follow = load_follow_list(s.squad_follow),
         }
     end
     return vanish

@@ -37,9 +37,9 @@ local function options()
                 { id = "accuracy_boost", type = "track", val = 2, def = 20, min = 0, max = 40, step = 1, prec = 0, hint = "nemesis_accuracy_boost" },
                 { id = "reset_on_death", type = "check", val = 1, def = true, hint = "nemesis_reset_on_death" },
                 { id = "reset_escalation_now", type = "check", val = 1, def = false, hint = "nemesis_reset_escalation_now" },
-                { id = "decay_days", type = "track", val = 2, def = 1, min = 0, max = 14, step = 1, prec = 0, hint = "nemesis_decay_days" },
                 { id = "br_escalation", type = "track", val = 2, def = 0, min = -5, max = 5, step = 1, prec = 0, hint = "nemesis_br_escalation" },
                 { id = "br_class_cap", type = "track", val = 2, def = 0.2, min = 0, max = 1, step = 0.05, prec = 2, hint = "nemesis_br_class_cap" },
+                { id = "max_damage_reduction", type = "track", val = 2, def = 80, min = 50, max = 95, step = 5, prec = 0, hint = "nemesis_max_damage_reduction" },
                 { id = "br_pct_cap", type = "track", val = 2, def = 25, min = 5, max = 50, step = 1, prec = 0, hint = "nemesis_br_pct_cap" },
                 { id = "obrien_armor", type = "check", val = 1, def = false, hint = "nemesis_obrien_armor" },
                 { id = "last_known_chase", type = "check", val = 1, def = true, hint = "nemesis_last_known_chase" },
@@ -58,6 +58,7 @@ local function options()
                 { id = "squad_w4", type = "track", val = 2, def = 10, min = 0, max = 100, step = 1, prec = 0, hint = "nemesis_squad_w4" },
                 { id = "squad_w5", type = "track", val = 2, def = 6, min = 0, max = 100, step = 1, prec = 0, hint = "nemesis_squad_w5" },
                 { id = "named_chance", type = "track", val = 2, def = 25, min = 0, max = 100, step = 5, prec = 0, hint = "nemesis_named_chance" },
+                { id = "area_scaling", type = "check", val = 1, def = true, hint = "nemesis_area_scaling" },
             } },
             { id = "debug", sh = true, text = "ui_mcm_nemesis_page_debug", gr = {
                 { id = "title", type = "slide", link = "ui_options_slider_player", text = "ui_mcm_nemesis_title", size = {512, 50}, spacing = 20 },
@@ -90,15 +91,15 @@ end
 
 DIFFICULTY = {
     easy = { grace_period = 18, retreat_cooldown = 48, hunt_duration = 4, escalation_speed = 1.05,
-             max_escalation = 2, decay_days = 1, retreat_health = 30, br_pct_cap = 15, accuracy_boost = 10,
+             max_escalation = 2, retreat_health = 30, br_pct_cap = 15, accuracy_boost = 10,
              boss_chance = 1, boss_min_day = 7, named_chance = 15,
              squad_w1 = 50, squad_w2 = 25, squad_w3 = 14, squad_w4 = 10, squad_w5 = 6 },
     medium = { grace_period = 12, retreat_cooldown = 24, hunt_duration = 6, escalation_speed = 1.1,
-               max_escalation = 3, decay_days = 1, retreat_health = 25, br_pct_cap = 25, accuracy_boost = 20,
+               max_escalation = 3, retreat_health = 25, br_pct_cap = 25, accuracy_boost = 20,
                boss_chance = 2, boss_min_day = 7, named_chance = 25,
                squad_w1 = 50, squad_w2 = 25, squad_w3 = 14, squad_w4 = 10, squad_w5 = 6 },
     hard = { grace_period = 9, retreat_cooldown = 24, hunt_duration = 8, escalation_speed = 1.2,
-             max_escalation = 5, decay_days = 1, retreat_health = 20, br_pct_cap = 35, accuracy_boost = 30,
+             max_escalation = 5, retreat_health = 20, br_pct_cap = 35, accuracy_boost = 30,
              boss_chance = 4, boss_min_day = 4, named_chance = 40,
              squad_w1 = 30, squad_w2 = 25, squad_w3 = 20, squad_w4 = 15, squad_w5 = 10 },
 }

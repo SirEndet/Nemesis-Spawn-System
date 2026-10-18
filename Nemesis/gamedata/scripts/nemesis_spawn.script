@@ -15,24 +15,6 @@ function retry_later(gt) block_until = gt + SPAWN_RETRY_MS end
 ---------------------------------------------------------------------------
 -- When
 ---------------------------------------------------------------------------
-
-function apply_decay()
-    local days = nemesis_mcm.get_number("decay_days", 1)
-    if days <= 0 or (S.cycle or 1) <= 1 or not S.last_retreat then return end
-    local now = nemesis_utils.game_seconds()
-    local from = S.last_decay or S.last_retreat
-    if now < from then S.last_decay = now; return end
-    local step = days * 86400
-    local steps = math.floor((now - from) / step)
-    if steps <= 0 then return end
-    local before = S.cycle
-    S.cycle = math.max(1, S.cycle - steps)
-    S.last_decay = from + steps * step
-    nemesis_damage.unseed_br()
-    dbg("Nemesis: escalation decayed from cycle %s to %s (%s day(s) without a hunt).",
-        tostring(before), tostring(S.cycle), tostring(steps * days))
-end
-
 local function spawn_allowed(gt)
     if gt < block_until then return false end
     local debug_mode = nemesis_mcm.get_bool("debug_mode", false)
@@ -146,6 +128,8 @@ local function spawn_blocked(actor, ignore_bases)
         reason = "in a dialogue"
     elseif sleeping then
         reason = "sleeping"
+    elseif nemesis_utils.on_underground_map() then
+        reason = "on an underground map"
     elseif not ignore_bases then
         local base = near_base(actor:position(), SAFE_RADIUS_M, base_smarts_on_level(), friendly_base)
         if base then reason = "within " .. SAFE_RADIUS_M .. " m of base " .. base.name end
@@ -269,6 +253,16 @@ end
 
 local SQUAD_WEIGHTS = { 50, 25, 14, 10, 6 }
 
+local AREA_SQUAD_CAP = { [0] = 2, [1] = 3 }
+local AREA_NAMED_BONUS = { [4] = 10, [5] = 20 }
+function area_tier()
+    if not nemesis_mcm.get_bool("area_scaling", true) then return nil end
+    local tier = nil
+    pcall(function() tier = xlevel.get_danger_tier(level.name()) end)
+    if type(tier) ~= "number" then tier = xlevel.DANGER_TIER_DEFAULT or 2 end
+    return tier
+end
+
 local function roll_squad_size()
     local total = 0
     local weights = {}
@@ -295,19 +289,15 @@ local function boss_escort()
     return n
 end
 
-local function escort_count()
-    local n = 0
-    for _, hid in ipairs(S.hunter_ids) do if hid ~= S.boss_id then n = n + 1 end end
-    return n
-end
-
 local function arrival_fx(id)
     local se = id and alife():object(id)
     if se and se.position then nemesis_fx.play_retreat_fx(se.position) end
 end
 
-local function named_chance()
+local function named_chance(tier)
     local chance = nemesis_mcm.get_number("named_chance", 25)
+    if chance < 0 then chance = 0 end
+    chance = chance + (tier and AREA_NAMED_BONUS[tier] or 0)
     if chance < 0 then chance = 0 end
     if chance > 100 then chance = 100 end
     return chance
@@ -387,21 +377,23 @@ function fill_squad()
     end
     job.misses = 0
     job.left = job.left - 1
-    local named = job.all_named or math.random(100) <= named_chance()
-    local ename = nemesis_utils.next_hunter_name(job.used_names, named)
+    local fe = job.follow and table.remove(job.follow, 1)
+    local named, ename
+    if fe then
+        named, ename = fe.named, fe.name
+    else
+        named = job.all_named or math.random(100) <= named_chance(area_tier())
+        ename = nemesis_utils.next_hunter_name(job.used_names, named)
+    end
     nemesis_state.add_member(extra_id, named, ename)
+    if fe then
+        local r = nemesis_state.member(extra_id)
+        if r then r.follow_hp = fe.hp end
+        arrival_fx(extra_id)
+    end
     if named then
         dbg("Nemesis: named hunter '%s' joined the squad", ename)
-        if not job.all_named and nemesis_boss.roll() then
-            nemesis_boss.make(extra_id)
-            nemesis_boss.news(nemesis_utils.boss_line())
-
-            job.all_named = true
-            job.left = math.max(job.left, boss_escort() - escort_count())
-            arrival_fx(extra_id)
-        elseif job.all_named then
-            arrival_fx(extra_id)
-        end
+        if job.all_named and not fe then arrival_fx(extra_id) end
     else
         dbg("Nemesis: stalker '%s' joined the squad", ename)
     end
@@ -505,7 +497,8 @@ end
 ---------------------------------------------------------------------------
 -- How
 ---------------------------------------------------------------------------
-local function try_spawn(gt)
+
+local function try_spawn(gt, follow)
     local actor = db.actor
     if not actor then return end
 
@@ -520,7 +513,7 @@ local function try_spawn(gt)
         end
     end
 
-    local faction = nemesis_utils.faction_for_player()
+    local faction = (follow and follow.faction) or nemesis_utils.faction_for_player()
     local squad_section = nemesis_utils.resolve_squad_section(faction)
     if not squad_section then
         if not warned_no_squad then
@@ -558,6 +551,8 @@ local function try_spawn(gt)
     S.boss_id = nil
     S.boss_hunt = nil
     S.boss_sneak = nil
+    S.spot_said = nil
+    if not follow then S.follows = 0 end
     nemesis_utils.reset_chase()
     nemesis_chase.reset_all()
     arm_squad(squad)
@@ -572,25 +567,52 @@ local function try_spawn(gt)
         return
     end
 
-    local chance = named_chance()
+    local tier = area_tier()
+    local chance = named_chance(tier)
     local used_names = {}
+    local follow_rest = nil
+    if follow then
 
-    local leader_boss = nemesis_boss.take_leader_roll(warning_on())
-    for i, mid in ipairs(members) do
-        local named = (i == 1) or (math.random(100) <= chance)
-        nemesis_state.add_member(mid, named, nemesis_utils.next_hunter_name(used_names, named))
-        if named and ((i == 1 and leader_boss) or (i > 1 and nemesis_boss.roll())) then
-            nemesis_boss.make(mid)
+        follow_rest = {}
+        for i, e in ipairs(follow.members) do if i > 1 then follow_rest[#follow_rest + 1] = e end end
+        for _, e in ipairs(follow.members) do used_names[e.name] = true end
+        for i, mid in ipairs(members) do
+            local e = (i == 1) and follow.members[1] or table.remove(follow_rest, 1)
+            if e then
+                nemesis_state.add_member(mid, e.named, e.name)
+                local r = nemesis_state.member(mid)
+                if r then r.follow_hp = e.hp end
+                if e.boss then
+                    nemesis_boss.make(mid)
+                    S.boss_look = follow.boss_look or S.boss_look
+                end
+            end
         end
+        S.boss_hunt = follow.boss_hunt or S.boss_hunt
+        for _, mid in ipairs(members) do arrival_fx(mid) end
+        S.hunt_start = follow.hunt_start or nemesis_utils.game_seconds()
+    else
+
+        local leader_boss = nemesis_boss.take_leader_roll(warning_on())
+        for i, mid in ipairs(members) do
+            local named = (i == 1) or (math.random(100) <= chance)
+            nemesis_state.add_member(mid, named, nemesis_utils.next_hunter_name(used_names, named))
+            if i == 1 and leader_boss then nemesis_boss.make(mid) end
+        end
+        nemesis_boss.count_hunt(S.boss_id ~= nil)
+        if S.boss_id then for _, mid in ipairs(members) do arrival_fx(mid) end end
+        S.spawned_count = S.spawned_count + 1
+        S.hunt_start = nemesis_utils.game_seconds()
     end
-    if S.boss_id then for _, mid in ipairs(members) do arrival_fx(mid) end end
     S.phase = "hunting"
-    S.spawned_count = S.spawned_count + 1
-    S.hunt_start = nemesis_utils.game_seconds()
 
     local wanted = roll_squad_size()
+    local cap = tier and AREA_SQUAD_CAP[tier]
+    if cap and wanted > cap then wanted = cap end
     local all_named = false
-    if S.boss_id then
+    if follow then
+        wanted = #members + #follow_rest
+    elseif S.boss_id then
 
         wanted = #members + boss_escort()
         all_named = true
@@ -616,6 +638,7 @@ local function try_spawn(gt)
                 used_names = used_names,
                 misses = 0,
                 all_named = all_named,
+                follow = follow_rest,
             }
         end
     end
@@ -623,7 +646,11 @@ local function try_spawn(gt)
     local leader = nemesis_state.name_of(nemesis_state.leader()) or "A hunter"
     local sname = "navmesh vertex " .. tostring(ring_lv)
     if spawn_smart then pcall(function() sname = spawn_smart:name() end) end
-    if S.boss_id then
+    if follow and S.boss_id then
+        nemesis_boss.news(nemesis_utils.follow_line())
+    elseif follow then
+        nemesis_utils.send_news(nemesis_utils.follow_line(), leader)
+    elseif S.boss_id then
         nemesis_boss.news(nemesis_utils.boss_line())
     else
         nemesis_utils.send_news(nemesis_utils.taunt(S.cycle), leader)
@@ -635,7 +662,6 @@ local function try_spawn(gt)
 end
 
 function idle_tick(gt, actor, slow)
-    if slow then apply_decay() end
     local warn_on = warning_on()
 
     if warn_spawn_at and gt - warn_spawn_at > WARN_STALE_MS then warn_spawn_at = nil end
@@ -652,6 +678,9 @@ function idle_tick(gt, actor, slow)
         try_spawn(gt)
     end
 end
+
+function follow_blocked(actor) return spawn_blocked(actor, true) end
+function spawn_follow(gt, follow) try_spawn(gt, follow) end
 
 function reset_runtime()
     warn_spawn_at = nil
