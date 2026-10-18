@@ -9,19 +9,19 @@ Every so often, a hunter comes for you. He spawns out of sight, sprints after yo
 - **The warning.** Radio static tells you something is coming (you can also turn on a strange PDA message). A short while later the hunt begins.
 - **The hunter.** He spawns 70 to 140 m away and heads straight for you. Named hunters carry a Monolith rank in their name (Acolyte, Disciple, Zealot, Sentinel, Templar, Herald), so you can tell them apart from ordinary stalkers.
 - **His squad.** Sometimes he brings company: up to four more Monolith stalkers. Some of them can be named hunters too. The rest are normal stalkers you can kill.
-- **The fight.** When he sees you, he fights like any GAMMA stalker, only a better shot. Normal hits can't kill a named hunter. When his health gets low, he runs for cover and teleports out. A red "Last seen" marker shows where he went.
+- **The fight.** When he sees you, he fights like any GAMMA stalker, only a better shot. Normal hits can't kill a named hunter. When his health gets low, he runs for cover and teleports out.
 - **He never leaves a body.** However a named hunter goes down, the Zone takes him back.
 - **He learns.** Every hunt you beat makes the next one tougher: he takes less damage, holds on longer, and his armour catches up with yours. Go a while without a hunt and he slowly weakens again. If he kills you, he starts over from his weakest.
 - **Whispers.** When a named hunter is close, you hear Monolith whispers in your head.
 - **Escaping.** Survive long enough (6 in-game hours by default) and the hunters give up.
 
-**No safe havens, but some rules.** A hunt never starts while you are in a base or trader camp, in a dialogue or asleep. Once the warning has come through, though, the hunt is on: walking into a base won't stop it.
+**No safe havens, but some rules.** A hunt never starts while you are in a base or trader camp that is friendly or neutral to you, in a dialogue or asleep. Enemy bases are no shelter. Once the warning has come through, though, the hunt is on: walking into a base won't stop it.
 
 **Playing as Monolith?** Then the hunters are UNISG instead, with military ranks.
 
 ### The boss
 
-Rarely, a hunter is the boss: **Bogdan Kravets** (you can rename him). He is tougher, always cloaked, has his own look and his own messages, and only cares about you. Sometimes he sneaks around behind you before he strikes. He never leaves a "Last seen" marker. Beat a hunt he was in and the hunters get two steps weaker.
+Rarely, a hunter is the boss: **Bogdan Kravets** (you can rename him). He is tougher, always cloaked, has his own look and his own messages, and only cares about you. He never comes alone: four named hunters (Boss escort size) keep you busy while he hunts you. You'll know he's here: they teleport in, in a Monolith burst. While cloaked he slips past everyone else unnoticed, and seeing him changes nothing; only your shot gives him away. Stand still and he sneaks around behind you; run and he runs you down. Either way he tells you before he strikes, and his first 3 shots at you always miss. Beat a hunt he was in and the hunters get two steps weaker.
 
 ## Settings
 
@@ -67,8 +67,9 @@ The **Difficulty** setting at the top of the General page picks Easy, Medium (th
 | Boss name | Bogdan Kravets | The boss's name. |
 | Boss chance (%) | 2 | Chance that a named hunter is the boss. |
 | Boss toughness (%) | 30 | How much tougher the boss is than a normal named hunter. |
+| Boss extra BR | 0 | Extra armour class for the boss only, on top of the other hunters' (not the % mitigation). |
 | Boss days after grace | 7 | Days after the grace period before a boss can appear. |
-| Boss sneak chance (%) | 50 | Chance the boss sneaks up behind you instead of charging. |
+| Boss escort size | 4 | Named hunters who come with the boss. 0 = he comes alone. |
 
 ### Combat and armour
 | Setting | Default | What it does |
@@ -101,10 +102,11 @@ The **Difficulty** setting at the top of the General page picks Easy, Medium (th
 ### Debug
 | Setting | Default | What it does |
 |---|---|---|
-| Debug mode | Off | For testing: hunts come quickly and can start anywhere. |
+| Debug mode | Off | For testing: hunts come quickly and can start anywhere, and a map marker follows the boss. |
 | Debug logs | Off | Writes Nemesis lines to the console, for bug reports. |
 | Send a test PDA message | – | Checks that Nemesis messages show up. |
 | Force a boss in the next hunt | – | The next named hunter is the boss. |
+| Prepare for uninstall | Off | Ends any hunt and removes every Nemesis squad, so you can save and uninstall safely. No hunts while ticked. |
 
 ## Requirements
 
@@ -116,6 +118,18 @@ Works alongside AlifePlus and AlifeTactics, but does not need them.
 ## Install
 
 Install with Mod Organizer like any other mod. Load order doesn't matter. Settings appear under MCM → Nemesis Wave Spawn System.
+
+## Uninstalling
+
+**Load a save made while no hunt was running.** During a hunt, the save contains the hunt squad, which is built from this mod's own squad type. Without the mod the game cannot rebuild it, and loading that save will most likely crash. Saves made between hunts don't contain it: the squad is removed when a hunt ends.
+
+1. In MCM → Nemesis → Debug, tick **Prepare for uninstall** and apply. Any running hunt is called off, every Nemesis squad is removed from the world (leftovers of older hunts included), and no new hunt starts. Within about 10 seconds a PDA message says it is safe to save.
+2. Save.
+3. Disable or remove the mod, and load that save.
+
+(Without the checkbox: finish the hunt by beating it or letting it time out, wait until the hunters are gone, then save.) If you keep the mod after all, untick the box and the hunts come back.
+
+Everything else is harmless: the mod's own data in your saves is ignored once the mod is gone, and old Nemesis PDA messages may show without their icon. A small file, `nemesis_death_reset.txt`, can be left in your `appdata` folder; it is only read by this mod and can be deleted.
 
 ## Reporting a bug
 

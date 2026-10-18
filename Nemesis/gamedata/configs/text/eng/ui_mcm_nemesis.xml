@@ -48,22 +48,25 @@
     <string id="ui_mcm_nemesis_boss_toughness"><text>Boss toughness (%)</text></string>
     <string id="ui_mcm_nemesis_boss_toughness_desc"><text>How much tougher the boss is than a normal named hunter. 0 = no tougher. Default 30.</text></string>
 
+    <string id="ui_mcm_nemesis_boss_br_add"><text>Boss extra BR</text></string>
+    <string id="ui_mcm_nemesis_boss_br_add_desc"><text>A flat amount of ballistic rating (armour class, the same scale as Extra BR cap) added to the boss's body and head armour, on top of what every named hunter gets. Not BR mitigation percent. Needs GAMMA ballistics. 0 = no extra. Default 0.</text></string>
+    <string id="ui_mcm_nemesis_boss_escort"><text>Boss escort size</text></string>
+    <string id="ui_mcm_nemesis_boss_escort_desc"><text>How many named hunters come with the boss. They hunt you like any named hunter, the real threat and distraction, while he sneaks up to finish you. A boss hunt ignores Squad of 1 to 5 and Extra is a named hunter. 0 = he comes alone. Default 4.</text></string>
     <string id="ui_mcm_nemesis_boss_min_day"><text>Boss days after grace</text></string>
     <string id="ui_mcm_nemesis_boss_min_day_desc"><text>In-game days after the grace period before a boss can appear. Default 7.</text></string>
-
-    <string id="ui_mcm_nemesis_boss_sneak_chance"><text>Boss sneak chance (%)</text></string>
-    <string id="ui_mcm_nemesis_boss_sneak_chance_desc"><text>Chance that a boss, when he spawns, tries to sneak up behind you instead of charging. If he gets within 20 m behind you unseen, he tells you so, and attacks 5 seconds later. A hit breaks the sneak. Default 50.</text></string>
 
     <string id="ui_mcm_nemesis_hd_icon"><text>HD icon</text></string>
     <string id="ui_mcm_nemesis_hd_icon_desc"><text>Use the high definition portrait on PDA messages. Off uses the original low definition icon.</text></string>
 
     <string id="ui_mcm_nemesis_debug_mode"><text>Debug mode</text></string>
-    <string id="ui_mcm_nemesis_debug_mode_desc"><text>For testing: hunts start sooner (no grace period, 120 seconds between hunts) and can spawn anywhere, even near traders and bases. Turn it off for normal play.</text></string>
+    <string id="ui_mcm_nemesis_debug_mode_desc"><text>For testing: hunts start sooner (no grace period, 120 seconds between hunts) and can spawn anywhere, even near traders and bases. A red map marker follows the boss. Turn it off for normal play.</text></string>
 
     <string id="ui_mcm_nemesis_test_pda"><text>Send a test PDA message</text></string>
     <string id="ui_mcm_nemesis_test_pda_desc"><text>Tick and apply: one Nemesis PDA message is sent at once, with the banner icon and the PDA sound. With Debug logs on, the console says whether it went out. The box unticks itself.</text></string>
 
     <string id="ui_mcm_nemesis_force_boss"><text>Force a boss in the next hunt</text></string>
+    <string id="ui_mcm_nemesis_prepare_uninstall"><text>Prepare for uninstall</text></string>
+    <string id="ui_mcm_nemesis_prepare_uninstall_desc"><text>Tick and apply before you remove the mod: any running hunt is called off, every Nemesis squad is removed from the world, and no new hunt starts while the box stays ticked. A PDA message tells you when it is safe to save. Then save, remove the mod and load that save. Untick it to let the hunts come back.</text></string>
     <string id="ui_mcm_nemesis_force_boss_desc"><text>For testing. Tick and apply: the next named hunter to spawn is the boss, ignoring the chance, the day limit and the once-a-day rule. The box unticks itself.</text></string>
 
     <string id="ui_mcm_nemesis_debug_logs"><text>Debug logs</text></string>

@@ -25,8 +25,9 @@ local function options()
                 { id = "npc_name", type = "input", val = 0, def = "Bogdan Kravets", hint = "nemesis_npc_name" },
                 { id = "boss_chance", type = "track", val = 2, def = 2, min = 0, max = 20, step = 1, prec = 0, hint = "nemesis_boss_chance" },
                 { id = "boss_toughness", type = "track", val = 2, def = 30, min = 0, max = 100, step = 5, prec = 0, hint = "nemesis_boss_toughness" },
+                { id = "boss_br_add", type = "track", val = 2, def = 0, min = 0, max = 1, step = 0.05, prec = 2, hint = "nemesis_boss_br_add" },
                 { id = "boss_min_day", type = "track", val = 2, def = 7, min = 1, max = 7, step = 1, prec = 0, hint = "nemesis_boss_min_day" },
-                { id = "boss_sneak_chance", type = "track", val = 2, def = 50, min = 0, max = 100, step = 5, prec = 0, hint = "nemesis_boss_sneak_chance" },
+                { id = "boss_escort", type = "track", val = 2, def = 4, min = 0, max = 4, step = 1, prec = 0, hint = "nemesis_boss_escort" },
             } },
             { id = "combat", sh = true, text = "ui_mcm_nemesis_page_combat", gr = {
                 { id = "title", type = "slide", link = "ui_options_slider_player", text = "ui_mcm_nemesis_title", size = {512, 50}, spacing = 20 },
@@ -64,6 +65,7 @@ local function options()
                 { id = "debug_logs", type = "check", val = 1, def = false, hint = "nemesis_debug_logs" },
                 { id = "test_pda", type = "check", val = 1, def = false, hint = "nemesis_test_pda" },
                 { id = "force_boss", type = "check", val = 1, def = false, hint = "nemesis_force_boss" },
+                { id = "prepare_uninstall", type = "check", val = 1, def = false, hint = "nemesis_prepare_uninstall" },
             } },
         },
     }

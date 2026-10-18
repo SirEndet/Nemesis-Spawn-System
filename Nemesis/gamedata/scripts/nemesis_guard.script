@@ -180,6 +180,8 @@ local function take_death_marker()
     return found
 end
 
+function forget_death_marker() take_death_marker() end
+
 function on_actor_hit(actor, amount, dir, who, bone)
     if S.phase == "idle" or not who then return end
     local wid = nil

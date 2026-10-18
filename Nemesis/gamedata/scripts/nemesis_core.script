@@ -314,8 +314,6 @@ local function manage_hunter(id, r, gt, actor, retreat_health)
         end
 
         if gone and not nemesis_fx.invisible_model_exists() then nemesis_fx.play_retreat_fx(gone:position()) end
-
-        if gone and id ~= S.boss_id then nemesis_fx.mark_last_seen(gone:position(), r.name) end
         release_id(id)
         nemesis_state.drop_member(id)
         nemesis_fx.queue_vanish(id, 0)
@@ -431,6 +429,69 @@ local function call_off(gt, why, retry_ms)
     nemesis_spawn.block(gt + retry_ms)
 end
 
+---------------------------------------------------------------------------
+-- Prepare for uninstall (MCM, Debug)
+---------------------------------------------------------------------------
+
+local UNINSTALL_SECTIONS = { nemesis_hunter_squad = true, nemesis_hunter_squad_isg = true }
+local UNINSTALL_SWEEP_MS = 3000
+local MAX_SE_ID = 65534
+local uninstall = nil
+
+local function our_squads_in_world()
+    local found = {}
+    local sim = alife()
+    if not sim then return found end
+    for id = 1, MAX_SE_ID do
+        local se = sim:object(id)
+        if se then
+            local ok, sec = pcall(function() return se:section_name() end)
+            if ok and UNINSTALL_SECTIONS[sec] then found[id] = true end
+        end
+    end
+    return found
+end
+
+local function uninstall_tick(gt)
+    if not nemesis_mcm.get_bool("prepare_uninstall", false) then
+        if uninstall then
+            uninstall = nil
+            dbg("Nemesis: uninstall preparation off, hunts can start again.")
+        end
+        return false
+    end
+    if not uninstall then
+        if S.phase ~= "idle" then call_off(gt, "preparing for uninstall: the hunt is called off.", 0) end
+        nemesis_spawn.reset_runtime()
+        nemesis_guard.forget_death_marker()
+        uninstall = { squads = our_squads_in_world(), at = gt + UNINSTALL_SWEEP_MS, said = false }
+        local n = 0
+        for _ in pairs(uninstall.squads) do n = n + 1 end
+        dbg("Nemesis: preparing for uninstall, %s Nemesis squad(s) in the world.", tostring(n))
+    end
+    if gt < uninstall.at then return true end
+    local left = 0
+    for id in pairs(uninstall.squads) do
+        local sq = alife():object(id)
+        local ours = false
+        pcall(function() ours = UNINSTALL_SECTIONS[sq:section_name()] == true end)
+        if not (sq and ours) then
+            uninstall.squads[id] = nil
+        else
+            nemesis_fx.remove_object(sq)
+            left = left + 1
+        end
+    end
+    if left > 0 then
+        uninstall.at = gt + 1000
+    elseif not uninstall.said then
+        uninstall.said = true
+        dbg("Nemesis: uninstall preparation done, no Nemesis squad left.")
+        nemesis_utils.send_news("No hunt is left in the world. Save now, then you can remove Nemesis and load that save.", "Nemesis")
+    end
+    return true
+end
+
 local function manage(gt, actor, slow)
     if #S.hunter_ids == 0 then
         call_off(gt, "hunter object no longer exists; resetting.", 10000)
@@ -505,7 +566,8 @@ local function tick()
         slow = true
         next_slow = gt + SLOW_MS
     end
-    if slow then nemesis_fx.expire_marks() end
+    nemesis_boss.debug_mark_tick(gt)
+    if uninstall_tick(gt) then return end
     if S.phase == "idle" then
         nemesis_fx.whisper_stop()
         nemesis_spawn.idle_tick(gt, actor, slow)
@@ -555,6 +617,7 @@ local function on_first_update()
     nemesis_fx.reset_runtime()
     nemesis_spawn.reset_runtime()
     nemesis_boss.reset_runtime()
+    uninstall = nil
     for _, id in ipairs(load_vanish) do nemesis_fx.queue_vanish(id, 2000) end
     load_vanish = {}
     nemesis_guard.apply_death_reset()
@@ -588,6 +651,8 @@ function on_game_start()
     RegisterScriptCallback("npc_on_before_hit", nemesis_damage.on_before_hit)
     RegisterScriptCallback("npc_on_hit_callback", nemesis_damage.on_hunter_hit)
     RegisterScriptCallback("npc_shot_dispersion", nemesis_damage.on_shot_dispersion)
+    RegisterScriptCallback("actor_on_before_hit", nemesis_damage.on_actor_before_hit)
+    RegisterScriptCallback("on_enemy_eval", nemesis_fx.on_enemy_eval)
     RegisterScriptCallback("npc_on_death_callback", on_death)
     RegisterScriptCallback("actor_on_hit_callback", nemesis_guard.on_actor_hit)
     RegisterScriptCallback("actor_on_before_death", nemesis_guard.on_actor_before_death)

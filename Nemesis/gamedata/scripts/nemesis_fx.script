@@ -183,8 +183,45 @@ local REVEAL_M = 15
 local CLOAK_COOLDOWN_MS = 20000
 local HIT_REVEAL_MS = 1500
 
+---------------------------------------------------------------------------
+-- The cloaked boss is no one's enemy (user design)
+---------------------------------------------------------------------------
+
+local BOSS_BUMP_M = 2
+local BOSS_BUMP_MS = 500
+local neutral_boss = nil
+
+function on_enemy_eval(npc, enemy, flags)
+    local b = neutral_boss
+    if not b or not npc or not enemy or not flags then return end
+    local a, e = npc:id(), enemy:id()
+    if a ~= b and e ~= b then return end
+    if a == 0 or e == 0 then return end
+    flags.override = true
+    flags.result = false
+end
+
+local function hostile_bump(obj)
+    local found = false
+    pcall(function()
+        level.iterate_nearest(obj:position(), BOSS_BUMP_M, function(o)
+            if found or not o or o:id() == 0 or o:id() == obj:id() then return end
+            if nemesis_state.member(o:id()) or not alive_obj(o) then return end
+            if IsMonster(o) then found = true
+            elseif IsStalker(o) then
+                local ok, rel = pcall(function() return obj:relation(o) end)
+                local ok2, rel2 = pcall(function() return o:relation(obj) end)
+                if (ok and rel == game_object.enemy) or (ok2 and rel2 == game_object.enemy) then found = true end
+            end
+            return found
+        end)
+    end)
+    return found
+end
+
 function reveal(obj, r, gt, why)
     if not r or not r.cloak_vis then return end
+    if r.id == neutral_boss then neutral_boss = nil end
     set_visual(obj, r.cloak_vis)
     r.cloak_vis = nil
     r.cloak_off_at = gt or time_global()
@@ -208,6 +245,9 @@ function cloak_update(obj, r, gt, actor)
     local id = r.id
     local enabled = (id == S.boss_id or nemesis_mcm.get_bool("hunter_cloak", true)) and invisible_model_exists()
     local hit = r.hit_at and gt - r.hit_at < HIT_REVEAL_MS
+    if id == S.boss_id and nemesis_utils.sneak_active(id) then
+        hit = r.player_hit_at and gt - r.player_hit_at < HIT_REVEAL_MS
+    end
     local ok, d = pcall(_dist, obj, actor)
     if not ok then d = 9999 end
     local fighting = nemesis_utils.combat_owns(obj) == true
@@ -215,14 +255,26 @@ function cloak_update(obj, r, gt, actor)
         if not enabled then reveal(obj, r, gt, "option off")
         elseif fighting then reveal(obj, r, gt, "fighting")
         elseif d <= REVEAL_M and not nemesis_utils.sneak_active(id) then reveal(obj, r, gt, "close")
-        elseif hit then reveal(obj, r, gt, "hit") end
+        elseif hit then reveal(obj, r, gt, "hit")
+        elseif id == S.boss_id and gt - (r.bump_at or -BOSS_BUMP_MS) >= BOSS_BUMP_MS then
+            r.bump_at = gt
+            if hostile_bump(obj) then reveal(obj, r, gt, "an enemy within 2 m") end
+        end
     elseif enabled and not fighting and not hit and d > CLOAK_MIN_M
         and gt - (r.cloak_off_at or -CLOAK_COOLDOWN_MS) >= CLOAK_COOLDOWN_MS then
         cloak(obj, r)
     end
+    if id == S.boss_id then
+        local was = neutral_boss
+        neutral_boss = (r.cloak_vis and not r.player_struck) and id or nil
+        if was ~= neutral_boss then
+            dbg("Nemesis: the boss is %s.", neutral_boss and "no one's enemy while cloaked" or "a normal enemy again")
+        end
+    end
 end
 
 function reveal_all()
+    neutral_boss = nil
     for id, r in pairs(S.m) do
         if r.cloak_vis then
             local obj = level.object_by_id(id)
@@ -283,53 +335,9 @@ function whisper_update(actor)
     end)
 end
 
----------------------------------------------------------------------------
--- "Last seen" marker
----------------------------------------------------------------------------
-
-local MARK_RADIUS_M = 150
-local MARK_GAME_S = 600
-local MARK_TYPE = "red_location"
-local marks = {}
-
-function mark_last_seen(pos, name)
-    if not (pos and level.present()) then return end
-    local sim_actor = alife():actor()
-    local best, best_d = nil, MARK_RADIUS_M
-    local ok, by_name = pcall(xsmart.get_named_smarts)
-    if not ok or type(by_name) ~= "table" then return end
-    for _, smart in pairs(by_name) do
-        if smart and smart.position and smart.id then
-            local d = smart.position:distance_to(pos)
-            if d < best_d and nemesis_utils.same_level(smart, sim_actor) == true then
-                best, best_d = smart, d
-            end
-        end
-    end
-    if not best then
-        dbg("Nemesis: no smart within %s m to mark the last known position.", tostring(MARK_RADIUS_M))
-        return
-    end
-    if level.map_has_object_spot(best.id, MARK_TYPE) ~= 0 then return end
-    level.map_add_object_spot(best.id, MARK_TYPE, "Last seen: " .. tostring(name or "Nemesis"))
-    marks[best.id] = nemesis_utils.game_seconds() + MARK_GAME_S
-    dbg("Nemesis: last known position marked near smart %s (%.0f m).", tostring(best.id), best_d)
-end
-
-function expire_marks()
-    if next(marks) == nil or not level.present() then return end
-    local now = nemesis_utils.game_seconds()
-    for id, at in pairs(marks) do
-        if now >= at then
-            level.map_remove_object_spot(id, MARK_TYPE)
-            marks[id] = nil
-        end
-    end
-end
-
 function reset_runtime()
+    neutral_boss = nil
     whisper = nil
-    marks = {}
     vanish_queue = {}
     squad_cleanup = {}
 end

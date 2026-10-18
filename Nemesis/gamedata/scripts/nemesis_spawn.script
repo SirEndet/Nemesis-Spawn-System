@@ -104,16 +104,34 @@ local function base_smarts_on_level()
             local p = smart.position
             local pos = vector()
             pos:set(p.x, p.y, p.z)
-            out[#out + 1] = { position = pos, name = name }
+
+            local declared = {}
+            pcall(function() for f in pairs(xsmart.get_declared_factions(smart)) do declared[#declared + 1] = f end end)
+            out[#out + 1] = { position = pos, name = name, id = smart.id, declared = declared }
         end
     end
     if lname ~= nil then base_cache, base_cache_level, base_cache_at = out, lname, now end
     return out
 end
 
-local function near_base(pos, radius, bases)
+local function friendly_base(b)
+    local me = nemesis_utils.player_community()
+    if not me or not b.id then return true end
+    local ok, hostile = pcall(xsmart.has_enemy_squad, b.id, me)
+    if ok and hostile then return false end
+    local stationed = false
+    pcall(function() for _ in xsmart.iterate_stationed_squads(b.id) do stationed = true; break end end)
+    if stationed or #b.declared == 0 then return true end
+    for _, f in ipairs(b.declared) do
+        local ok2, enemy = pcall(game_relations.is_factions_enemies, me, f)
+        if not ok2 or not enemy then return true end
+    end
+    return false
+end
+
+local function near_base(pos, radius, bases, accept)
     for _, b in ipairs(bases) do
-        if b.position:distance_to(pos) < radius then return b end
+        if b.position:distance_to(pos) < radius and (not accept or accept(b)) then return b end
     end
     return nil
 end
@@ -129,7 +147,7 @@ local function spawn_blocked(actor, ignore_bases)
     elseif sleeping then
         reason = "sleeping"
     elseif not ignore_bases then
-        local base = near_base(actor:position(), SAFE_RADIUS_M, base_smarts_on_level())
+        local base = near_base(actor:position(), SAFE_RADIUS_M, base_smarts_on_level(), friendly_base)
         if base then reason = "within " .. SAFE_RADIUS_M .. " m of base " .. base.name end
     end
     if reason ~= blocked_logged then
@@ -270,6 +288,24 @@ local function roll_squad_size()
     return 1
 end
 
+local function boss_escort()
+    local n = math.floor(nemesis_mcm.get_number("boss_escort", 4) + 0.5)
+    if n < 0 then n = 0 end
+    if n > 4 then n = 4 end
+    return n
+end
+
+local function escort_count()
+    local n = 0
+    for _, hid in ipairs(S.hunter_ids) do if hid ~= S.boss_id then n = n + 1 end end
+    return n
+end
+
+local function arrival_fx(id)
+    local se = id and alife():object(id)
+    if se and se.position then nemesis_fx.play_retreat_fx(se.position) end
+end
+
 local function named_chance()
     local chance = nemesis_mcm.get_number("named_chance", 25)
     if chance < 0 then chance = 0 end
@@ -351,14 +387,20 @@ function fill_squad()
     end
     job.misses = 0
     job.left = job.left - 1
-    local named = math.random(100) <= named_chance()
+    local named = job.all_named or math.random(100) <= named_chance()
     local ename = nemesis_utils.next_hunter_name(job.used_names, named)
     nemesis_state.add_member(extra_id, named, ename)
     if named then
         dbg("Nemesis: named hunter '%s' joined the squad", ename)
-        if nemesis_boss.roll() then
+        if not job.all_named and nemesis_boss.roll() then
             nemesis_boss.make(extra_id)
             nemesis_boss.news(nemesis_utils.boss_line())
+
+            job.all_named = true
+            job.left = math.max(job.left, boss_escort() - escort_count())
+            arrival_fx(extra_id)
+        elseif job.all_named then
+            arrival_fx(extra_id)
         end
     else
         dbg("Nemesis: stalker '%s' joined the squad", ename)
@@ -541,11 +583,18 @@ local function try_spawn(gt)
             nemesis_boss.make(mid)
         end
     end
+    if S.boss_id then for _, mid in ipairs(members) do arrival_fx(mid) end end
     S.phase = "hunting"
     S.spawned_count = S.spawned_count + 1
     S.hunt_start = nemesis_utils.game_seconds()
 
     local wanted = roll_squad_size()
+    local all_named = false
+    if S.boss_id then
+
+        wanted = #members + boss_escort()
+        all_named = true
+    end
     if #members < wanted then
         local section = nemesis_utils.pick_member_section(faction)
         if not section then
@@ -566,6 +615,7 @@ local function try_spawn(gt)
                 used = used,
                 used_names = used_names,
                 misses = 0,
+                all_named = all_named,
             }
         end
     end

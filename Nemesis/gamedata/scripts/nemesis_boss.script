@@ -94,13 +94,14 @@ function make(id)
     S.boss_hunt = true
     S.last_boss_day = boss_day()
     if r then r.name = nemesis_utils.get_npc_name() end
-    local sneak_pct = nemesis_mcm.get_number("boss_sneak_chance", 50)
-    S.boss_sneak = math.random(100) <= sneak_pct or nil
-    S.sneak_started, S.sneak_said = nil, nil
+
+    S.boss_sneak = true
+    S.sneak_started, S.sneak_said, S.sneak_wait = nil, nil, nil
+    S.boss_shots, S.boss_hit_frames, S.boss_hit_frame = 0, 0, nil
+    nemesis_utils.reset_movement()
     S.boss_look = roll_look()
     S.dread_next = time_global() + 20000
-    dbg("Nemesis: '%s' is the BOSS of this hunt (%s, look %s).", tostring(r and r.name),
-        S.boss_sneak and "sneaks" or "charges", tostring(S.boss_look))
+    dbg("Nemesis: '%s' is the BOSS of this hunt (look %s).", tostring(r and r.name), tostring(S.boss_look))
 end
 
 function clear()
@@ -113,9 +114,14 @@ end
 ---------------------------------------------------------------------------
 -- Per tick (online, alive, not retreating): focus, look, sneak, dread
 ---------------------------------------------------------------------------
+
 local SNEAK_TRIGGER_M = 20
 local SNEAK_ATTACK_MS = 5000
-local SNEAK_GIVE_UP_MS = 120000
+local RUSH_TRIGGER_M = 20
+local RUSH_ATTACK_MS = 1500
+local CLOSE_TRIGGER_M = 10
+local CLOSE_ATTACK_MS = 1500
+local PLAYER_HIT_MS = 1500
 local DREAD_M = 50
 
 local function behind_player(obj, actor)
@@ -154,22 +160,30 @@ function update(obj, r, gt, actor)
         elseif not nemesis_utils.sneak_active(id) and not S.sneak_said then
             nemesis_utils.set_sneak(id, true)
         end
-        local hit = r.hit_at and gt - r.hit_at < 1500
+        local hit = r.player_hit_at and gt - r.player_hit_at < PLAYER_HIT_MS
         if hit and not S.sneak_said then
             nemesis_utils.end_sneak(id, false)
             S.boss_sneak = nil
-            dbg("Nemesis: the sneak is broken by a hit.")
-        elseif not S.sneak_said and gt - S.sneak_started > SNEAK_GIVE_UP_MS then
-            nemesis_utils.end_sneak(id, false)
-            S.boss_sneak = nil
-            dbg("Nemesis: the sneak timed out, he hunts normally.")
-        elseif not S.sneak_said and d <= SNEAK_TRIGGER_M then
-            if behind_player(obj, actor) then
-                S.sneak_said = gt
+            dbg("Nemesis: the sneak is broken: you shot him.")
+        elseif not S.sneak_said then
+            if nemesis_utils.player_running(actor) then
+                if d <= RUSH_TRIGGER_M then
+                    S.sneak_said, S.sneak_wait = gt, RUSH_ATTACK_MS
+                    nemesis_utils.set_sneak_hold(id, true)
+                    news(nemesis_utils.rush_line())
+                    dbg("Nemesis: the boss has run you down; he opens fire in 1.5 s.")
+                end
+            elseif d <= SNEAK_TRIGGER_M and behind_player(obj, actor) then
+                S.sneak_said, S.sneak_wait = gt, SNEAK_ATTACK_MS
                 news(nemesis_utils.sneak_line())
                 dbg("Nemesis: the boss is behind you; he attacks in 5 s.")
+            elseif d <= CLOSE_TRIGGER_M then
+                S.sneak_said, S.sneak_wait = gt, CLOSE_ATTACK_MS
+                nemesis_utils.set_sneak_hold(id, true)
+                news(nemesis_utils.close_line())
+                dbg("Nemesis: the boss is within 10 m of you; he opens fire in 1.5 s.")
             end
-        elseif S.sneak_said and gt - S.sneak_said >= SNEAK_ATTACK_MS then
+        elseif gt - S.sneak_said >= (S.sneak_wait or SNEAK_ATTACK_MS) then
             nemesis_utils.end_sneak(id, true)
             S.boss_sneak = nil
             dbg("Nemesis: the boss attacks.")
@@ -182,6 +196,33 @@ function update(obj, r, gt, actor)
     end
 end
 
+---------------------------------------------------------------------------
+-- Debug mode: his position on your PDA map
+---------------------------------------------------------------------------
+
+local DEBUG_MARK_MS = 3000
+local DEBUG_MARK_TYPE = "red_location"
+local debug_mark_id, debug_mark_at = nil, nil
+
+local function drop_debug_mark()
+    if debug_mark_id and level.present() then level.map_remove_object_spot(debug_mark_id, DEBUG_MARK_TYPE) end
+    debug_mark_id = nil
+end
+
+function debug_mark_tick(gt)
+    if debug_mark_at and gt - debug_mark_at < DEBUG_MARK_MS and gt >= debug_mark_at then return end
+    debug_mark_at = gt
+    if not level.present() then return end
+    local want = nemesis_mcm.get_bool("debug_mode", false) and S.boss_id or nil
+    if debug_mark_id and debug_mark_id ~= want then drop_debug_mark() end
+    if want and not debug_mark_id then
+        if level.map_has_object_spot(want, DEBUG_MARK_TYPE) ~= 0 then return end
+        level.map_add_object_spot(want, DEBUG_MARK_TYPE, "Boss (debug): " .. tostring(nemesis_state.name_of(want) or "?"))
+        if level.map_has_object_spot(want, DEBUG_MARK_TYPE) ~= 0 then debug_mark_id = want end
+    end
+end
+
 function reset_runtime()
+    debug_mark_id, debug_mark_at = nil, nil
     warned = false
 end

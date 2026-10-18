@@ -35,6 +35,10 @@ local function blank()
         last_boss_day = nil,
         sneak_started = nil,
         sneak_said = nil,
+        sneak_wait = nil,
+        boss_shots = nil,
+        boss_hit_frames = nil,
+        boss_hit_frame = nil,
         dread_next = nil,
     }
 end

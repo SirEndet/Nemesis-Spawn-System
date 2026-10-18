@@ -206,12 +206,16 @@ end
 -- Spawn sections
 ---------------------------------------------------------------------------
 
-function faction_for_player()
+function player_community()
     local comm = nil
     pcall(function() comm = get_actor_true_community() end)
     if type(comm) ~= "string" then pcall(function() comm = db.actor:character_community() end) end
     if type(comm) == "string" then comm = string.gsub(comm, "^actor_", "") end
-    return comm == "monolith" and "isg" or "monolith"
+    return type(comm) == "string" and comm or nil
+end
+
+function faction_for_player()
+    return player_community() == "monolith" and "isg" or "monolith"
 end
 
 local function hunt_faction() return nemesis_state.S.faction == "isg" and "isg" or "monolith" end
@@ -248,7 +252,6 @@ local CHASE_REFRESH_MS = 6000
 
 local RESEND_MS = 250
 local SNEAK_REFRESH_MS = 1500
-local SNEAK_SLOW_M = 45
 local SPRINT_FROM_M = 50
 local CLOSE_THREAT_M = 30
 
@@ -307,6 +310,29 @@ function set_sneak(id, on)
     if on then sneak[id] = sneak[id] or { done = false } else sneak[id] = nil end
 end
 function sneak_active(id) local s = id and sneak[id]; return s ~= nil and not s.done end
+function set_sneak_hold(id, on) local s = id and sneak[id]; if s then s.hold = on and true or nil end end
+local function sneak_holding(id) local s = id and sneak[id]; return s ~= nil and s.hold == true end
+local function sneak_closing(id) local s = id and sneak[id]; return s ~= nil and s.closing == true end
+
+local MOVE_SAMPLE_MS = 500
+local MOVE_RUN_MPS = 2.5
+local MOVE_JUMP_M = 50
+local move_at, move_x, move_z, move_running = nil, nil, nil, false
+function player_running(actor)
+    local now = time_global()
+    if move_at and now - move_at < MOVE_SAMPLE_MS and now >= move_at then return move_running end
+    local p = nil
+    pcall(function() p = actor:position() end)
+    if not p then return move_running end
+    if move_at and now > move_at then
+        local dx, dz = p.x - move_x, p.z - move_z
+        local d = math.sqrt(dx * dx + dz * dz)
+        if d <= MOVE_JUMP_M then move_running = d / ((now - move_at) / 1000) > MOVE_RUN_MPS end
+    end
+    move_at, move_x, move_z = now, p.x, p.z
+    return move_running
+end
+function reset_movement() move_at, move_x, move_z, move_running = nil, nil, nil, false end
 function end_sneak(id, fight)
     local s = id and sneak[id]
     if s then s.done = true end
@@ -498,11 +524,11 @@ local function sniper_vertex(npc, tpos)
     return vid or npc:level_vertex_id()
 end
 
-local SNEAK_RING_M = 60
+local SNEAK_RING_M = 70
 local SNEAK_STEP_DEG = 35
 local SNEAK_CLOSE_DEG = 30
-local SNEAK_RELEASE_DEG = 60
 local SNEAK_BEHIND_M = 15
+local SNEAK_FACING_MS = 5000
 
 local function wrap_angle(a)
     while a > math.pi do a = a - 2 * math.pi end
@@ -518,16 +544,25 @@ local function sneak_target(npc, actor)
     local l = math.sqrt(dir.x * dir.x + dir.z * dir.z)
     if l < 0.01 then return nil end
     local back = math.atan2(-dir.z / l, -dir.x / l)
+    local now = time_global()
+    local p = vector()
+    if s.homing then
+        if not s.face_at or now - s.face_at >= SNEAK_FACING_MS or now < s.face_at then
+            s.face_at, s.face_back = now, back
+        end
+        s.closing = true
+        local b = s.face_back
+        p:set(apos.x + math.cos(b) * SNEAK_BEHIND_M, apos.y, apos.z + math.sin(b) * SNEAK_BEHIND_M)
+        return p, "homing in behind you"
+    end
     local vx, vz = npos.x - apos.x, npos.z - apos.z
     local here = math.atan2(vz, vx)
     local off = wrap_angle(back - here)
     local deg = math.abs(off) * 180 / math.pi
-    if s.closing and deg > SNEAK_RELEASE_DEG then s.closing = false
-    elseif not s.closing and deg <= SNEAK_CLOSE_DEG then s.closing = true end
-    local p = vector()
-    if s.closing then
+    if deg <= SNEAK_CLOSE_DEG then
+        s.homing, s.closing, s.face_at, s.face_back = true, true, now, back
         p:set(apos.x + math.cos(back) * SNEAK_BEHIND_M, apos.y, apos.z + math.sin(back) * SNEAK_BEHIND_M)
-        return p, "closing in from behind you"
+        return p, "homing in behind you"
     end
     local step = math.min(math.abs(off), SNEAK_STEP_DEG * math.pi / 180)
     local a = here + (off >= 0 and step or -step)
@@ -537,8 +572,18 @@ end
 
 local function chase_target(npc, actor)
     if sneak_active(npc:id()) then
-        local p, phase = sneak_target(npc, actor)
-        if p then return p, nil, phase end
+
+        if sneak_holding(npc:id()) then
+            return npc:position(), npc:level_vertex_id(), "holding, about to open fire"
+        end
+
+        if not player_running(actor) then
+            local p, phase = sneak_target(npc, actor)
+            if p then return p, nil, phase end
+        else
+            local s = sneak[npc:id()]
+            if s then s.closing = false end
+        end
     end
     local tpos, tlv, mode = player_target(npc, actor)
     local role = roles[npc:id()]
@@ -673,6 +718,11 @@ function drive_chase(npc, actor)
     local refreshed = false
     local sneaking = sneak_active(id)
     local refresh_ms = sneaking and SNEAK_REFRESH_MS or CHASE_REFRESH_MS
+
+    if sneaking then
+        local how = (sneak_holding(id) and "hold") or (player_running(actor) and "run") or "still"
+        if slot.sneak_how ~= how then slot.sneak_how = how; slot.lv = nil end
+    end
     if not slot.lv or gt - slot.at >= refresh_ms then
         local tpos, tlv, mode = chase_target(npc, actor)
         local lv, pos = pick_dest(npc, tpos, tlv)
@@ -694,7 +744,8 @@ function drive_chase(npc, actor)
     local dist = 9999
     pcall(function() dist = npc:position():distance_to(actor:position()) end)
     local far = dist > SPRINT_FROM_M
-    local sneaky = sneaking and dist <= SNEAK_SLOW_M
+
+    local sneaky = sneaking and sneak_closing(id) and not sneak_holding(id) and not player_running(actor)
 
     pcall(function()
         npc:set_path_type(game_object.level_path)
@@ -856,6 +907,8 @@ local LINES = {
             "Your breath is so loud in the quiet.",
         },
         sneak = { "%name%, you don't see me because I'm behind you right now." },
+        rush = { "Run, %name%. Every step brings you closer to me." },
+        close = { "%name%. Close enough to hear you breathe." },
     },
     isg = {
         warning = {
@@ -927,6 +980,8 @@ local LINES = {
             "Checking your six yet, zealot?",
         },
         sneak = { "%name%. Don't turn around. I'm right behind you." },
+        rush = { "Keep running, %name%. You're only making this easier." },
+        close = { "Close enough, %name%. Lights out." },
     },
 }
 
@@ -951,6 +1006,8 @@ function boss_retreat_line() return pick("boss_retreat") end
 function boss_escape_line() return pick("boss_escape") end
 function dread_line() return pick("dread") end
 function sneak_line() return pick("sneak") end
+function rush_line() return pick("rush") end
+function close_line() return pick("close") end
 
 function taunt(cycle)
     cycle = cycle or 1

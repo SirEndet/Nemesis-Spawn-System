@@ -30,8 +30,14 @@ local function in_grace(r)
     return (not r.hp_armed) or (r.grace_until ~= nil and time_global() < r.grace_until)
 end
 
-function hunter_br_now()
+function hunter_br_now(id)
     local add_br, add_pct = nemesis_utils.br_gains(S.cycle)
+    if id ~= nil and id == S.boss_id then
+        local extra = nemesis_mcm.get_number("boss_br_add", 0)
+        if extra < 0 then extra = 0 end
+        if extra > 1 then extra = 1 end
+        add_br = add_br + extra
+    end
     local body, head, body_pct, head_pct, body_hf, head_hf = nemesis_utils.player_br_stats()
     local function cap_pct(v)
         v = (v or 0) + add_pct
@@ -68,6 +74,10 @@ function on_before_hit(npc, shit, bone_id, flags)
     if S.phase == "hunting" and not r.retreat_at then
         r.hit_at = time_global()
         r.hit_by_player = from_player(shit)
+        if r.hit_by_player then
+            r.player_struck = true
+            r.player_hit_at = r.hit_at
+        end
     end
     if not r.named then return end
     if r.retreat_at then
@@ -137,14 +147,45 @@ local function accuracy_cones()
     return cone
 end
 
+local BOSS_MISSES = 3
+local BOSS_MISS_SPREAD = 10
+
 function on_shot_dispersion(obj, wpn, body_state, move_type, t)
     if S.phase ~= "hunting" or not obj or type(t) ~= "table" then return end
     local r = S.m[obj:id()]
     if not r or r.retreat_at or type(t.dispersion) ~= "number" then return end
+
+    local at_player = true
+    if r.id == S.boss_id then
+        pcall(function() local be = obj:best_enemy(); if be then at_player = be:id() == 0 end end)
+    end
+    if r.id == S.boss_id and at_player then
+        S.boss_shots = (S.boss_shots or 0) + 1
+        if math.max(S.boss_shots, S.boss_hit_frames or 0) <= BOSS_MISSES then
+            t.dispersion = t.dispersion * BOSS_MISS_SPREAD
+            return
+        end
+    end
     local c = accuracy_cones()
     if not c then return end
     local k = (r.id == S.boss_id and c.boss) or (r.named and c.named) or c.regular
     t.dispersion = t.dispersion * k
+end
+
+function on_actor_before_hit(shit, bone_id, flags)
+    if S.phase ~= "hunting" or not S.boss_id or not shit then return end
+    local from = nil
+    pcall(function() from = shit.draftsman and shit.draftsman:id() end)
+    if from ~= S.boss_id then return end
+    local frame = time_global()
+    if S.boss_hit_frame ~= frame then
+        S.boss_hit_frame = frame
+        S.boss_hit_frames = (S.boss_hit_frames or 0) + 1
+    end
+    if math.max(S.boss_shots or 0, S.boss_hit_frames) <= BOSS_MISSES then
+        shit.power = 0
+        if flags then flags.ret_value = false end
+    end
 end
 
 ---------------------------------------------------------------------------
@@ -212,7 +253,7 @@ function install_br_wrap()
             return orig(npc, shit, bone_id, flags)
         end
         local id = r.id
-        local body_br, head_br, body_pct, head_pct, body_hf, head_hf = hunter_br_now()
+        local body_br, head_br, body_pct, head_pct, body_hf, head_hf = hunter_br_now(id)
 
         if nemesis_mcm.get_bool("obrien_armor", false) then br_seeded[id] = nil end
         pcall(seed, gbo, id, body_br, head_br, body_hf, head_hf)
