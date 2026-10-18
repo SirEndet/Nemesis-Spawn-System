@@ -285,7 +285,33 @@ function install_br_wrap()
         dbg("Nemesis: GAMMA ballistics (grok_bo) not found; BR%% is applied by cutting the hit.")
         return
     end
-    local orig = gbo.npc_on_before_hit
+
+    local function is_grok(f)
+        local ok, env = pcall(getfenv, f)
+        return ok and env == gbo
+    end
+    local function find_grok(f, depth)
+        if type(f) ~= "function" then return nil end
+        if is_grok(f) then return f end
+        if depth <= 0 or not (debug and debug.getupvalue) then return nil end
+        for i = 1, 30 do
+            local ok, name, v = pcall(debug.getupvalue, f, i)
+            if not ok or name == nil then break end
+            local found = find_grok(v, depth - 1)
+            if found then return found end
+        end
+        return nil
+    end
+    local field = gbo.npc_on_before_hit
+    local orig = find_grok(field, 3)
+    if not orig then
+        dbg("!Nemesis ERROR: grok_bo's own hit function was not found (another mod wraps it); GAMMA ballistics are left alone.")
+        return
+    end
+    if orig ~= field then
+        dbg("Nemesis: grok_bo's hit function is wrapped by another script; hooking the original, the wrapper stays out of NPC hits as in stock GAMMA.")
+        pcall(function() UnregisterScriptCallback("npc_on_before_hit", field) end)
+    end
 
     local function wrapped(npc, shit, bone_id, flags)
         local r = npc and nemesis_state.member(npc:id())

@@ -4,7 +4,7 @@ A recurring Monolith hunter for S.T.A.L.K.E.R. Anomaly / G.A.M.M.A.
 
 Every so often, a hunter comes for you. He spawns out of sight, sprints after you and is very hard to kill. Hurt him badly enough and he teleports away in a Monolith burst. He always comes back, and each time he is stronger.
 
-**Status:** Release Candidate 5.
+**Status:** Release Candidate 6.
 
 ## Features
 
