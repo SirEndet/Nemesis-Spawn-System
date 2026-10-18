@@ -6,8 +6,18 @@
 
     <string id="ui_mcm_nemesis_page_general"><text>General</text></string>
     <string id="ui_mcm_nemesis_page_boss"><text>Boss</text></string>
-    <string id="ui_mcm_nemesis_page_combat"><text>Combat and armour</text></string>
-    <string id="ui_mcm_nemesis_page_spawning"><text>Spawning</text></string>
+    <string id="ui_mcm_nemesis_page_combat"><text>Combat</text></string>
+    <string id="ui_mcm_nemesis_page_gameplay"><text>Gameplay</text></string>
+    <string id="ui_mcm_nemesis_head_warnings"><text>Warnings and sound</text></string>
+    <string id="ui_mcm_nemesis_head_timing"><text>Timing</text></string>
+    <string id="ui_mcm_nemesis_head_squad"><text>Squad</text></string>
+    <string id="ui_mcm_nemesis_head_behaviour"><text>Behaviour</text></string>
+    <string id="ui_mcm_nemesis_head_escalation"><text>Escalation</text></string>
+    <string id="ui_mcm_nemesis_head_armour"><text>Armour</text></string>
+    <string id="ui_mcm_nemesis_head_toughness"><text>Toughness</text></string>
+    <string id="ui_mcm_nemesis_head_reward"><text>Reward</text></string>
+    <string id="ui_mcm_nemesis_boss_stash"><text>Boss stash reward</text></string>
+    <string id="ui_mcm_nemesis_boss_stash_desc"><text>Kill the boss yourself and the coordinates of a stash on the current map come through on your PDA, filled by the game's own stash system. If the map has no free stash left, they come on the next map that has one. Default off.</text></string>
     <string id="ui_mcm_nemesis_page_debug"><text>Debug</text></string>
 
     <string id="ui_mcm_nemesis_difficulty"><text>Difficulty</text></string>
@@ -40,13 +50,13 @@
     <string id="ui_mcm_nemesis_warning_pda_desc"><text>A PDA message from an unknown frequency 30 to 120 seconds before a hunt starts. With this or the audio warning on, the hunt follows the warning; with both off it starts without one. Default off.</text></string>
 
     <string id="ui_mcm_nemesis_npc_name"><text>Boss name</text></string>
-    <string id="ui_mcm_nemesis_npc_name_desc"><text>Name of the boss, a rare and stronger named hunter. Other hunters always get random names. Default: Bogdan Kravets</text></string>
+    <string id="ui_mcm_nemesis_npc_name_desc"><text>Name of the boss, a rare and stronger named hunter who fights to the death. Other hunters always get random names. Default: Bogdan Kravets</text></string>
 
     <string id="ui_mcm_nemesis_boss_chance"><text>Boss chance (%)</text></string>
     <string id="ui_mcm_nemesis_boss_chance_desc"><text>Chance that a hunt brings the boss: a tougher, cloaked hunter with his own look and messages and an escort. It climbs by 2 every 4 hunts without him, and the 30th hunt without him brings him for sure. Only one boss at a time, at most one a day. Beating a hunt he was in halves the escalation. 0 = no boss at all. Default 2.</text></string>
 
     <string id="ui_mcm_nemesis_boss_toughness"><text>Boss toughness (%)</text></string>
-    <string id="ui_mcm_nemesis_boss_toughness_desc"><text>How much tougher the boss is than a normal named hunter. 0 = no tougher. Default 30.</text></string>
+    <string id="ui_mcm_nemesis_boss_toughness_desc"><text>How much tougher the boss is than a normal named hunter. He never retreats: he fights until he or you are dead. 0 = no tougher. Default 30.</text></string>
 
     <string id="ui_mcm_nemesis_boss_br_add"><text>Boss extra BR</text></string>
     <string id="ui_mcm_nemesis_boss_br_add_desc"><text>A flat amount of ballistic rating (armour class, the same scale as Extra BR cap) added to the boss's body and head armour, on top of what every named hunter gets. Not BR mitigation percent. Needs GAMMA ballistics. 0 = no extra. Default 0.</text></string>
@@ -82,7 +92,7 @@
     <string id="ui_mcm_nemesis_hunt_duration_desc"><text>If you survive this many in-game hours, the hunters give up and teleport away, and the next hunt is not stronger. Default 6.</text></string>
 
     <string id="ui_mcm_nemesis_retreat_health"><text>Retreat health (%)</text></string>
-    <string id="ui_mcm_nemesis_retreat_health_desc"><text>A named hunter breaks off and teleports away when his health drops this low. It gets lower each cycle, so he fights longer every time. Default 25.</text></string>
+    <string id="ui_mcm_nemesis_retreat_health_desc"><text>A named hunter breaks off and teleports away when his health drops this low. It gets lower each cycle, so he fights longer every time. The boss never retreats. Default 25.</text></string>
 
     <string id="ui_mcm_nemesis_escalation_speed"><text>Escalation per cycle</text></string>
     <string id="ui_mcm_nemesis_escalation_speed_desc"><text>Each hunt you beat makes the next one stronger. That step is called a cycle. This sets how much stronger each cycle is: higher means he takes less damage and retreats later. 1.0 = no growth. Default 1.1.</text></string>
@@ -123,7 +133,7 @@
     <string id="ui_mcm_nemesis_retreat_to_cover_desc"><text>Before teleporting away, a hurt hunter first runs to nearby cover for up to 4 seconds. He cannot be hurt while he runs. Default on.</text></string>
 
     <string id="ui_mcm_nemesis_hunter_cloak"><text>Hunter cloak (experimental)</text></string>
-    <string id="ui_mcm_nemesis_hunter_cloak_desc"><text>Named hunters turn invisible while they stalk you from more than 30 m, and reappear when they fight, get within 15 m or are hit. At most once every 20 seconds. Uses the same invisible model as the teleport. Experimental: a held weapon may stay visible. Default on.</text></string>
+    <string id="ui_mcm_nemesis_hunter_cloak_desc"><text>Named hunters turn invisible while they stalk you from more than 30 m, and reappear when they fight, get within 15 m or take a hit that does damage. At most once every 20 seconds. While cloaked, other stalkers ignore them. Uses the same invisible model as the teleport. Experimental: a held weapon may stay visible. Default on.</text></string>
 
     <string id="ui_mcm_nemesis_fight_range"><text>Fight range (m)</text></string>
     <string id="ui_mcm_nemesis_fight_range_desc"><text>Hunters stop chasing and start fighting when they see you, or any other enemy, this close. Default 70.</text></string>
@@ -150,7 +160,7 @@
     <string id="ui_mcm_nemesis_squad_w5_desc"><text>Relative chance of four extras with him. Default 6. Set a weight to 0 to stop that squad size.</text></string>
 
     <string id="ui_mcm_nemesis_named_chance"><text>Extra is a named hunter (%)</text></string>
-    <string id="ui_mcm_nemesis_named_chance_desc"><text>Chance that each extra squad member is another named hunter instead of a normal stalker. Named hunters carry a rank in their name, are hard to kill, retreat when hurt and never leave a body. 0 = only the leader is named, 100 = the whole squad. Default 25.</text></string>
+    <string id="ui_mcm_nemesis_named_chance_desc"><text>Chance that each extra squad member is another named hunter instead of a normal stalker. Named hunters carry a rank in their name, are hard to kill and retreat when hurt. 0 = only the leader is named, 100 = the whole squad. Default 25.</text></string>
     <string id="ui_mcm_nemesis_area_scaling"><text>Scale hunts by area</text></string>
     <string id="ui_mcm_nemesis_area_scaling_desc"><text>On: hunts in rookie areas are smaller (Cordon and Swamps: at most 2 hunters; Garbage, Dark Valley and similar: at most 3), and in late areas extras are more often named hunters (+10 in Red Forest, Radar and similar; +20 in Pripyat, Jupiter, Zaton and the CNPP). Boss hunts are not affected. Default on.</text></string>
 

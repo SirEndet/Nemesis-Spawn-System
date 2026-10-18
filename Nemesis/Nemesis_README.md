@@ -10,11 +10,11 @@ Every so often, a hunter comes for you. He spawns out of sight, sprints after yo
 - **The hunter.** He spawns 70 to 140 m away and heads straight for you. Named hunters carry a Monolith rank in their name (Acolyte, Disciple, Zealot, Sentinel, Templar, Herald), so you can tell them apart from ordinary stalkers.
 - **His squad.** Sometimes he brings company: up to four more Monolith stalkers. Some of them can be named hunters too. The rest are normal stalkers you can kill.
 - **The fight.** When he sees you, he fights like any GAMMA stalker, only a better shot. Normal hits can't kill a named hunter. When his health gets low, he runs for cover and teleports out.
-- **He never leaves a body.** However a named hunter goes down, the Zone takes him back.
+- **What you kill is yours.** Anything you kill leaves a body to loot. Only those killed by others, or while cloaked, vanish.
 - **He learns.** Every hunt you beat makes the next one tougher: he takes less damage, holds on longer, and his armour catches up with yours. Escape him by outlasting the hunt and he comes back one step weaker. If he kills you, he loses half his strength.
 - **Whispers.** When a named hunter is close, you hear Monolith whispers in your head.
 - **He remembers.** Beat a hunter somewhere and they remember the spot for a week. Fight from there again and they know exactly where you are.
-- **Buildings.** Hide inside and they don't come in after you straight away. They wait outside for a minute and a half, then storm in.
+- **Buildings.** Hide inside and they don't come in after you straight away. They wait outside for a minute and a half, then storm in. Shoot at them from inside and they storm in at once.
 - **Escaping.** Survive long enough (6 in-game hours by default) and the hunters give up.
 - **No running to another map.** Change maps any way you like (on foot, a shortcut, fast travel, a guide) and they follow: a minute or two after you walk away from where you arrived, the same hunters teleport in, still as hurt as you left them. They follow twice; change maps a third time and you've shaken them off.
 
@@ -24,11 +24,11 @@ Every so often, a hunter comes for you. He spawns out of sight, sprints after yo
 
 ### The boss
 
-Rarely, a hunter is the boss: **Bogdan Kravets** (you can rename him). He is tougher, always cloaked, has his own look and his own messages, and only cares about you. He never comes alone: four named hunters (Boss escort size) keep you busy while he hunts you. You'll know he's here: they teleport in, in a Monolith burst. While cloaked he slips past everyone else unnoticed, and seeing him changes nothing; only your shot gives him away. Stand still and he sneaks around behind you; run and he runs you down. Either way he tells you before he strikes, and his first 3 shots at you always miss. Beat a hunt he was in and the hunters lose half their strength. The longer he stays away, the likelier he gets: by the 30th hunt without him, he comes for sure.
+Rarely, a hunter is the boss: **Bogdan Kravets** (you can rename him). He is tougher, always cloaked, has his own look and his own messages, and only cares about you. He never comes alone: four named hunters (Boss escort size) keep you busy while he hunts you. You'll know he's here: they teleport in, in a Monolith burst. While cloaked he slips past everyone else unnoticed, and seeing him changes nothing; only your shot gives him away. Stand still and he sneaks around behind you; run and he runs you down. Either way he tells you before he strikes, and his first 3 shots at you always miss. He never retreats: he fights to the death, and his body is yours to loot. Turn on **Boss stash reward** and killing him also marks a stash for you. Beat a hunt he was in and the hunters lose half their strength. The longer he stays away, the likelier he gets: by the 30th hunt without him, he comes for sure.
 
 ## Settings
 
-Everything is in **MCM → Nemesis Wave Spawn System**, on five pages.
+Everything is in **MCM → Nemesis Wave Spawn System**, on five pages: General, Gameplay, Combat, Boss and Debug.
 
 ### Difficulty
 
@@ -53,54 +53,55 @@ The **Difficulty** setting at the top of the General page picks Easy, Medium (th
 | Setting | Default | What it does |
 |---|---|---|
 | Difficulty | Medium | Easy, Medium or Hard; sets the settings in the table above. |
-| Teleport sound volume | 40 | Loudness of the teleport sound. 0 mutes it. |
-| Psy whisper volume | 60 | Loudness of the whispers near a named hunter. |
-| Arrival warning volume | 70 | Loudness of the warning static. |
+| HD icon | Off | Sharper portrait on the PDA messages. |
 | Arrival warning audio | On | Radio static shortly before a hunt (for the boss, psy voices too). |
 | Arrival warning PDA | Off | A PDA message from an unknown frequency shortly before a hunt. |
-| HD icon | Off | Sharper portrait on the PDA messages. |
+| Arrival warning volume | 70 | Loudness of the warning static. |
+| Teleport sound volume | 40 | Loudness of the teleport sound. 0 mutes it. |
+| Psy whisper volume | 60 | Loudness of the whispers near a named hunter. |
+
+### Gameplay
+| Setting | Default | What it does |
+|---|---|---|
 | Grace period (days) | 12 | Days of peace before the first hunt of a new game. |
 | Time between hunts (hours) | 24 | Rest time after a hunt before the next one. |
 | Hunt time limit (hours) | 6 | Survive this long and the hunters give up. |
+| Spawn distance, min (m) | 70 | Closest a hunt can spawn to you. |
+| Spawn distance, max (m) | 140 | Farthest a hunt can spawn from you. |
+| Squad of 1 to 5, weight | 50 / 25 / 14 / 10 / 6 | How often each squad size appears. They don't need to add up to 100. |
+| Extra is a named hunter (%) | 25 | Chance each squadmate is another named hunter. |
+| Scale hunts by area | On | Smaller squads in rookie areas, more named hunters in the far north. |
+| Hunt your last known position | On | When he loses you, he searches where he last saw or heard you. |
+| Squad tactics | On | Squadmates flank you, and snipers keep their distance. |
+| Retreat to cover first | On | A hurt hunter runs to cover before teleporting away. |
+| Hunter cloak (experimental) | On | Named hunters turn invisible while stalking you from far away. Other stalkers ignore them while they are. |
+| Fight range (m) | 70 | When they see you within this distance, they stop chasing and fight. |
 
-### Boss
+### Combat
 | Setting | Default | What it does |
 |---|---|---|
-| Boss name | Bogdan Kravets | The boss's name. |
-| Boss chance (%) | 2 | Chance that a hunt brings the boss. Grows 2 every 4 hunts without him; certain by the 30th. 0 = no boss. |
-| Boss toughness (%) | 30 | How much tougher the boss is than a normal named hunter. |
-| Boss extra BR | 0 | Extra armour class for the boss only, on top of the other hunters' (not the % mitigation). |
-| Boss days after grace | 7 | Days after the grace period before a boss can appear. |
-| Boss escort size | 4 | Named hunters who come with the boss. 0 = he comes alone. |
-
-### Combat and armour
-| Setting | Default | What it does |
-|---|---|---|
-| Retreat health (%) | 25 | Health at which a named hunter breaks off and teleports away. |
+| Retreat health (%) | 25 | Health at which a named hunter breaks off and teleports away. The boss never does. |
+| Accuracy boost (%) | 20 | How much better they shoot than normal stalkers. Squadmates get half, the boss 15 more. 0 = off. |
 | Escalation per cycle | 1.1 | How much stronger each hunt gets. 1.0 = no growth. |
 | Max escalation | 3 | The most the hunters can ever scale up. |
 | Max damage reduction (%) | 80 | The most of your damage a hunter can ever shrug off. |
-| Accuracy boost (%) | 20 | How much better they shoot than normal stalkers. Squadmates get half, the boss 15 more. 0 = off. |
 | Halve escalation when a hunter kills you | On | Dying to a hunter halves their strength. |
 | Reset escalation now | – | Tick to set the hunters back to their weakest right away. |
 | Armour growth speed | 0 | How fast named hunters' armour catches up with yours. |
 | Extra BR cap | 0.20 | How much higher than yours their ballistic rating can get. |
 | BR mitigation cap (%) | 25 | How much more damage their armour can block than yours. |
 | Obrien GAMMA Overhaul armour | Off | Turn on only if you use the Obrien GAMMA Overhaul mod. |
-| Hunt your last known position | On | When he loses you, he searches where he last saw or heard you. |
-| Squad tactics | On | Squadmates flank you, and snipers keep their distance. |
-| Retreat to cover first | On | A hurt hunter runs to cover before teleporting away. |
-| Hunter cloak (experimental) | On | Named hunters turn invisible while stalking you from far away. |
-| Fight range (m) | 70 | When they see you within this distance, they stop chasing and fight. |
 
-### Spawning
+### Boss
 | Setting | Default | What it does |
 |---|---|---|
-| Spawn distance, min (m) | 70 | Closest a hunt can spawn to you. |
-| Spawn distance, max (m) | 140 | Farthest a hunt can spawn from you. |
-| Squad of 1 to 5, weight | 50 / 25 / 14 / 10 / 6 | How often each squad size appears. They don't need to add up to 100. |
-| Extra is a named hunter (%) | 25 | Chance each squadmate is another named hunter. |
-| Scale hunts by area | On | Smaller squads in rookie areas, more named hunters in the far north. |
+| Boss name | Bogdan Kravets | The boss's name. |
+| Boss chance (%) | 2 | Chance that a hunt brings the boss. Grows 2 every 4 hunts without him; certain by the 30th. 0 = no boss. |
+| Boss days after grace | 7 | Days after the grace period before a boss can appear. |
+| Boss escort size | 4 | Named hunters who come with the boss. 0 = he comes alone. |
+| Boss toughness (%) | 30 | How much tougher the boss is than a normal named hunter. |
+| Boss extra BR | 0 | Extra armour class for the boss only, on top of the other hunters' (not the % mitigation). |
+| Boss stash reward | Off | Kill the boss yourself and a stash on the map is marked for you. |
 
 ### Debug
 | Setting | Default | What it does |

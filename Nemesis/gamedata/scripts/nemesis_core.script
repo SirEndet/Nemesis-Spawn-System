@@ -62,6 +62,7 @@ local function release_id(id)
     if cover then pcall(xcombat.release_cover, cover, id) end
     nemesis_utils.reset_chase(id)
     nemesis_chase.forget(id)
+    nemesis_fx.forget_neutral(id)
 end
 
 local function teleport_away(obj, id)
@@ -201,10 +202,7 @@ local function begin_retreat(obj, r)
     else
         teleport_out(obj, r)
     end
-    if id == S.boss_id then
-        S.retreat_announced = true
-        nemesis_boss.news(nemesis_utils.boss_retreat_line())
-    elseif not S.retreat_announced then
+    if not S.retreat_announced then
         S.retreat_announced = true
         nemesis_utils.send_news(nemesis_utils.retreat_line(), r.name)
     end
@@ -248,16 +246,16 @@ local function on_death(victim, who)
 
     local self_kill = (killer == id)
     local cloaked = r.cloak_vis ~= nil
-    local stays = self_kill or (not r.named and not cloaked and by_player and math.random(100) <= 50)
+    local stays = self_kill or (by_player and not cloaked)
     r.death = { teleport = not stays }
     S.dying[id] = true
     local how
     if self_kill then how = "self-kill, engine removed it, no teleport"
     elseif cloaked then how = "cloaked, teleports"
-    elseif r.named then how = "named hunter, teleports"
-    elseif by_player then how = stays and "player, body stays" or "player, teleports"
+    elseif by_player then how = "player, body stays"
     else how = "NPC, teleports" end
     dbg("Nemesis: '%s' died, killer %s (%s).", r.name or "?", tostring(killer), how)
+    if id == S.boss_id then nemesis_boss.on_killed(id, by_player, r.name) end
 end
 
 ---------------------------------------------------------------------------
@@ -383,7 +381,7 @@ local function manage_hunter(id, r, gt, actor, retreat_health)
     if in_grace then r.pending = false end
     if hp > 0.05 then r.last_hp = hp end
 
-    if not in_grace and (r.pending or (hurt and hp <= retreat_health)) then
+    if id ~= S.boss_id and not in_grace and (r.pending or (hurt and hp <= retreat_health)) then
         begin_retreat(obj, r)
         return true, true
     end
@@ -697,6 +695,7 @@ local function tick()
         next_slow = gt + SLOW_MS
     end
     nemesis_boss.debug_mark_tick(gt)
+    if slow then nemesis_boss.stash_tick() end
     if uninstall_tick(gt) then return end
     if S.phase == "idle" then
         nemesis_fx.whisper_stop()

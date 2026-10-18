@@ -285,6 +285,9 @@ end
 
 local known_spot_on = false
 local indoor_since = nil
+local indoor_now = false
+local outdoor_since = nil
+local siege_broken = false
 local siege_spot = {}
 
 function reset_chase(id)
@@ -294,6 +297,7 @@ function reset_chase(id)
         chase = {}
         fight_memo = {}
         known_spot_on, indoor_since, siege_spot = false, nil, {}
+        indoor_now, outdoor_since, siege_broken = false, nil, false
     end
 end
 
@@ -391,9 +395,15 @@ local function sees_player(npc, range)
     return ok2 and seen == true
 end
 
+local SHOOTER_MS = 20000
+local UNDER_FIRE_MS = 10000
 local function _threat(npc, be, range)
     if be:id() == 0 or not be:alive() then return false end
     if npc:relation(be) ~= game_object.enemy then return false end
+    local now = time_global()
+    local r = nemesis_state.member(npc:id())
+    if r and r.hit_from == be:id() and r.hit_at and now - r.hit_at < SHOOTER_MS then return true end
+    if xcombat.is_under_fire and xcombat.is_under_fire(npc, be, now, UNDER_FIRE_MS) then return true end
     local d = npc:position():distance_to(be:position())
     if d <= CLOSE_THREAT_M then return true end
     return d <= range and npc:see(be)
@@ -418,7 +428,15 @@ function combat_owns(npc)
     local now = time_global()
     if now - memo.res_at < OWNS_CACHE_MS then return memo.res end
     memo.res_at = now
+    local was = memo.res
     memo.res = combat_owns_now(npc, memo, now)
+
+    if memo.res ~= was and debug_on() then
+        local be_name = "none"
+        pcall(function() local be = npc:best_enemy(); if be then be_name = be:id() == 0 and "you" or (be:character_name() .. " (" .. be:id() .. ")") end end)
+        log_msg("Nemesis: %s %s (enemy: %s).", tostring(nemesis_state.name_of(id) or id),
+            memo.res and "fights" or "is back on the chase", be_name)
+    end
     return memo.res
 end
 
@@ -435,6 +453,11 @@ function combat_owns_now(npc, memo, now)
     if sneak_active(id) then return false end
     local range = fight_range()
     local sees = sees_player(npc, range)
+
+    if not sees and focus[id] and db.actor then
+        local okd, d = pcall(_dist, npc, db.actor)
+        sees = okd and d <= range
+    end
     local hit = hit_contact(id, now)
     local contact = sees or hit
     if not contact and not focus[id] then
@@ -452,6 +475,19 @@ function combat_owns_now(npc, memo, now)
     end
     local r = (sees or hit) and nemesis_state.member(id)
     local player_contact = sees or (hit and r and r.hit_by_player == true)
+
+    if not player_contact and hit and r and not r.hit_by_player and r.hit_from and not focus[id] then
+        local shooter = level.object_by_id(r.hit_from)
+        if shooter and shooter:alive() then
+            if now - (memo.shown_at or -1000000) >= SHOW_EVERY_MS then
+                memo.shown_at = now
+                pcall(_show_enemy, npc, shooter)
+            end
+            memo.hold_start = memo.hold_start or now
+            memo.holding = now - memo.hold_start < HOLD_MAX_MS
+            return false
+        end
+    end
     if player_contact and db.actor then
         if now - (memo.shown_at or -1000000) >= SHOW_EVERY_MS then
             memo.shown_at = now
@@ -578,17 +614,34 @@ local function sneak_target(npc, actor)
 end
 
 local SIEGE_MS = 90000
+local SIEGE_BOSS_MS = 20000
+local SIEGE_OUT_MS = 10000
 local SIEGE_RING_M = 25
 local SIEGE_MOVE_M = 5
 local SIEGE_TURNS = { 0, 30, -30, 60, -60, 90, -90 }
 
 function set_player_indoor(on, now)
-    if on then indoor_since = indoor_since or now
-    else indoor_since, siege_spot = nil, {} end
+    indoor_now = on and true or false
+    if on then
+        indoor_since = indoor_since or now
+        outdoor_since = nil
+    else
+        outdoor_since = outdoor_since or now
+        if indoor_since and now - outdoor_since >= SIEGE_OUT_MS then
+            indoor_since, siege_spot, siege_broken = nil, {}, false
+        end
+    end
 end
-function player_indoor() return indoor_since ~= nil end
+function player_indoor() return indoor_now end
+function break_siege()
+    if indoor_now and indoor_since and not siege_broken then
+        siege_broken = true
+        log_msg("Nemesis: you opened fire from inside; the hunters storm in.")
+    end
+end
 function siege_active(now)
-    return indoor_since ~= nil and (now or time_global()) - indoor_since < SIEGE_MS
+    local wait = nemesis_state.S.boss_hunt and SIEGE_BOSS_MS or SIEGE_MS
+    return indoor_now and not siege_broken and indoor_since ~= nil and (now or time_global()) - indoor_since < wait
 end
 function set_known_spot(on) known_spot_on = on and true or false end
 
@@ -619,7 +672,7 @@ local function siege_vertex(npc, actor)
 end
 
 local function chase_target(npc, actor)
-    if siege_active() and not sneak_active(npc:id()) then
+    if siege_active() and not focus[npc:id()] then
         local lv = siege_vertex(npc, actor)
         if lv then return level.vertex_position(lv), lv, "waiting outside" end
     end
@@ -940,10 +993,9 @@ local LINES = {
             "Your PDA flickers a name you have never seen: %boss%. The signal is getting closer.",
             "The Zone goes quiet. Even the anomalies are listening for him.",
         },
-        boss_retreat = {
-            "This is not the end. The Monolith is patient.",
-            "You bleed me, and still I return. Remember that.",
-            "Run while it hides me. Next time it will not.",
+        boss_stash = {
+            "%boss% has fallen. His last coordinates come through on the Monolith channel: a stash.",
+            "The prayers on the channel stop. Someone sends coordinates instead: %boss%'s stash.",
         },
         boss_escape = {
             "You slipped away this time. The Monolith keeps count.",
@@ -1023,10 +1075,9 @@ local LINES = {
             "Your PDA locks up for a second. Someone very good has your position.",
             "Every UNISG channel goes silent at once.",
         },
-        boss_retreat = {
-            "Wounded. Pulling out. This changes nothing.",
-            "Extraction. I will be back for you, zealot.",
-            "You bought yourself time. Not much.",
+        boss_stash = {
+            "Operator %boss% KIA. His cache coordinates were on the squad net.",
+            "Military channel: '%boss% is down.' Then a set of coordinates: his cache.",
         },
         boss_escape = {
             "Operation window closed. The file stays open.",
@@ -1072,7 +1123,7 @@ function retreat_line() return pick("retreat") end
 function time_up_line() return pick("time_up") end
 function boss_line() return pick("boss") end
 function boss_warning_line(boss) return pick("boss_warning", boss) end
-function boss_retreat_line() return pick("boss_retreat") end
+function boss_stash_line(boss) return pick("boss_stash", boss) end
 function boss_escape_line() return pick("boss_escape") end
 function dread_line() return pick("dread") end
 function sneak_line() return pick("sneak") end

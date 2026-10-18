@@ -121,6 +121,73 @@ function make(id)
     dbg("Nemesis: '%s' is the BOSS of this hunt (look %s).", tostring(r and r.name), tostring(S.boss_look))
 end
 
+local stash_tried_level = nil
+
+function on_killed(id, by_player, name)
+    S.boss_ghost = id
+    S.boss_id = nil
+    S.boss_sneak = nil
+    nemesis_fx.forget_boss()
+    dbg("Nemesis: the boss '%s' is dead (%s).", tostring(name), by_player and "killed by you" or "not by you")
+    if by_player and nemesis_mcm.get_bool("boss_stash", false) then
+        S.stash_owed = name or nemesis_utils.get_npc_name()
+        stash_tried_level = nil
+    end
+end
+
+---------------------------------------------------------------------------
+-- Boss stash reward (MCM "Boss stash reward", off by default; user design)
+---------------------------------------------------------------------------
+
+local function stash_on_this_map(name)
+    local tm = nil
+    pcall(function() tm = treasure_manager end)
+    if type(tm) ~= "table" or type(tm.get_random_stash) ~= "function" or type(tm.set_random_stash) ~= "function" then
+        return nil
+    end
+    local label = name
+    pcall(function()
+        local st = game.translate_string("st_stash_of")
+        if type(st) == "string" and st ~= "" and st ~= "st_stash_of" then label = st .. " " .. name end
+    end)
+    local ok, id, sname, desc, hint = pcall(tm.get_random_stash, nil, label, true)
+    if not ok or not id then return false end
+    local str = sname or label
+    if desc and hint then
+        str = "%c[255,255,160,0]" .. str .. "\\n%c[default]" .. desc .. "\\n%c[160,100,100,200]" .. hint
+    end
+    local ok2, got = pcall(tm.set_random_stash, nil, str, nil, id)
+    if not ok2 then return false end
+    if got then return true end
+
+    local marked = false
+    pcall(function()
+        marked = level.map_has_object_spot(id, "treasure") ~= 0 or level.map_has_object_spot(id, "treasure_searched") ~= 0
+    end)
+    return marked
+end
+
+function stash_tick()
+    local name = S.stash_owed
+    if not name then return end
+    local lname = nil
+    pcall(function() lname = level.name() end)
+    if stash_tried_level and stash_tried_level == lname then return end
+    local got = stash_on_this_map(name)
+    if got == nil then
+        S.stash_owed = nil
+        dbg("!Nemesis ERROR: no treasure_manager in this game, the boss stash is dropped.")
+    elseif got then
+        S.stash_owed = nil
+        stash_tried_level = nil
+        nemesis_utils.send_news(nemesis_utils.boss_stash_line(name), "Unknown frequency")
+        dbg("Nemesis: the boss stash is marked on %s.", tostring(lname))
+    else
+        stash_tried_level = lname
+        dbg("Nemesis: no free stash on %s for the boss reward; trying again on the next map.", tostring(lname))
+    end
+end
+
 function clear()
     if S.boss_id then S.boss_ghost = S.boss_id end
     S.boss_id = nil
@@ -241,5 +308,6 @@ end
 
 function reset_runtime()
     debug_mark_id, debug_mark_at = nil, nil
+    stash_tried_level = nil
     warned = false
 end

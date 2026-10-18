@@ -183,19 +183,20 @@ local REVEAL_M = 15
 local CLOAK_COOLDOWN_MS = 20000
 local HIT_REVEAL_MS = 1500
 
----------------------------------------------------------------------------
--- The cloaked boss is no one's enemy (user design)
----------------------------------------------------------------------------
+local BUMP_M = 2
+local BUMP_MS = 500
+local neutral = {}
+local neutral_any = false
 
-local BOSS_BUMP_M = 2
-local BOSS_BUMP_MS = 500
-local neutral_boss = nil
+local function set_neutral(id, on)
+    if on then neutral[id] = true else neutral[id] = nil end
+    neutral_any = next(neutral) ~= nil
+end
 
 function on_enemy_eval(npc, enemy, flags)
-    local b = neutral_boss
-    if not b or not npc or not enemy or not flags then return end
+    if not neutral_any or not npc or not enemy or not flags then return end
     local a, e = npc:id(), enemy:id()
-    if a ~= b and e ~= b then return end
+    if not neutral[a] and not neutral[e] then return end
     if a == 0 or e == 0 then return end
     flags.override = true
     flags.result = false
@@ -204,7 +205,7 @@ end
 local function hostile_bump(obj)
     local found = false
     pcall(function()
-        level.iterate_nearest(obj:position(), BOSS_BUMP_M, function(o)
+        level.iterate_nearest(obj:position(), BUMP_M, function(o)
             if found or not o or o:id() == 0 or o:id() == obj:id() then return end
             if nemesis_state.member(o:id()) or not alive_obj(o) then return end
             if IsMonster(o) then found = true
@@ -221,7 +222,7 @@ end
 
 function reveal(obj, r, gt, why)
     if not r or not r.cloak_vis then return end
-    if r.id == neutral_boss then neutral_boss = nil end
+    set_neutral(r.id, false)
     set_visual(obj, r.cloak_vis)
     r.cloak_vis = nil
     r.cloak_off_at = gt or time_global()
@@ -243,7 +244,11 @@ local function _dist(a, b) return a:position():distance_to(b:position()) end
 
 function cloak_update(obj, r, gt, actor)
     local id = r.id
-    local enabled = (id == S.boss_id or nemesis_mcm.get_bool("hunter_cloak", true)) and invisible_model_exists()
+
+    local enabled
+    if id == S.boss_id then enabled = not r.player_struck
+    else enabled = nemesis_mcm.get_bool("hunter_cloak", true) end
+    enabled = enabled and invisible_model_exists()
     local hit = r.hit_at and gt - r.hit_at < HIT_REVEAL_MS
     if id == S.boss_id and nemesis_utils.sneak_active(id) then
         hit = r.player_hit_at and gt - r.player_hit_at < HIT_REVEAL_MS
@@ -256,7 +261,7 @@ function cloak_update(obj, r, gt, actor)
         elseif fighting then reveal(obj, r, gt, "fighting")
         elseif d <= REVEAL_M and not nemesis_utils.sneak_active(id) then reveal(obj, r, gt, "close")
         elseif hit then reveal(obj, r, gt, "hit")
-        elseif id == S.boss_id and gt - (r.bump_at or -BOSS_BUMP_MS) >= BOSS_BUMP_MS then
+        elseif gt - (r.bump_at or -BUMP_MS) >= BUMP_MS then
             r.bump_at = gt
             if hostile_bump(obj) then reveal(obj, r, gt, "an enemy within 2 m") end
         end
@@ -264,17 +269,18 @@ function cloak_update(obj, r, gt, actor)
         and gt - (r.cloak_off_at or -CLOAK_COOLDOWN_MS) >= CLOAK_COOLDOWN_MS then
         cloak(obj, r)
     end
-    if id == S.boss_id then
-        local was = neutral_boss
-        neutral_boss = (r.cloak_vis and not r.player_struck) and id or nil
-        if was ~= neutral_boss then
-            dbg("Nemesis: the boss is %s.", neutral_boss and "no one's enemy while cloaked" or "a normal enemy again")
-        end
+    local want = (r.cloak_vis and not r.player_struck) and true or false
+    if want ~= (neutral[id] == true) then
+        set_neutral(id, want)
+        dbg("Nemesis: %s is %s.", r.name or "A hunter", want and "no one's enemy while cloaked" or "a normal enemy again")
     end
 end
 
+function forget_boss() if S.boss_ghost then set_neutral(S.boss_ghost, false) end end
+function forget_neutral(id) if id then set_neutral(id, false) end end
+
 function reveal_all()
-    neutral_boss = nil
+    neutral, neutral_any = {}, false
     for id, r in pairs(S.m) do
         if r.cloak_vis then
             local obj = level.object_by_id(id)
@@ -336,7 +342,7 @@ function whisper_update(actor)
 end
 
 function reset_runtime()
-    neutral_boss = nil
+    neutral, neutral_any = {}, false
     whisper = nil
     vanish_queue = {}
     squad_cleanup = {}

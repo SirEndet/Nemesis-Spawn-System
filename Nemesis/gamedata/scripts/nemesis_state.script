@@ -46,6 +46,7 @@ local function blank()
 
         follow = nil,
         follows = 0,
+        stash_owed = nil,
     }
 end
 
@@ -246,6 +247,7 @@ function save(mdata, vanish_ids)
         hunts_since_boss = S.hunts_since_boss,
         spots = save_spots(),
         follows = S.follows,
+        stash_owed = S.stash_owed,
         follow = S.follow and save_follow_list(S.follow.members) or nil,
         follow_faction = S.follow and S.follow.faction or nil,
         follow_look = S.follow and S.follow.boss_look or nil,
@@ -286,6 +288,7 @@ function load(mdata)
     S.hunts_since_boss = tonumber(s.hunts_since_boss) or 0
     S.spots = load_spots(s.spots)
     S.follows = tonumber(s.follows) or 0
+    if type(s.stash_owed) == "string" and s.stash_owed ~= "" then S.stash_owed = s.stash_owed end
     local fl = load_follow_list(s.follow)
     if fl and #fl > 0 then
         S.follow = { members = fl, faction = s.follow_faction, boss_look = s.follow_look, boss_hunt = s.follow_boss_hunt and true or nil,
