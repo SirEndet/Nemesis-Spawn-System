@@ -89,9 +89,10 @@ end
 local ap_owner_ready = false
 local function install_ap_owner()
     if ap_owner_ready then return end
-    if not (ap_api and ap_api.register_owner) then return end
+    local ap = nemesis_utils.ap()
+    if not (ap and ap.register_owner) then return end
     local ok, res = pcall(function()
-        return ap_api.register_owner("nemesis", function(squad)
+        return ap.register_owner("nemesis", function(squad)
             return squad ~= nil and S.sim_squad_id ~= nil and squad.id == S.sim_squad_id
         end)
     end)

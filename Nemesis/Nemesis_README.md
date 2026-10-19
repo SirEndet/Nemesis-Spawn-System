@@ -8,7 +8,7 @@ Every so often, a hunter comes for you. He spawns out of sight, sprints after yo
 
 - **The warning.** Radio static tells you something is coming (you can also turn on a strange PDA message). A short while later the hunt begins.
 - **The hunter.** He spawns 70 to 140 m away and heads straight for you. Named hunters carry a Monolith rank in their name (Acolyte, Disciple, Zealot, Sentinel, Templar, Herald), so you can tell them apart from ordinary stalkers.
-- **His squad.** Sometimes he brings company: up to four more Monolith stalkers. Some of them can be named hunters too. The rest are normal stalkers you can kill.
+- **His squad.** Sometimes he brings company: up to four more Monolith stalkers. Some of them can be named hunters too. The rest are normal stalkers you can kill, and they keep hunting you even after the named hunters are gone.
 - **The fight.** When he sees you, he fights like any GAMMA stalker, only a better shot. Normal hits can't kill a named hunter. When his health gets low, he runs for cover and teleports out.
 - **What you kill is yours.** Regular squad members and the boss leave a body to loot when you kill them. Named hunters always escape: hurt badly, they turn invulnerable, run for cover and teleport away. Those killed by others vanish, and you never see them fall. An option keeps NPCs off your kills.
 - **He learns.** Every hunt you beat makes the next one tougher: he takes less damage (from you and from everyone else), holds on longer, and his armour catches up with yours. Escape him by outlasting the hunt and he comes back one step weaker. If he kills you, he loses half his strength.
@@ -16,7 +16,7 @@ Every so often, a hunter comes for you. He spawns out of sight, sprints after yo
 - **He remembers.** Beat a hunter somewhere and they remember the spot for a week. Fight from there again and they know exactly where you are.
 - **Buildings.** Hide inside and they don't come in after you straight away. They wait outside for a minute and a half, then storm in. Shoot at them from inside and they storm in at once.
 - **Escaping.** Survive long enough (6 in-game hours by default) and the hunters give up.
-- **No running to another map.** Change maps any way you like (on foot, a shortcut, fast travel, a guide) and they follow: a minute or two after you walk away from where you arrived, the same hunters teleport in, still as hurt as you left them. They follow twice; change maps a third time and you've shaken them off.
+- **No running to another map.** Change maps any way you like (on foot, a shortcut, fast travel, a guide) and they follow: a minute or two after you walk away from where you arrived, the same hunters teleport in, still as hurt as you left them. They follow twice; change maps a third time and you've shaken them off. They come in from the side you arrived on.
 
 **No safe havens, but some rules.** A hunt never starts while you are in a base or trader camp that is friendly or neutral to you, in a dialogue or asleep, or on an underground map. Squads are smaller in rookie areas like Cordon and Garbage, and in the far north more of them are named hunters. Enemy bases are no shelter. Once the warning has come through, though, the hunt is on: walking into a base won't stop it.
 
@@ -24,7 +24,7 @@ Every so often, a hunter comes for you. He spawns out of sight, sprints after yo
 
 ### The boss
 
-Rarely, a hunter is the boss: **Bogdan Kravets** (you can rename him). He is tougher, always cloaked, has his own look and his own messages, and only cares about you. He never comes alone: four named hunters (Boss escort size) keep you busy while he hunts you. You'll know he's here: they teleport in, in a Monolith burst. While cloaked he slips past everyone else unnoticed, and seeing him changes nothing; only your shot gives him away. Stand still and he sneaks around behind you; run and he runs you down. Either way he tells you before he strikes, and his first 3 shots at you always miss. He never retreats: he fights to the death, and his body is yours to loot. Turn on **Boss stash reward** and killing him also marks a stash for you. Beat a hunt he was in and the hunters lose half their strength. The longer he stays away, the likelier he gets: by the 30th hunt without him, he comes for sure.
+Rarely, a hunter is the boss: **Bogdan Kravets** (you can rename him). He is tougher, always cloaked, has his own look and his own messages, and wants you above everyone else. Get in his way and he cuts you down too: against other stalkers and mutants he hits twice as hard. But hurt him, and for a few seconds nobody else exists for him. He never comes alone: four named hunters (Boss escort size) keep you busy while he hunts you. You'll know he's here: they teleport in, in a Monolith burst. While cloaked he slips past everyone else unnoticed, and seeing him changes nothing; only your shot gives him away. Stand still and he sneaks around behind you; run and he runs you down. Either way he tells you before he strikes, and his first 3 shots at you always miss. He never retreats: he fights to the death, and his body is yours to loot. Turn on **Boss stash reward** and killing him also marks a stash for you. Beat a hunt he was in and the hunters lose half their strength. The longer he stays away, the likelier he gets: by the 30th hunt without him, he comes for sure.
 
 ## Settings
 
@@ -93,6 +93,9 @@ The **Difficulty** setting at the top of the General page picks Easy, Medium (th
 | BR mitigation cap (%) | 25 | How much more damage their armour can block than yours. |
 | Obrien GAMMA Overhaul armour | Off | Turn on only if you use the Obrien GAMMA Overhaul mod. |
 | Reserve your kills | Off | NPCs leave your Nemesis kills alone. With AlifePlus, its own "reserve own kills" option decides. |
+| Latest exe AI features | On | Uses new engine features on the newest demonized exes. Older exes: no change. |
+| Hunter attack pull | 900 | Latest exes: how readily named hunters turn on whoever shoots them. 0 = engine default. |
+| Boss attack pull | 300 | The same for the boss (kept low: he prefers you). |
 
 ### Boss
 | Setting | Default | What it does |
@@ -104,6 +107,7 @@ The **Difficulty** setting at the top of the General page picks Easy, Medium (th
 | Boss presence distortion (%) | 50 | A gentle screen wave when he is near (from 60 m). 0 = off. |
 | Boss toughness (%) | 30 | How much tougher the boss is than a normal named hunter. |
 | Boss extra BR | 0 | Extra armour class for the boss only, on top of the other hunters' (not the % mitigation). |
+| Boss damage against NPCs (%) | 200 | How hard the boss hits other stalkers and mutants. |
 | Boss stash reward | Off | Kill the boss yourself and a stash on the map is marked for you. |
 
 ### Debug

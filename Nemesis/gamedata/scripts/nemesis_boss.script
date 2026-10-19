@@ -150,7 +150,8 @@ local function stash_on_this_map(name)
         local st = game.translate_string("st_stash_of")
         if type(st) == "string" and st ~= "" and st ~= "st_stash_of" then label = st .. " " .. name end
     end)
-    local ok, id, sname, desc, hint = pcall(tm.get_random_stash, nil, label, true)
+
+    local ok, id, sname, desc, hint = pcall(tm.get_random_stash, nil, label, true, true)
     if not ok or not id then return false end
     local str = sname or label
     if desc and hint then

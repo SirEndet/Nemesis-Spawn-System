@@ -129,13 +129,15 @@ end
 
 local function save_reserved()
     local out = {}
-    for id, t in pairs(S.reserved) do out[#out + 1] = string.format("%d:%d", id, math.floor(t)) end
+    for id, v in pairs(S.reserved) do out[#out + 1] = string.format("%d:%d:%s", id, math.floor(v.t), v.sec or "") end
     return table.concat(out, ",")
 end
 
 local function load_reserved(str)
     local out = {}
-    for id, t in string.gmatch(tostring(str or ""), "(%d+):(%d+)") do out[tonumber(id)] = tonumber(t) end
+    for id, t, sec in string.gmatch(tostring(str or ""), "(%d+):(%d+):([%w_]*)") do
+        out[tonumber(id)] = { t = tonumber(t), sec = sec ~= "" and sec or nil }
+    end
     return out
 end
 
@@ -171,6 +173,8 @@ function add_member(id, named, name)
         grace_until = nil,
         hit_cut = nil,
         hit_pre = nil,
+        bh_frame = nil,
+        bypass_guard = nil,
         mask_vis = nil,
         pending = false,
         retreat_at = nil,
@@ -218,7 +222,23 @@ function name_of(id)
     local r = id ~= nil and S.m[id]
     return r and r.name or nil
 end
-function leader() return S.hunter_ids[1] end
+
+function regular_alive(id)
+    local r = S.m[id]
+    return r ~= nil and not r.death and not r.dead
+end
+
+function members_left()
+    if #S.hunter_ids > 0 then return true end
+    for _, id in ipairs(S.squad_ids) do if regular_alive(id) then return true end end
+    return false
+end
+
+function leader()
+    if S.hunter_ids[1] then return S.hunter_ids[1] end
+    for _, id in ipairs(S.squad_ids) do if regular_alive(id) then return id end end
+    return nil
+end
 
 ---------------------------------------------------------------------------
 -- Save / load
@@ -238,11 +258,16 @@ local function load_map(text)
 end
 
 function save(mdata, vanish_ids)
-    local names, cloak, retreating = {}, {}, {}
+    local names, cloak, mask, retreating, struck, hps, dead = {}, {}, {}, {}, {}, {}, {}
     for id, r in pairs(S.m) do
         if r.name then names[#names + 1] = tostring(id) .. "=" .. r.name end
         if r.cloak_vis then cloak[#cloak + 1] = tostring(id) .. "=" .. r.cloak_vis end
+        if r.mask_vis then mask[#mask + 1] = tostring(id) .. "=" .. r.mask_vis end
         if r.retreat_at then retreating[#retreating + 1] = id end
+        if r.player_struck then struck[#struck + 1] = id end
+
+        if r.last_hp then hps[#hps + 1] = tostring(id) .. "=" .. string.format("%.3f", r.last_hp) end
+        if r.dead or r.death then dead[#dead + 1] = id end
     end
     local p = S.pending_squad
     mdata.nemesis_state = {
@@ -279,6 +304,10 @@ function save(mdata, vanish_ids)
         retreating = table.concat(retreating, ","),
         names = table.concat(names, "|"),
         cloak_vis = table.concat(cloak, "|"),
+        mask_vis = table.concat(mask, "|"),
+        struck = table.concat(struck, ","),
+        hps = table.concat(hps, "|"),
+        dead = table.concat(dead, ","),
         squad_left = p and p.left or 0,
         squad_section = p and p.section or "",
         squad_origin = p and p.origin_lv or 0,
@@ -317,7 +346,8 @@ function load(mdata)
 
     local hunters = load_ids(s.hunter_ids)
     local squad = load_ids(s.squad_ids)
-    if #hunters == 0 then return vanish end
+
+    if #hunters == 0 and #squad == 0 then return vanish end
 
     local names = load_map(s.names)
     local cloak = load_map(s.cloak_vis)
@@ -326,6 +356,21 @@ function load(mdata)
     for _, id in ipairs(squad) do add_member(id, false, names[id]) end
     for id, vis in pairs(cloak) do
         if S.m[id] then S.m[id].cloak_vis = vis end
+    end
+
+    for id, vis in pairs(load_map(s.mask_vis)) do
+        if S.m[id] then S.m[id].mask_vis = vis end
+    end
+    for _, id in ipairs(load_ids(s.struck)) do
+        if S.m[id] then S.m[id].player_struck = true end
+    end
+    for id, v in pairs(load_map(s.hps)) do
+        local hp = tonumber(v)
+        if S.m[id] and hp and hp > 0.05 and hp <= 1 then S.m[id].last_hp = hp end
+    end
+
+    for _, id in ipairs(load_ids(s.dead)) do
+        if S.m[id] then S.m[id].dead = true; S.m[id].death = { teleport = false } end
     end
     local now = time_global()
     for _, id in ipairs(load_ids(s.retreating)) do

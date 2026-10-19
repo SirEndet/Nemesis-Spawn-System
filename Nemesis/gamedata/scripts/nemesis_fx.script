@@ -193,8 +193,22 @@ local function set_neutral(id, on)
     neutral_any = next(neutral) ~= nil
 end
 
+local BOSS_YOU_FIRST_MS = 5000
+
+local function boss_wants_you()
+    local bid = S.boss_id
+    local r = bid and S.m[bid]
+    return r ~= nil and r.player_hit_at ~= nil and time_global() - r.player_hit_at < BOSS_YOU_FIRST_MS
+end
+
 function on_enemy_eval(npc, enemy, flags)
-    if not neutral_any or not npc or not enemy or not flags then return end
+    if not npc or not enemy or not flags then return end
+    if boss_wants_you() and npc:id() == S.boss_id and enemy:id() ~= 0 then
+        flags.override = true
+        flags.result = false
+        return
+    end
+    if not neutral_any then return end
     local a, e = npc:id(), enemy:id()
     if not neutral[a] and not neutral[e] then return end
     if a == 0 or e == 0 then return end
@@ -281,12 +295,32 @@ end
 function forget_boss() if S.boss_ghost then set_neutral(S.boss_ghost, false) end end
 function forget_neutral(id) if id then set_neutral(id, false) end end
 
+local masked = {}
+
 function unmask(obj, r)
     if not (r and r.mask_vis) or not alive_obj(obj) then return end
+    local ok, hp = pcall(function() return obj.health end)
+    if not ok or not hp or hp <= 0 then return end
     local vis = r.mask_vis
     r.mask_vis = nil
+    masked[r.id] = nil
     set_visual(obj, vis)
 end
+
+function unmask_survivors()
+    if next(masked) == nil then return end
+    for id in pairs(masked) do
+        local r = S.m[id]
+        if not (r and r.mask_vis) then
+            masked[id] = nil
+        elseif not r.death then
+            local obj = level.object_by_id(id)
+            if obj then unmask(obj, r) end
+        end
+    end
+end
+
+function note_masked(id) if id then masked[id] = true end end
 
 function reveal_all()
     neutral, neutral_any = {}, false
@@ -318,18 +352,24 @@ function hum_stop()
     hum = nil
 end
 
-function hum_update(actor)
-    local nearest = nil
-    if actor and S.phase == "hunting" then
-        for _, id in ipairs(S.hunter_ids) do
-            local r = S.m[id]
-            local obj = level.object_by_id(id)
-            if obj and r and not r.retreat_at and alive_obj(obj) then
-                local ok, d = pcall(_dist, obj, actor)
-                if ok and (not nearest or d < nearest) then nearest = d end
+function measure(actor)
+    local nearest, boss_d = nil, nil
+    if not (actor and S.phase == "hunting") then return nil, nil end
+    for _, id in ipairs(S.hunter_ids) do
+        local r = S.m[id]
+        local obj = level.object_by_id(id)
+        if obj and r and not r.death and alive_obj(obj) then
+            local ok, d = pcall(_dist, obj, actor)
+            if ok then
+                if not r.retreat_at and (not nearest or d < nearest) then nearest = d end
+                if id == S.boss_id then boss_d = d end
             end
         end
     end
+    return nearest, boss_d
+end
+
+function hum_update(nearest)
     local slider = nemesis_utils.volume_setting("hum_volume", 20)
     local target = 0
     if nearest and nearest < HUM_RANGE_M then
@@ -389,17 +429,7 @@ function distort_stop()
     distort = nil
 end
 
-function distort_update(actor)
-    local d = nil
-    local boss = S.boss_id
-    if actor and S.phase == "hunting" and boss then
-        local r = S.m[boss]
-        local obj = level.object_by_id(boss)
-        if r and not r.death and obj and alive_obj(obj) then
-            local ok, dist = pcall(_dist, obj, actor)
-            if ok then d = dist end
-        end
-    end
+function distort_update(d)
     local slider = nemesis_mcm.get_number("boss_distortion", 50)
     if slider < 0 then slider = 0 end
     if slider > 100 then slider = 100 end
@@ -450,13 +480,16 @@ function alifeplus_reserve()
 end
 
 local function is_reserved(id)
-    local t = id and S.reserved[id]
-    if not t or not reserve_on() then return false end
-    return nemesis_utils.game_seconds() - t <= RESERVE_S
+    local v = id and S.reserved[id]
+    if not v or not reserve_on() then return false end
+    return nemesis_utils.game_seconds() - v.t <= RESERVE_S
 end
 
+local function _reserved_obj(obj) return obj and is_reserved(obj:id()) end
 local function near_actor_wrap(orig, obj, ...)
-    local ok, yes = pcall(function() return obj and is_reserved(obj:id()) end)
+
+    if next(S.reserved) == nil then return orig(obj, ...) end
+    local ok, yes = pcall(_reserved_obj, obj)
     if ok and yes then return true end
     return orig(obj, ...)
 end
@@ -492,7 +525,9 @@ function reserve_body(id)
         return
     end
     if not install_reserve_hook() then return end
-    S.reserved[id] = nemesis_utils.game_seconds()
+    local sec = nil
+    pcall(function() sec = alife():object(id):section_name() end)
+    S.reserved[id] = { t = nemesis_utils.game_seconds(), sec = sec }
     reserve_away[id] = nil
     dbg("Nemesis: body %s reserved for you (2 in-game hours, or 3 min more than 150 m away).", tostring(id))
 end
@@ -505,11 +540,14 @@ function reserve_tick(gt, actor)
     end
     install_reserve_hook()
     local now = nemesis_utils.game_seconds()
-    for id, t in pairs(S.reserved) do
+    for id, v in pairs(S.reserved) do
         local why = nil
         local se = alife():object(id)
-        if now - t > RESERVE_S or now < t then why = "2 in-game hours passed"
+        local sec = nil
+        if se then pcall(function() sec = se:section_name() end) end
+        if now - v.t > RESERVE_S or now < v.t then why = "2 in-game hours passed"
         elseif not se then why = "the body is gone"
+        elseif v.sec and sec ~= v.sec then why = "the body is gone (its id is someone else's now)"
         else
             local far = true
             pcall(function()
@@ -533,6 +571,7 @@ end
 
 function reset_runtime()
     distort = nil
+    masked = {}
     reserve_away = {}
     neutral, neutral_any = {}, false
     hum = nil

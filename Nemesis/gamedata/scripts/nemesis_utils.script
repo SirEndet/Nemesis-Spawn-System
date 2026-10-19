@@ -144,8 +144,10 @@ function obrien_item_stats(sec, cond)
 end
 
 local obrien_warned = false
+local obrien_checked = {}
 function warn_obrien_off(sec)
-    if obrien_warned then return end
+    if obrien_warned or not sec or obrien_checked[sec] then return end
+    obrien_checked[sec] = true
     local has = false
     pcall(function() has = ini_sys:line_exist(sec, "br_class") end)
     if has then
@@ -154,14 +156,25 @@ function warn_obrien_off(sec)
     end
 end
 
-function player_br_stats()
+local function clamp_br(v)
+    if not v or v < 0 then return 0 end
+    return v
+end
+local function clamp_pct(v)
+    if not v or v < 0 then return 0 end
+    if v > 0.90 then return 0.90 end
+    return v
+end
+local function clamp_hf(v)
+    if not v or v > 1 then return 1 end
+    if v < 0.05 then return 0.05 end
+    return v
+end
+
+local function read_br_stats(actor, outfit, helmet, obrien)
     local body_br, head_br, body_pct, head_pct = 0, 0, 0, 0
     local body_hf, head_hf = 1, 1
-    local obrien = nemesis_mcm.get_bool("obrien_armor", false)
-    local actor = db.actor
-    if not actor then return body_br, head_br, body_pct, head_pct, body_hf, head_hf end
     pcall(function()
-        local outfit = actor:item_in_slot(7)
         if outfit then
             local cond = outfit:condition() or 1
             if obrien then
@@ -176,7 +189,6 @@ function player_br_stats()
                 warn_obrien_off(outfit:section())
             end
         end
-        local helmet = actor:item_in_slot(12)
         if helmet then
             local cond = helmet:condition() or 1
             if obrien then
@@ -192,22 +204,39 @@ function player_br_stats()
             end
         end
     end)
-    local function clamp_br(v)
-        if not v or v < 0 then return 0 end
-        return v
+    return { clamp_br(body_br), clamp_br(head_br), clamp_pct(body_pct), clamp_pct(head_pct),
+        clamp_hf(body_hf), clamp_hf(head_hf) }
+end
+
+local BR_CACHE_MS = 500
+local br_cache = { at = -1000000 }
+
+local function _item_id(o) return o:id() end
+local function _item_sec(o) return o:section() end
+local function _slot(a, n) return a:item_in_slot(n) end
+local function item_key(item)
+    if not item then return "-" end
+    local ok1, id = pcall(_item_id, item)
+    local ok2, sec = pcall(_item_sec, item)
+    return tostring(ok1 and id or "?") .. "/" .. tostring(ok2 and sec or "?")
+end
+function player_br_stats()
+    local actor = db.actor
+    if not actor then return 0, 0, 0, 0, 1, 1 end
+    local ok1, outfit = pcall(_slot, actor, 7)
+    local ok2, helmet = pcall(_slot, actor, 12)
+    if not ok1 then outfit = nil end
+    if not ok2 then helmet = nil end
+    local oid, hid = item_key(outfit), item_key(helmet)
+    local obrien = nemesis_mcm.get_bool("obrien_armor", false)
+    local now = time_global()
+    local c = br_cache
+    if not (c.v and c.oid == oid and c.hid == hid and c.obrien == obrien and now - c.at < BR_CACHE_MS) then
+        c.v = read_br_stats(actor, outfit, helmet, obrien)
+        c.oid, c.hid, c.obrien, c.at = oid, hid, obrien, now
     end
-    local function clamp_pct(v)
-        if not v or v < 0 then return 0 end
-        if v > 0.90 then return 0.90 end
-        return v
-    end
-    local function clamp_hf(v)
-        if not v or v > 1 then return 1 end
-        if v < 0.05 then return 0.05 end
-        return v
-    end
-    return clamp_br(body_br), clamp_br(head_br), clamp_pct(body_pct), clamp_pct(head_pct),
-        clamp_hf(body_hf), clamp_hf(head_hf)
+    local v = c.v
+    return v[1], v[2], v[3], v[4], v[5], v[6]
 end
 
 ---------------------------------------------------------------------------
@@ -385,6 +414,13 @@ end
 
 local function _dist(a, b) return a:position():distance_to(b:position()) end
 local function _see(a, b) return a:see(b) end
+
+local function _prep_path(npc)
+    npc:set_path_type(game_object.level_path)
+    npc:set_detail_path_type(move.line)
+    npc:set_desired_position()
+    npc:set_desired_direction()
+end
 local function _best_enemy(npc) return npc:best_enemy() end
 
 local function sees_player(npc, range)
@@ -443,8 +479,7 @@ end
 
 local function hit_contact(id, now)
     local r = nemesis_state.member(id)
-    if not (r and r.hit_at and now - r.hit_at < HIT_CONTACT_MS) then return false end
-    return r.hit_by_player == true or not focus[id]
+    return r ~= nil and r.hit_at ~= nil and now - r.hit_at < HIT_CONTACT_MS
 end
 
 local function _show_enemy(npc, enemy) return xcombat.show_enemy(npc, enemy) end
@@ -461,7 +496,7 @@ function combat_owns_now(npc, memo, now)
     end
     local hit = hit_contact(id, now)
     local contact = sees or hit
-    if not contact and not focus[id] then
+    if not contact then
         if now - memo.scan_at >= SCAN_MS then
             memo.scan_at = now
             memo.scan_hit = hostile_near(npc, range)
@@ -477,9 +512,10 @@ function combat_owns_now(npc, memo, now)
     local r = (sees or hit) and nemesis_state.member(id)
     local player_contact = sees or (hit and r and r.hit_by_player == true)
 
-    if not player_contact and hit and r and not r.hit_by_player and r.hit_from and not focus[id] then
+    if not player_contact and hit and r and not r.hit_by_player and r.hit_from then
         local shooter = level.object_by_id(r.hit_from)
-        if shooter and shooter:alive() then
+
+        if shooter and (IsStalker(shooter) or IsMonster(shooter)) and nemesis_fx.alive_obj(shooter) then
             if now - (memo.shown_at or -1000000) >= SHOW_EVERY_MS then
                 memo.shown_at = now
                 pcall(_show_enemy, npc, shooter)
@@ -781,12 +817,7 @@ function drive_chase(npc, actor)
         local now = time_global()
         if slot.cover_lv == cover and now - (slot.cover_at or -1000000) < RESEND_MS then return true, false end
         slot.cover_lv, slot.cover_at = cover, now
-        pcall(function()
-            npc:set_path_type(game_object.level_path)
-            npc:set_detail_path_type(move.line)
-            npc:set_desired_position()
-            npc:set_desired_direction()
-        end)
+        pcall(_prep_path, npc)
         pcall(function() xcombat.set_destination(npc, cover) end)
         return apply_state(npc, slot, true), false
     end
@@ -847,20 +878,13 @@ function drive_chase(npc, actor)
         return true, false
     end
 
-    local dist = 9999
-    pcall(function() dist = npc:position():distance_to(actor:position()) end)
+    local okd, dist = pcall(_dist, npc, actor)
+    if not okd then dist = 9999 end
     local far = dist > SPRINT_FROM_M
 
     local sneaky = sneaking and sneak_closing(id) and not sneak_holding(id) and not player_running(actor)
 
-    pcall(function()
-        npc:set_path_type(game_object.level_path)
-
-        npc:set_detail_path_type(move.line)
-
-        npc:set_desired_position()
-        npc:set_desired_direction()
-    end)
+    pcall(_prep_path, npc)
     local used = send_to(npc, slot.lv)
     if not used then return false, refreshed end
     local moved = apply_state(npc, slot, far, sneaky)
@@ -926,6 +950,79 @@ function psy_voices()
     local l = pick_sound("psy voices (left)", PSY_L)
     if not l then return nil end
     return l, pick_sound("psy voices (right)", PSY_R)
+end
+
+local ap_found, ap_next_try = nil, 0
+function ap()
+    if ap_found then return ap_found end
+    local now = time_global()
+    if now < ap_next_try then return nil end
+    ap_next_try = now + 60000
+    local t = nil
+    pcall(function() t = ap_api end)
+    if type(t) == "table" then ap_found = t end
+    return ap_found
+end
+
+function exe_ai_on() return nemesis_mcm.get_bool("exe_ai", true) end
+
+function register_post(name, fn)
+    if type(RegisterScriptCallbackPost) == "function" then
+        if pcall(RegisterScriptCallbackPost, name, fn) then return true end
+    end
+    RegisterScriptCallback(name, fn)
+    return false
+end
+
+local held = {}
+local hold_logged = false
+function hold_still(obj)
+    if not obj or not exe_ai_on() then return false end
+    local ok, done = pcall(xcombat.set_movement_hold, obj, true)
+    if not (ok and done) then return false end
+    held[obj:id()] = true
+    if not hold_logged then
+        hold_logged = true
+        log_msg("Nemesis: engine movement hold in use (latest exes).")
+    end
+    return true
+end
+function is_held(id) return id ~= nil and held[id] == true end
+
+local BIAS_ACTOR = 1800
+local REDIRECT_FALLOFF_M = 60
+
+local function attack_pull(boss)
+    local v = boss and nemesis_mcm.get_number("boss_attack_pull", 300) or nemesis_mcm.get_number("hunter_attack_pull", 900)
+    if v < 0 then v = 0 end
+    if v > 1800 then v = 1800 end
+    return v > 0 and v or -1
+end
+local AI_REFRESH_MS = 2000
+local ai_logged = false
+function apply_ai(obj, r, gt)
+    if not (obj and r and r.named) then return end
+    if exe_ai_on() then
+        if r.ai_at and gt - r.ai_at < AI_REFRESH_MS then return end
+        r.ai_at = gt
+        local boss = r.id == nemesis_state.S.boss_id
+        local ok1, b = pcall(xcombat.set_visible_enemy_bias, obj, BIAS_ACTOR, -1)
+        local ok2, h = pcall(xcombat.set_hit_redirect, obj, attack_pull(boss), REDIRECT_FALLOFF_M)
+        r.ai_set = ((ok1 and b) or (ok2 and h)) and true or nil
+        if r.ai_set and not ai_logged then
+            ai_logged = true
+            log_msg("Nemesis: engine target bias and hit redirect in use (latest exes).")
+        end
+    elseif r.ai_set then
+        r.ai_set, r.ai_at = nil, nil
+        pcall(xcombat.set_visible_enemy_bias, obj, -1, -1)
+        pcall(xcombat.set_hit_redirect, obj, -1, 0)
+    end
+end
+function release_hold(id, obj)
+    if not (id and held[id]) then return end
+    held[id] = nil
+    if obj then pcall(xcombat.set_movement_hold, obj, false) end
 end
 
 function volume_setting(id, default)

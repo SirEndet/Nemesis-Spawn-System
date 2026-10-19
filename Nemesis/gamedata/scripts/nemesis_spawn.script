@@ -38,9 +38,9 @@ local function spawn_allowed(gt)
                 cooldown_logged = key
                 local left = (S.last_retreat + cooldown * 3600 - now) / 3600
                 if debug_mode then
-                    dbg("Nemesis: next hunt in %.0f game seconds (Debug mode overrides Time between hunts).", left * 3600)
+                    dbg("Nemesis: next hunt in %s game seconds (Debug mode overrides Time between hunts).", string.format("%.0f", left * 3600))
                 else
-                    dbg("Nemesis: next hunt in %.1f game hours (Time between hunts = %s h).", left, tostring(cooldown))
+                    dbg("Nemesis: next hunt in %s game hours (Time between hunts = %s h).", string.format("%.1f", left), tostring(cooldown))
                 end
             end
             return false
@@ -201,30 +201,40 @@ function apply_names()
     end
 end
 
+local SQUAD_PASS_MS = 10000
+local squad_pass_at = -1000000
+local function _set_rel(a, rel, b) a:set_relation(rel, b) end
 function keep_squad_friendly()
     local objs = {}
+    local fresh = false
     local function consider(id)
         local obj = level.object_by_id(id)
         if not obj or not nemesis_fx.alive_obj(obj) then return end
-        S.m[id].bound = true
+        local r = S.m[id]
+        if not r.bound then fresh = true end
+        r.bound = true
         objs[#objs + 1] = obj
     end
     for _, id in ipairs(S.hunter_ids) do consider(id) end
     for _, id in ipairs(S.squad_ids) do consider(id) end
-    for i = 1, #objs do
-        for j = 1, #objs do
-            if i ~= j then
-                pcall(function() objs[i]:set_relation(game_object.friend, objs[j]) end)
+    local now = time_global()
+    if fresh or now - squad_pass_at >= SQUAD_PASS_MS then
+        squad_pass_at = now
+        local friend = game_object.friend
+        for i = 1, #objs do
+            for j = 1, #objs do
+                if i ~= j then pcall(_set_rel, objs[i], friend, objs[j]) end
             end
         end
     end
     local actor = db.actor
     if not actor then return end
+    local enemy = game_object.enemy
     for _, obj in ipairs(objs) do
         local r = S.m[obj:id()]
         if r and not r.retreat_at then
-            pcall(function() obj:set_relation(game_object.enemy, actor) end)
-            pcall(function() actor:set_relation(game_object.enemy, obj) end)
+            pcall(_set_rel, obj, enemy, actor)
+            pcall(_set_rel, actor, enemy, obj)
         end
     end
 end
@@ -443,7 +453,24 @@ local function spawn_range()
     return dmin, dmax
 end
 
-local function pick_spawn_smart(actor)
+local FOLLOW_SIDE_DEG = 45
+local FOLLOW_SIDE_COS = math.cos(math.rad(FOLLOW_SIDE_DEG))
+
+local function side_dir(apos, toward)
+    if not (apos and toward) then return nil end
+    local dx, dz = toward.x - apos.x, toward.z - apos.z
+    local l = math.sqrt(dx * dx + dz * dz)
+    if l < 5 then return nil end
+    return dx / l, dz / l
+end
+
+local function on_side(apos, pos, sx, sz)
+    local dx, dz = pos.x - apos.x, pos.z - apos.z
+    local l = math.sqrt(dx * dx + dz * dz)
+    return l > 0.1 and (dx * sx + dz * sz) / l >= FOLLOW_SIDE_COS
+end
+
+local function pick_spawn_smart(actor, toward)
     local dmin, dmax = spawn_range()
     local apos = actor:position()
     local sim_actor = alife():actor()
@@ -458,19 +485,29 @@ local function pick_spawn_smart(actor)
             if d >= dmin and d <= dmax then ring[#ring + 1] = smart end
         end
     end
-    if #ring > 0 then return ring[math.random(#ring)] end
-    return nil
+    if #ring == 0 then return nil end
+    local sx, sz = side_dir(apos, toward)
+    if sx then
+        local side = {}
+        for _, smart in ipairs(ring) do if on_side(apos, smart.position, sx, sz) then side[#side + 1] = smart end end
+        if #side > 0 then return side[math.random(#side)], true end
+    end
+    return ring[math.random(#ring)], false
 end
 
-local function pick_ring_vertex(actor)
+local function pick_ring_vertex(actor, toward)
     local dmin, dmax = spawn_range()
     local alv, apos
     pcall(function() alv = actor:level_vertex_id(); apos = actor:position() end)
     if not alv or alv >= 4294967295 or not apos then return nil end
     local best_lv, best_pos, best_d = nil, nil, 0
     local bases = base_smarts_on_level()
-    for _ = 1, 32 do
+
+    local sx, sz = side_dir(apos, toward)
+    local base_ang = sx and math.atan2(sz, sx) or nil
+    for try = 1, 32 do
         local ang = math.random() * 6.28318
+        if base_ang and try <= 16 then ang = base_ang + (math.random() * 2 - 1) * math.rad(FOLLOW_SIDE_DEG) end
         local dir = vector()
         dir:set(math.cos(ang), 0, math.sin(ang))
         local want = dmin + math.random() * (dmax - dmin)
@@ -510,10 +547,20 @@ local function try_spawn(gt, follow)
         return
     end
 
-    local spawn_smart = pick_spawn_smart(actor)
+    local toward = follow and follow.ax and vector():set(follow.ax, 0, follow.az) or nil
+    local spawn_smart, from_side = pick_spawn_smart(actor, toward)
     local ring_lv, ring_pos = nil, nil
-    if not spawn_smart then
-        ring_lv, ring_pos = pick_ring_vertex(actor)
+
+    local sx, sz = side_dir(actor:position(), toward)
+    if spawn_smart and sx and not from_side then
+        local lv2, pos2 = pick_ring_vertex(actor, toward)
+        if pos2 and on_side(actor:position(), pos2, sx, sz) then
+            spawn_smart, ring_lv, ring_pos, from_side = nil, lv2, pos2, true
+        end
+    end
+    if not spawn_smart and not ring_lv then
+        ring_lv, ring_pos = pick_ring_vertex(actor, toward)
+        from_side = sx ~= nil and ring_pos ~= nil and on_side(actor:position(), ring_pos, sx, sz)
         if not ring_lv then
             dbg("Nemesis: no smart and no free vertex in the spawn range, retrying later")
             retry_later(gt)
@@ -570,6 +617,7 @@ local function try_spawn(gt, follow)
         dbg("!Nemesis ERROR: squad %s has no stalkers.", tostring(squad.id))
         pcall(xsquad.release_squad, squad)
         S.sim_squad_id = nil
+        nemesis_fx.queue_squad_cleanup(squad.id)
         S.phase = "idle"
         retry_later(gt)
         return
@@ -667,6 +715,10 @@ local function try_spawn(gt, follow)
     dbg("Nemesis: '%s' squad spawned (%s) at %s, %s m away, %s stalkers, want %s [cycle %s, scripted, off the smart roster]",
         leader, squad_section, tostring(sname), string.format("%.0f", dist), tostring(#members),
         tostring(wanted), tostring(S.cycle))
+    if toward then
+        dbg("Nemesis: they followed you in %s.", from_side and "from the side you came in on"
+            or "from another side (no spot in range on yours)")
+    end
 end
 
 function idle_tick(gt, actor, slow)
@@ -693,5 +745,6 @@ function spawn_follow(gt, follow) try_spawn(gt, follow) end
 
 function reset_runtime()
     warn_spawn_at = nil
+    squad_pass_at = -1000000
     forget_bases()
 end

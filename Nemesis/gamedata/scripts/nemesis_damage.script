@@ -103,7 +103,10 @@ local function mask_if_lethal(npc, r, shit, bone_id)
     local hp = tonumber(npc.health)
     if not hp or hp - worst_loss(shit.power, bone_id) > 0 then return end
     local vis = nemesis_fx.get_visual(npc)
-    if vis and nemesis_fx.make_invisible(npc) then r.mask_vis = vis end
+    if vis and nemesis_fx.make_invisible(npc) then
+        r.mask_vis = vis
+        nemesis_fx.note_masked(r.id)
+    end
 end
 
 ---------------------------------------------------------------------------
@@ -111,11 +114,29 @@ end
 ---------------------------------------------------------------------------
 local gbo_wrapped = false
 
+local function _draft_id(shit) return shit.draftsman and shit.draftsman:id() end
+local function boss_npc_hit(shit)
+    local ok, did = pcall(_draft_id, shit)
+    if not (ok and did == S.boss_id) then return end
+    local p = nemesis_mcm.get_number("boss_npc_damage", 200)
+    if p < 100 then p = 100 end
+    if p > 400 then p = 400 end
+    shit.power = (shit.power or 0) * p / 100
+end
+
+function on_monster_before_hit(monster, shit, bone_id, flags)
+    if S.boss_id and shit and monster then boss_npc_hit(shit) end
+end
+
 function on_before_hit(npc, shit, bone_id, flags)
     if not npc then return end
     local id = npc:id()
     local r = nemesis_state.member(id)
-    if not r then return end
+    if not r then
+        if S.boss_id and shit then boss_npc_hit(shit) end
+        return
+    end
+    r.bh_frame = time_global()
 
     if S.phase == "hunting" and not r.retreat_at and shit and (shit.power or 0) > 0 then
         r.hit_at = time_global()
@@ -174,10 +195,49 @@ function on_before_hit(npc, shit, bone_id, flags)
     end
 end
 
+local bypass_logged = {}
+local function bypass_hit(npc, r, amount, who, bone)
+    if S.phase ~= "hunting" or r.retreat_at or not r.named or r.id == S.boss_id then return end
+    local now = time_global()
+    if (amount or 0) > 0 then
+        r.hit_at = now
+        r.hit_by_player = false
+        r.hit_from = nil
+        pcall(function()
+            r.hit_from = who and who:id()
+            r.hit_by_player = (who ~= nil and db.actor ~= nil and who:id() == db.actor:id())
+        end)
+        if r.hit_by_player then r.player_struck = true; r.player_hit_at = now end
+    end
+    if not bypass_logged[r.id] then
+        bypass_logged[r.id] = true
+        dbg("Nemesis: a hit on '%s' skipped the damage check (smart cover); guarded here.", r.name or "?")
+    end
+    local hp = tonumber(npc.health)
+    if not hp then return end
+    if hp - worst_loss(amount, bone) <= LETHAL_FLOOR then
+        pcall(function() npc:invulnerable(true) end)
+        r.bypass_guard = true
+        dbg("Nemesis: '%s' blocked a lethal hit that skipped the damage check.", r.name or "?")
+        if not in_grace(r) then ask_retreat(npc, r) end
+    end
+end
+
+function lift_bypass_guard(obj, r)
+    if not r.bypass_guard or r.retreat_at then return end
+    r.bypass_guard = nil
+    pcall(function() obj:invulnerable(false) end)
+end
+
 function on_hunter_hit(npc, amount, dir, who, bone)
     if not npc then return end
     local r = nemesis_state.member(npc:id())
-    if not r or not r.hit_cut then return end
+    if not r then return end
+    if r.bh_frame ~= time_global() then
+        bypass_hit(npc, r, amount, who, bone)
+        return
+    end
+    if not r.hit_cut then return end
 
     r.hit_cut = nil
     local pre = r.hit_pre or r.last_hp
@@ -219,6 +279,11 @@ end
 local BOSS_MISSES = 3
 local BOSS_MISS_SPREAD = 10
 
+local function _aims_at_player(obj)
+    local be = obj:best_enemy()
+    return not be or be:id() == 0
+end
+
 function on_shot_dispersion(obj, wpn, body_state, move_type, t)
     if S.phase ~= "hunting" or not obj or type(t) ~= "table" then return end
     local r = S.m[obj:id()]
@@ -226,7 +291,8 @@ function on_shot_dispersion(obj, wpn, body_state, move_type, t)
 
     local at_player = true
     if r.id == S.boss_id then
-        pcall(function() local be = obj:best_enemy(); if be then at_player = be:id() == 0 end end)
+        local ok, yes = pcall(_aims_at_player, obj)
+        if ok then at_player = yes end
     end
     if r.id == S.boss_id and at_player then
         S.boss_shots = (S.boss_shots or 0) + 1
@@ -309,7 +375,7 @@ function install_br_wrap()
     local gbo = nil
     pcall(function() gbo = grok_bo end)
     if type(gbo) ~= "table" or type(gbo.npc_on_before_hit) ~= "function" or type(gbo.custom_bone_value) ~= "table" then
-        dbg("Nemesis: GAMMA ballistics (grok_bo) not found; BR%% is applied by cutting the hit.")
+        dbg("Nemesis: GAMMA ballistics (grok_bo) not found; the mitigation percent is applied by cutting the hit.")
         return
     end
 
@@ -398,5 +464,5 @@ function install_br_wrap()
     gbo.npc_on_before_hit = wrapped
     RegisterScriptCallback("npc_on_before_hit", wrapped)
     gbo_wrapped = true
-    dbg("Nemesis: GAMMA ballistics hooked (hunter BR and BR%% follow the player).")
+    dbg("Nemesis: GAMMA ballistics hooked (hunter BR and mitigation follow the player).")
 end
