@@ -167,6 +167,10 @@ function on_before_hit(npc, shit, bone_id, flags)
 
     if gbo_wrapped and from_player(shit) then return end
 
+    if id == S.boss_id and S.emission_hunt and shit and not from_player(shit) then
+        shit.power = (shit.power or 0) * (1 - nemesis_emission.npc_cut())
+    end
+
     local div = capped_div(id)
     local pct = 0
     if shit then

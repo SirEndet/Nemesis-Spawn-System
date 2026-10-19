@@ -15,14 +15,17 @@ function retry_later(gt) block_until = gt + SPAWN_RETRY_MS end
 ---------------------------------------------------------------------------
 -- When
 ---------------------------------------------------------------------------
+
+local function in_grace(now)
+    if nemesis_mcm.get_bool("debug_mode", false) or S.spawned_count ~= 0 or not S.first_hunt then return false end
+    return now - S.first_hunt < nemesis_mcm.get_number("grace_period", 12) * 86400
+end
+
 local function spawn_allowed(gt)
     if gt < block_until then return false end
     local debug_mode = nemesis_mcm.get_bool("debug_mode", false)
     local now = nemesis_utils.game_seconds()
-    if not debug_mode and S.spawned_count == 0 and S.first_hunt then
-        local grace = nemesis_mcm.get_number("grace_period", 12) * 86400
-        if now - S.first_hunt < grace then return false end
-    end
+    if in_grace(now) then return false end
     if S.last_retreat then
         if now < S.last_retreat then
             S.last_retreat = now
@@ -139,6 +142,10 @@ local function spawn_blocked(actor, ignore_bases)
         if reason then dbg("Nemesis: hunt held back, player is %s.", reason) end
     end
     return reason ~= nil
+end
+
+function extra_allowed(gt, actor)
+    return gt >= block_until and not in_grace(nemesis_utils.game_seconds()) and not spawn_blocked(actor, false)
 end
 
 ---------------------------------------------------------------------------
@@ -360,9 +367,17 @@ local function spawn_extra(job)
     return nil
 end
 
+STAGGER_MS = 750
+
+function stagger_next(prev_due, now)
+    return math.max((prev_due or now) + STAGGER_MS, now + STAGGER_MS / 2)
+end
+
 function fill_squad()
     local job = S.pending_squad
     if not job or job.left <= 0 then return end
+    local now = time_global()
+    if job.next_at and now < job.next_at then return end
     if not job.section or job.section == "" then
         dbg("!Nemesis ERROR: no stalker section for the extra members.")
         S.pending_squad = nil
@@ -389,6 +404,7 @@ function fill_squad()
     end
     job.misses = 0
     job.left = job.left - 1
+    job.next_at = stagger_next(job.next_at, now)
     local fe = job.follow and table.remove(job.follow, 1)
     local named, ename
     if fe then
@@ -495,11 +511,12 @@ local function pick_spawn_smart(actor, toward)
     return ring[math.random(#ring)], false
 end
 
-local function pick_ring_vertex(actor, toward)
+local function pick_ring_vertex(actor, toward, from_lv)
     local dmin, dmax = spawn_range()
     local alv, apos
     pcall(function() alv = actor:level_vertex_id(); apos = actor:position() end)
     if not alv or alv >= 4294967295 or not apos then return nil end
+    if from_lv and from_lv < 4294967295 then alv = from_lv end
     local best_lv, best_pos, best_d = nil, nil, 0
     local bases = base_smarts_on_level()
 
@@ -536,6 +553,32 @@ end
 ---------------------------------------------------------------------------
 -- How
 ---------------------------------------------------------------------------
+
+local function fresh_hunt(faction, squad, follow)
+    nemesis_state.clear_members()
+    S.faction = faction
+    S.sim_squad_id = squad.id
+    S.pending_squad = nil
+    S.target_restore_logged = nil
+    S.retreat_announced = false
+    S.offline_since = nil
+    S.seen_online = nil
+    S.role_side = nil
+    S.fx = {}
+    S.boss_id = nil
+    S.boss_hunt = nil
+    S.boss_sneak = nil
+    S.emission_hunt = nil
+    S.spot_said = nil
+    if not follow then
+        S.follows = 0
+        S.reload_said = nil
+        S.em_horde_done, S.em_released, S.em_squads = nil, nil, nil
+    end
+    nemesis_utils.reset_chase()
+    nemesis_chase.reset_all()
+    arm_squad(squad)
+end
 
 local function try_spawn(gt, follow)
     local actor = db.actor
@@ -593,24 +636,7 @@ local function try_spawn(gt, follow)
         return
     end
 
-    nemesis_state.clear_members()
-    S.faction = faction
-    S.sim_squad_id = squad.id
-    S.pending_squad = nil
-    S.target_restore_logged = nil
-    S.retreat_announced = false
-    S.offline_since = nil
-    S.seen_online = nil
-    S.role_side = nil
-    S.fx = {}
-    S.boss_id = nil
-    S.boss_hunt = nil
-    S.boss_sneak = nil
-    S.spot_said = nil
-    if not follow then S.follows = 0 end
-    nemesis_utils.reset_chase()
-    nemesis_chase.reset_all()
-    arm_squad(squad)
+    fresh_hunt(faction, squad, follow)
 
     local members = member_ids(squad)
     if #members == 0 then
@@ -638,7 +664,9 @@ local function try_spawn(gt, follow)
                 nemesis_state.add_member(mid, e.named, e.name)
                 local r = nemesis_state.member(mid)
                 if r then r.follow_hp = e.hp end
-                if e.boss then
+                if e.boss and follow.emission_hunt then
+                    nemesis_emission.make_boss(mid)
+                elseif e.boss then
                     nemesis_boss.make(mid)
                     S.boss_look = follow.boss_look or S.boss_look
                 end
@@ -695,6 +723,7 @@ local function try_spawn(gt, follow)
                 misses = 0,
                 all_named = all_named,
                 follow = follow_rest,
+                next_at = time_global() + STAGGER_MS,
             }
         end
     end
@@ -702,6 +731,7 @@ local function try_spawn(gt, follow)
     local leader = nemesis_state.name_of(nemesis_state.leader()) or "A hunter"
     local sname = "navmesh vertex " .. tostring(ring_lv)
     if spawn_smart then pcall(function() sname = spawn_smart:name() end) end
+    nemesis_fx.wd_malfunction(S.boss_id ~= nil)
     if follow and S.boss_id then
         nemesis_boss.news(nemesis_utils.follow_line())
     elseif follow then
@@ -732,12 +762,72 @@ function idle_tick(gt, actor, slow)
         if not warn_spawn_at then
             give_warning(gt)
         elseif gt >= warn_spawn_at then
+            if nemesis_emission.take_hunt(gt) then
+                warn_spawn_at = nil
+                return
+            end
             try_spawn(gt)
             if S.phase ~= "idle" then warn_spawn_at = nil end
         end
     else
+        if nemesis_emission.take_hunt(gt) then return end
         try_spawn(gt)
     end
+end
+
+function spawn_emission_boss(gt, faction, from_lvs)
+    local actor = db.actor
+    if not actor then return nil end
+    if S.phase ~= "idle" or #S.hunter_ids > 0 or (S.sim_squad_id and alife():object(S.sim_squad_id)) or S.follow then
+        dbg("Nemesis: a hunt is already active; the emission boss waits.")
+        return nil
+    end
+    local lv, pos, gv = nil, nil, actor:game_vertex_id()
+    local smart = pick_spawn_smart(actor, nil)
+    if smart then
+        pos, lv, gv = smart.position, smart.m_level_vertex_id, smart.m_game_vertex_id
+    else
+        for _, from in ipairs(from_lvs or {}) do
+            lv, pos = pick_ring_vertex(actor, nil, from)
+            if lv then break end
+        end
+        if not lv then lv, pos = pick_ring_vertex(actor, nil) end
+    end
+    if not lv or not pos then
+        dbg("Nemesis: no smart and no free vertex in the spawn range for the emission boss, retrying.")
+        return nil
+    end
+    local section = nemesis_utils.resolve_squad_section(faction)
+    if not section then return nil end
+    local ok, squad = pcall(function() return create_squad_at(section, pos, lv, gv) end)
+    if not ok or not squad then
+        dbg("!Nemesis ERROR: the emission boss squad %s could not be created (%s).", section, tostring(squad))
+        return nil
+    end
+    fresh_hunt(faction, squad, nil)
+    local members = member_ids(squad)
+    if #members == 0 then
+        dbg("!Nemesis ERROR: emission boss squad %s has no stalkers.", tostring(squad.id))
+        pcall(xsquad.release_squad, squad)
+        S.sim_squad_id = nil
+        nemesis_fx.queue_squad_cleanup(squad.id)
+        return nil
+    end
+    local used = {}
+    for i, mid in ipairs(members) do
+        local name = (i == 1) and nemesis_emission.boss_name() or nemesis_utils.next_hunter_name(used, true)
+        used[name] = true
+        nemesis_state.add_member(mid, true, name)
+    end
+    nemesis_emission.make_boss(members[1])
+    S.spawned_count = S.spawned_count + 1
+    S.hunt_start = nemesis_utils.game_seconds()
+    S.phase = "hunting"
+    nemesis_fx.wd_malfunction(true)
+    dbg("Nemesis: emission boss '%s' spawned (%s) at navmesh vertex %s, %s m away [cycle %s, scripted, off the smart roster]",
+        tostring(nemesis_state.name_of(members[1])), section, tostring(lv),
+        string.format("%.0f", pos:distance_to(actor:position())), tostring(S.cycle))
+    return pos
 end
 
 function follow_blocked(actor) return spawn_blocked(actor, true) end

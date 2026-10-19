@@ -16,8 +16,9 @@
     <string id="ui_mcm_nemesis_head_armour"><text>Armour</text></string>
     <string id="ui_mcm_nemesis_head_toughness"><text>Toughness</text></string>
     <string id="ui_mcm_nemesis_head_reward"><text>Reward</text></string>
+    <string id="ui_mcm_nemesis_head_emission"><text>Emission boss</text></string>
     <string id="ui_mcm_nemesis_boss_stash"><text>Boss stash reward</text></string>
-    <string id="ui_mcm_nemesis_boss_stash_desc"><text>Kill the boss yourself and the coordinates of a stash on the current map come through on your PDA, filled by the game's own stash system. If the map has no free stash left, they come on the next map that has one. Default off.</text></string>
+    <string id="ui_mcm_nemesis_boss_stash_desc"><text>Kill the boss yourself and the coordinates of a rare (yellow) stash on the current map come through on your PDA, filled by the game's own stash system. If the map has no free stash left, they come on the next map that has one. Default off.</text></string>
     <string id="ui_mcm_nemesis_page_debug"><text>Debug</text></string>
 
     <string id="ui_mcm_nemesis_difficulty"><text>Difficulty</text></string>
@@ -49,8 +50,26 @@
 
     <string id="ui_mcm_nemesis_warning_pda_desc"><text>A PDA message from an unknown frequency 30 to 120 seconds before a hunt starts. With this or the audio warning on, the hunt follows the warning; with both off it starts without one. Default off.</text></string>
 
+    <string id="ui_mcm_nemesis_emission_enabled"><text>Emission boss</text></string>
+    <string id="ui_mcm_nemesis_emission_enabled_desc"><text>On: the emission boss can come when an emission meets a hunt (see Emission boss chance). Off: he never comes, hunts during emissions are normal hunts, and one waiting to come is called off. The debug box still forces him. Default on.</text></string>
+    <string id="ui_mcm_nemesis_emission_chance"><text>Emission boss chance (%)</text></string>
+    <string id="ui_mcm_nemesis_emission_chance_desc"><text>Chance, rolled once per emission, that the emission boss comes when an emission meets a hunt: a hunt running when the emission starts is called off, or a hunt about to start during one is taken over. He haunts the exits of the building you shelter in, arrives with a lightning strike and walks in after you. He comes in the deadly part of the emission, when its waves hit, and never outside one. 0 turns him off. Default 100.</text></string>
+    <string id="ui_mcm_nemesis_emission_extra"><text>Emission boss extra chance (%)</text></string>
+    <string id="ui_mcm_nemesis_emission_extra_desc"><text>Chance, rolled once per emission, that the emission boss comes even when no hunt meets the emission, so between hunts too. Not in the grace period, and not while you are in a base, in a dialogue, asleep or underground. 0 turns it off. Default 4.</text></string>
+    <string id="ui_mcm_nemesis_emission_name"><text>Emission boss name</text></string>
+    <string id="ui_mcm_nemesis_emission_name_desc"><text>Name of the emission boss, a Sin (UNISG when you are Monolith, Zombified or Sin). Default: Ilarion Hrech</text></string>
+    <string id="ui_mcm_nemesis_emission_npc_cut"><text>Emission boss NPC damage reduction (%)</text></string>
+    <string id="ui_mcm_nemesis_emission_npc_cut_desc"><text>How much less damage the emission boss takes from other stalkers and mutants, so they are little help against him. Your own hits are not affected. Him only. Default 70.</text></string>
+    <string id="ui_mcm_nemesis_emission_horde"><text>Emission boss horde size</text></string>
+    <string id="ui_mcm_nemesis_emission_horde_desc"><text>Mutants that come through the door 15 seconds after the emission boss arrives and rush in after you: zombified stalkers, with a snork on mid maps and two tougher snorks on late maps. 0 sends none. Default 4.</text></string>
+    <string id="ui_mcm_nemesis_emission_psy"><text>Ghost psy damage (%)</text></string>
+    <string id="ui_mcm_nemesis_emission_psy_desc"><text>The share of your whole psy bar you lose each time the ghosts at the exits shove you back inside before the emission boss arrives. Psy protection does not lower it. 0 turns it off. Default 4.</text></string>
+    <string id="ui_mcm_nemesis_emission_volume"><text>Lightning strike volume (%)</text></string>
+    <string id="ui_mcm_nemesis_emission_volume_desc"><text>Loudness of the lightning strike when the emission boss arrives. 0 mutes it. Default 80.</text></string>
     <string id="ui_mcm_nemesis_npc_name"><text>Boss name</text></string>
-    <string id="ui_mcm_nemesis_npc_name_desc"><text>Name of the boss, a rare and stronger named hunter who fights to the death. Other hunters always get random names. Default: Bogdan Kravets</text></string>
+    <string id="ui_mcm_nemesis_npc_name_desc"><text>Name of the Monolith boss, a rare and stronger named hunter who fights to the death. Other hunters always get random names. Default: Bogdan Kravets</text></string>
+    <string id="ui_mcm_nemesis_isg_boss_name"><text>UNISG boss name</text></string>
+    <string id="ui_mcm_nemesis_isg_boss_name_desc"><text>Name of the UNISG boss, their best fighter, who hunts Monolith, Zombified and Sin players. Default: Lyutomyr Kat</text></string>
 
     <string id="ui_mcm_nemesis_boss_chance"><text>Boss chance (%)</text></string>
     <string id="ui_mcm_nemesis_boss_chance_desc"><text>Chance that a hunt brings the boss: a tougher, cloaked hunter with his own look and messages and an escort. It climbs by 2 every 4 hunts without him, and the 30th hunt without him brings him for sure. Only one boss at a time, at most one a day. Beating a hunt he was in halves the escalation. 0 = no boss at all. Default 2.</text></string>
@@ -79,9 +98,13 @@
     <string id="ui_mcm_nemesis_test_pda_desc"><text>Tick and apply: one Nemesis PDA message is sent at once, with the banner icon and the PDA sound. With Debug logs on, the console says whether it went out. The box unticks itself.</text></string>
 
     <string id="ui_mcm_nemesis_force_boss"><text>Force a boss in the next hunt</text></string>
+    <string id="ui_mcm_nemesis_force_emission"><text>Force the emission boss now</text></string>
+    <string id="ui_mcm_nemesis_force_emission_desc"><text>For testing. Tick and apply: the emission boss comes now, even without an emission. A running hunt is called off for him. Get indoors to see the haunted exits. The box unticks itself.</text></string>
     <string id="ui_mcm_nemesis_prepare_uninstall"><text>Prepare for uninstall</text></string>
     <string id="ui_mcm_nemesis_prepare_uninstall_desc"><text>Tick and apply before you remove the mod: any running hunt is called off, every Nemesis squad is removed from the world, and no new hunt starts while the box stays ticked. A PDA message tells you when it is safe to save. Then save, remove the mod and load that save. Untick it to let the hunts come back.</text></string>
     <string id="ui_mcm_nemesis_force_boss_desc"><text>For testing. Tick and apply: the next hunt brings the boss, ignoring the chance, the day limit and the once-a-day rule. The box unticks itself.</text></string>
+    <string id="ui_mcm_nemesis_wd_malfunction"><text>Wearable Devices mod Malfunction</text></string>
+    <string id="ui_mcm_nemesis_wd_malfunction_desc"><text>Only with the Wearable Devices mod installed: when a hunt spawns, your device screens flicker at random for about 2.5 seconds. When the boss spawns, they also go black for 2 seconds after it. Without that mod this does nothing. Default on.</text></string>
 
     <string id="ui_mcm_nemesis_debug_logs"><text>Debug logs</text></string>
     <string id="ui_mcm_nemesis_debug_logs_desc"><text>Write Nemesis diagnostic and error lines to the console. Leave this off unless you are tracking a problem. Lines that start with an exclamation mark are errors.</text></string>
@@ -156,10 +179,10 @@
     <string id="ui_mcm_nemesis_fight_range_desc"><text>Hunters stop chasing and start fighting when they see you, or any other enemy, this close. Default 70.</text></string>
 
     <string id="ui_mcm_nemesis_spawn_dist_min"><text>Spawn distance, min (m)</text></string>
-    <string id="ui_mcm_nemesis_spawn_dist_min_desc"><text>Hunters never spawn closer to you than this. Default 70.</text></string>
+    <string id="ui_mcm_nemesis_spawn_dist_min_desc"><text>Hunters (the emission boss too) never spawn closer to you than this. Default 70.</text></string>
 
     <string id="ui_mcm_nemesis_spawn_dist_max"><text>Spawn distance, max (m)</text></string>
-    <string id="ui_mcm_nemesis_spawn_dist_max_desc"><text>The farthest from you a hunt can spawn. Default 140.</text></string>
+    <string id="ui_mcm_nemesis_spawn_dist_max_desc"><text>The farthest from you a hunt (the emission boss too) can spawn. Default 140.</text></string>
 
     <string id="ui_mcm_nemesis_squad_w1"><text>Squad of 1, weight</text></string>
     <string id="ui_mcm_nemesis_squad_w1_desc"><text>Relative chance the hunt is only the hunter. These five sliders are weights, not percents, so they do not need to add up to 100. Default 50.</text></string>

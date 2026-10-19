@@ -1,0 +1,7 @@
+; Nemesis emission boss (round 93): the phantoms his ghosts throw at you when they shove you
+; back inside. Vanilla's phantom (m_phantom.ltx) with no contact damage: the psy damage is the
+; mod's own small hit. Counted by phantom_manager like the game's own dynamic phantoms.
+[nemesis_phantom]:m_phantom
+visuals                 = monsters\phantom\zombi_0, monsters\phantom\krovosos_0, monsters\phantom\snork_0
+contact_hit             = 0
+script_binding          = phantom_manager.bind_phantom

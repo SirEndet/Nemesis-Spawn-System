@@ -18,7 +18,8 @@ function exists()
     local alive = false
     pcall(function()
         local se = alife():object(g)
-        alive = se ~= nil and se:alive() and se:character_name() == nemesis_utils.get_npc_name()
+        local n = se and se:alive() and se:character_name()
+        alive = n ~= nil and n ~= false and (nemesis_utils.is_boss_name(n) or n == nemesis_emission.boss_name())
     end)
     if alive then return true end
     S.boss_ghost = nil
@@ -128,6 +129,7 @@ function on_killed(id, by_player, name)
     S.boss_id = nil
     S.boss_sneak = nil
     nemesis_fx.forget_boss()
+    nemesis_emission.on_boss_killed(id)
     dbg("Nemesis: the boss '%s' is dead (%s).", tostring(name), by_player and "killed by you" or "not by you")
     if by_player and nemesis_mcm.get_bool("boss_stash", false) then
         S.stash_owed = name or nemesis_utils.get_npc_name()
@@ -157,7 +159,18 @@ local function stash_on_this_map(name)
     if desc and hint then
         str = "%c[255,255,160,0]" .. str .. "\\n%c[default]" .. desc .. "\\n%c[160,100,100,200]" .. hint
     end
+
+    local cnt0, last0 = nil, nil
+    pcall(function()
+        cnt0 = load_var(db.actor, "toolkit_reward_count")
+        last0 = load_var(db.actor, "toolkit_reward_last")
+        save_var(db.actor, "toolkit_reward_count", 1000000)
+    end)
     local ok2, got = pcall(tm.set_random_stash, nil, str, nil, id)
+    pcall(function()
+        save_var(db.actor, "toolkit_reward_count", cnt0)
+        save_var(db.actor, "toolkit_reward_last", last0)
+    end)
     if not ok2 then return false end
     if got then return true end
 
@@ -194,6 +207,7 @@ function clear()
     S.boss_id = nil
     S.boss_hunt = nil
     S.boss_sneak = nil
+    S.emission_hunt = nil
 end
 
 ---------------------------------------------------------------------------

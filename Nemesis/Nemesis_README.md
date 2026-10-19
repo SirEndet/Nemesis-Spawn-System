@@ -24,7 +24,11 @@ Every so often, a hunter comes for you. He spawns out of sight, sprints after yo
 
 ### The boss
 
-Rarely, a hunter is the boss: **Bogdan Kravets** (you can rename him). He is tougher, always cloaked, has his own look and his own messages, and wants you above everyone else. Get in his way and he cuts you down too: against other stalkers and mutants he hits twice as hard. But hurt him, and for a few seconds nobody else exists for him. He never comes alone: four named hunters (Boss escort size) keep you busy while he hunts you. You'll know he's here: they teleport in, in a Monolith burst. While cloaked he slips past everyone else unnoticed, and seeing him changes nothing; only your shot gives him away. Stand still and he sneaks around behind you; run and he runs you down. Either way he tells you before he strikes, and his first 3 shots at you always miss. He never retreats: he fights to the death, and his body is yours to loot. Turn on **Boss stash reward** and killing him also marks a stash for you. Beat a hunt he was in and the hunters lose half their strength. The longer he stays away, the likelier he gets: by the 30th hunt without him, he comes for sure.
+Rarely, a hunter is the boss: **Bogdan Kravets**, or for UNISG hunts **Lyutomyr Kat**, their best fighter (you can rename both). He is tougher, always cloaked, has his own look and his own messages, and wants you above everyone else. Get in his way and he cuts you down too: against other stalkers and mutants he hits twice as hard. But hurt him, and for a few seconds nobody else exists for him. He never comes alone: four named hunters (Boss escort size) keep you busy while he hunts you. You'll know he's here: they teleport in, in a Monolith burst. While cloaked he slips past everyone else unnoticed, and seeing him changes nothing; only your shot gives him away. Stand still and he sneaks around behind you; run and he runs you down. Either way he tells you before he strikes, and his first 3 shots at you always miss. He never retreats: he fights to the death, and his body is yours to loot. Turn on **Boss stash reward** and killing him also marks a rare (yellow) stash for you. Beat a hunt he was in and the hunters lose half their strength. The longer he stays away, the likelier he gets: by the 30th hunt without him, he comes for sure.
+
+### The emission boss
+
+When an emission meets a hunt (and rarely, in any emission), the hunt is called off and **Ilarion Hrech**, a Sin (UNISG if you are Monolith, Zombified or Sin), comes instead, once the emission's waves start to hit. Get indoors: ghosts gather at the doors of your shelter, and if you try to step out they shove you back in, with phantoms, and each shove takes a little of your psy health. Then lightning strikes outside and he is here. He comes alone and walks in, never running, through the emission that kills everyone else. Fifteen seconds after him, zombies (and snorks, further north) pour through the door after you. Other stalkers barely scratch him. When he reaches the building, the ghosts vanish. Like the other boss, he fights to the death. Either boss will also notice when you reload close to him.
 
 ## Settings
 
@@ -91,7 +95,7 @@ The **Difficulty** setting at the top of the General page picks Easy, Medium (th
 | Armour growth speed | 0 | How fast named hunters' armour catches up with yours. |
 | Extra BR cap | 0.20 | How much higher than yours their ballistic rating can get. |
 | BR mitigation cap (%) | 25 | How much more damage their armour can block than yours. |
-| Obrien GAMMA Overhaul armour | Off | Turn on only if you use the Obrien GAMMA Overhaul mod. |
+| Obrien GAMMA Overhaul armour | Off | Turn on only if you use the Obrien GAMMA Overhaul mod. Your PDA reminds you if Obrien is installed and this is off. |
 | Reserve your kills | Off | NPCs leave your Nemesis kills alone. With AlifePlus, its own "reserve own kills" option decides. |
 | Latest exe AI features | On | Uses new engine features on the newest demonized exes. Older exes: no change. |
 | Hunter attack pull | 900 | Latest exes: how readily named hunters turn on whoever shoots them. 0 = engine default. |
@@ -100,7 +104,8 @@ The **Difficulty** setting at the top of the General page picks Easy, Medium (th
 ### Boss
 | Setting | Default | What it does |
 |---|---|---|
-| Boss name | Bogdan Kravets | The boss's name. |
+| Boss name | Bogdan Kravets | The Monolith boss's name. |
+| UNISG boss name | Lyutomyr Kat | The UNISG boss's name (when you play Monolith, Zombified or Sin). |
 | Boss chance (%) | 2 | Chance that a hunt brings the boss. Grows 2 every 4 hunts without him; certain by the 30th. 0 = no boss. |
 | Boss days after grace | 7 | Days after the grace period before a boss can appear. |
 | Boss escort size | 4 | Named hunters who come with the boss. 0 = he comes alone. |
@@ -108,7 +113,15 @@ The **Difficulty** setting at the top of the General page picks Easy, Medium (th
 | Boss toughness (%) | 30 | How much tougher the boss is than a normal named hunter. |
 | Boss extra BR | 0 | Extra armour class for the boss only, on top of the other hunters' (not the % mitigation). |
 | Boss damage against NPCs (%) | 200 | How hard the boss hits other stalkers and mutants. |
-| Boss stash reward | Off | Kill the boss yourself and a stash on the map is marked for you. |
+| Boss stash reward | Off | Kill the boss yourself and a rare (yellow) stash on the map is marked for you. |
+| Emission boss | on | Turns the emission boss on or off. |
+| Emission boss chance (%) | 100 | Chance, once per emission, that the emission boss replaces the hunt. 0 = off. |
+| Emission boss extra chance (%) | 4 | Chance, once per emission, that he comes with no hunt at all, between hunts too. 0 = off. |
+| Emission boss name | Ilarion Hrech | The emission boss's name. |
+| Emission boss NPC damage reduction (%) | 70 | How much less damage other stalkers and mutants do to him. |
+| Emission boss horde size | 4 | Mutants that come through the door after him. 0 = none. |
+| Ghost psy damage (%) | 4 | The share of your psy bar you lose when the ghosts shove you back inside, whatever you wear. 0 = none. |
+| Lightning strike volume (%) | 80 | The sound of his arrival. 0 = muted. |
 
 ### Debug
 | Setting | Default | What it does |
@@ -117,6 +130,8 @@ The **Difficulty** setting at the top of the General page picks Easy, Medium (th
 | Debug logs | Off | Writes Nemesis lines to the console, for bug reports. |
 | Send a test PDA message | – | Checks that Nemesis messages show up. |
 | Force a boss in the next hunt | – | The next hunt brings the boss. |
+| Force the emission boss now | – | The emission boss comes now, emission or not. |
+| Wearable Devices mod Malfunction | On | With the Wearable Devices mod: when a hunt spawns, your device screens flicker; for the boss they also go black for 2 s. |
 | Prepare for uninstall | Off | Ends any hunt and removes every Nemesis squad, so you can save and uninstall safely. No hunts while ticked. |
 
 ## Requirements
@@ -124,7 +139,7 @@ The **Difficulty** setting at the top of the General page picks Easy, Medium (th
 - **G.A.M.M.A.** (or Anomaly 1.5.3 with the modded exes and MCM).
 - **xlibs 1.9.1 or newer** by **Damian Sirbu**: [ModDB](https://www.moddb.com/mods/stalker-anomaly/addons/xlibs-1001) · [GitHub](https://github.com/damiansirbu-stalker/xlibs). Thank you, Damian, for the library this mod is built on.
 
-Works alongside AlifePlus and AlifeTactics, but does not need them.
+Works alongside AlifePlus, AlifeTactics and Wearable Devices, but does not need them.
 
 ## Install
 

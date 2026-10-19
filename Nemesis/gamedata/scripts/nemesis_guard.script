@@ -132,6 +132,10 @@ local function check_boxes()
         nemesis_boss.force()
         dbg("Nemesis: the next hunt brings the boss (MCM).")
     end
+    if box("force_emission") then
+        nemesis_emission.force()
+        dbg("Nemesis: the emission boss comes now, emission or not (MCM).")
+    end
 end
 
 function tick()

@@ -47,6 +47,12 @@ local function blank()
         follow = nil,
         follows = 0,
         stash_owed = nil,
+
+        emission_hunt = nil,
+        em_horde_done = nil,
+        em_released = nil,
+        em_squads = nil,
+        reload_said = nil,
         reserved = {},
     }
 end
@@ -297,6 +303,12 @@ function save(mdata, vanish_ids)
         follow_lvl = S.follow and S.follow.lvl or nil,
         follow_ax = S.follow and S.follow.ax or nil,
         follow_az = S.follow and S.follow.az or nil,
+        follow_emission = S.follow and S.follow.emission_hunt and true or nil,
+        emission_hunt = S.emission_hunt and true or nil,
+        em_horde_done = S.em_horde_done and true or nil,
+        em_released = S.em_released and true or nil,
+        em_squads = S.em_squads and table.concat(S.em_squads, ",") or nil,
+        reload_said = S.reload_said and true or nil,
         squad_follow = p and save_follow_list(p.follow) or nil,
         squad_all_named = p and p.all_named and true or nil,
         hunter_ids = table.concat(S.hunter_ids, ","),
@@ -338,11 +350,15 @@ function load(mdata)
     local fl = load_follow_list(s.follow)
     if fl and #fl > 0 then
         S.follow = { members = fl, faction = s.follow_faction, boss_look = s.follow_look, boss_hunt = s.follow_boss_hunt and true or nil,
-                     hunt_start = s.follow_start, lvl = s.follow_lvl, ax = tonumber(s.follow_ax) or 0, az = tonumber(s.follow_az) or 0 }
+                     hunt_start = s.follow_start, lvl = s.follow_lvl, ax = tonumber(s.follow_ax) or 0, az = tonumber(s.follow_az) or 0,
+                     emission_hunt = s.follow_emission and true or nil }
         S.hunt_start = S.hunt_start or s.follow_start
     end
     S.boss_ghost = tonumber(s.boss_ghost)
     S.faction = s.faction
+    S.em_released = s.em_released and true or nil
+    S.reload_said = s.reload_said and true or nil
+    if type(s.em_squads) == "string" and s.em_squads ~= "" then S.em_squads = load_ids(s.em_squads) end
 
     local hunters = load_ids(s.hunter_ids)
     local squad = load_ids(s.squad_ids)
@@ -380,6 +396,8 @@ function load(mdata)
     S.boss_hunt = s.boss_hunt and true or nil
     S.boss_sneak = s.boss_sneak and true or nil
     S.boss_look = s.boss_look
+    S.emission_hunt = s.emission_hunt and true or nil
+    S.em_horde_done = s.em_horde_done and true or nil
     S.sim_squad_id = tonumber(s.sim_squad_id)
 
     local left = tonumber(s.squad_left) or 0

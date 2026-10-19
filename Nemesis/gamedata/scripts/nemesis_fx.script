@@ -158,9 +158,119 @@ local function process_vanish(gt)
     end
 end
 
+---------------------------------------------------------------------------
+-- Wearable Devices malfunction (rounds 90-92, user design; MCM Debug, default on)
+---------------------------------------------------------------------------
+
+local WD_FLICKER_MS, WD_BLACK_MS, WD_GAP_MIN, WD_GAP_MAX = 2500, 2000, 30, 150
+local wd_api = nil
+local wd_start, wd_step = nil, 1
+local wd_plan = {}
+local binoc = false
+local wd_cost = 0
+
+local function wd_dbg(fmt, ...)
+    if not nemesis_utils.debug_on() then return end
+    local msg = string.format(fmt, ...)
+    local bang = msg:sub(1, 1) == "!"
+    dbg("%s", (bang and "!" or "") .. "Nemesis WD: " .. (bang and msg:sub(2) or msg))
+end
+local function clock_ms()
+    local ok, c = pcall(function() return os.clock() end)
+    return ok and type(c) == "number" and c * 1000 or 0
+end
+
+local function wd()
+    if wd_api == nil then
+        wd_api = false
+        local file, a = false, nil
+        local ok, err = pcall(function()
+            file = getFS():exist("$game_scripts$", "wd_attach.script") and true or false
+            if not file then return end
+            a = _G["wd_attach"]
+            if type(a) == "table" and type(a.hide_screens) == "function" and type(a.show_screens) == "function" then
+                wd_api = a
+            end
+        end)
+        if not ok then wd_dbg("!lookup failed (%s); the malfunction is off.", tostring(err))
+        elseif wd_api then wd_dbg("Wearable Devices found (wd_attach.hide_screens and show_screens).")
+        elseif file then wd_dbg("!wd_attach.script found but not its functions (hide_screens %s, show_screens %s); the malfunction is off.",
+            type(a) == "table" and type(a.hide_screens) or "-", type(a) == "table" and type(a.show_screens) or "-")
+        else wd_dbg("Wearable Devices not installed; the malfunction is off.") end
+    end
+    return wd_api
+end
+
+local function wd_hide(on)
+    local c = clock_ms()
+    local ok, err = pcall(on and wd_api.hide_screens or wd_api.show_screens)
+    c = clock_ms() - c
+    wd_cost = wd_cost + c
+    if not ok then wd_dbg("!ERROR: Wearable Devices %s failed: %s", on and "hide_screens" or "show_screens", tostring(err)) end
+    return c
+end
+
+local function make_plan(boss)
+    local plan, t, off = { { 0, true } }, 0, true
+    while true do
+        local nt = t + math.random(WD_GAP_MIN, WD_GAP_MAX)
+        if nt > WD_FLICKER_MS then break end
+        t, off = nt, not off
+        plan[#plan + 1] = { t, off }
+    end
+    if off ~= boss then
+        t = t + math.random(WD_GAP_MIN, WD_GAP_MAX)
+        plan[#plan + 1] = { t, boss }
+    end
+    if boss then plan[#plan + 1] = { t + WD_BLACK_MS, false } end
+    return plan
+end
+
+function wd_malfunction(boss)
+    if not wd() then return end
+    if wd_start then wd_dbg("spawn during a malfunction: not restarted.") return end
+    if binoc then wd_dbg("skipped: binoculars zoomed, its zoom owns the screens.") return end
+    if not nemesis_mcm.get_bool("wd_malfunction", true) then wd_dbg("skipped: MCM box off.") return end
+    wd_plan = make_plan(boss and true or false)
+    wd_start, wd_step, wd_cost = time_global(), 1, 0
+    local c = wd_hide(true)
+    wd_dbg("malfunction starts (%s, %d switches, %d ms): step 1/%d, screens off at +0 ms (call %.2f ms).",
+        boss and "boss: flicker, then 2 s black" or "hunt: flicker", #wd_plan, wd_plan[#wd_plan][1], #wd_plan, c)
+end
+
+local function wd_tick(gt)
+    local s = wd_step
+    while wd_plan[s + 1] and gt - wd_start >= wd_plan[s + 1][1] do s = s + 1 end
+    if s == wd_step then return end
+    if s - wd_step > 1 then wd_dbg("a slow frame: %d switches merged into one.", s - wd_step) end
+    wd_step = s
+    local off = wd_plan[s][2]
+    local c = wd_hide(off)
+    wd_dbg("step %d/%d: screens %s at +%d ms (call %.2f ms).", s, #wd_plan, off and "off" or "on", gt - wd_start, c)
+    if s == #wd_plan then
+        wd_dbg("malfunction done, screens on; %.2f ms in its functions in total.", wd_cost)
+        wd_start = nil
+    end
+end
+
+function wd_on_zoom_in()
+    if not wd() then return end
+    pcall(function()
+        local w = db.actor:active_item()
+        binoc = w ~= nil and ini_sys:r_string_ex(w:section(), "class") == "WP_BINOC"
+    end)
+    if binoc and wd_start then
+        wd_dbg("binoculars zoomed at +%d ms: malfunction stopped, its zoom owns the screens.", time_global() - wd_start)
+        wd_start = nil
+    end
+end
+
+function wd_on_zoom_out() binoc = false end
+
 function process_queues(gt)
     if next(vanish_queue) ~= nil then process_vanish(gt) end
     if next(squad_cleanup) ~= nil then process_squad_cleanup(gt) end
+    if wd_start then wd_tick(gt) end
 end
 
 function remove_offline(ids)
@@ -204,6 +314,12 @@ end
 function on_enemy_eval(npc, enemy, flags)
     if not npc or not enemy or not flags then return end
     if boss_wants_you() and npc:id() == S.boss_id and enemy:id() ~= 0 then
+        flags.override = true
+        flags.result = false
+        return
+    end
+
+    if nemesis_emission.no_fight(npc:id(), enemy:id()) then
         flags.override = true
         flags.result = false
         return
@@ -262,7 +378,7 @@ function cloak_update(obj, r, gt, actor)
     local id = r.id
 
     local enabled
-    if id == S.boss_id then enabled = not r.player_struck
+    if id == S.boss_id then enabled = not r.player_struck and not S.emission_hunt
     else enabled = nemesis_mcm.get_bool("hunter_cloak", true) end
     enabled = enabled and invisible_model_exists()
     local hit = r.hit_at and gt - r.hit_at < HIT_REVEAL_MS
@@ -577,4 +693,6 @@ function reset_runtime()
     hum = nil
     vanish_queue = {}
     squad_cleanup = {}
+    if wd_start then wd_dbg("a load dropped the malfunction at step %d/%d (its first update turns the screens on).", wd_step, #wd_plan) end
+    wd_api, wd_start, binoc = nil, nil, false
 end

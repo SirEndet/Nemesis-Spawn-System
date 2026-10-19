@@ -5,7 +5,7 @@ local S = nemesis_state.S
 local TICK_IDLE_MS     = 2000
 local TICK_HUNT_MS     = 250
 local SLOW_MS          = 2000
-local OFFLINE_LIMIT_MS = 90000
+local OFFLINE_LIMIT_MS = 300000
 local RETREAT_GRACE_MS = 8000
 local RETREAT_COVER_RADIUS_M = 20
 local RETREAT_COVER_AHEAD_M = 10
@@ -443,7 +443,10 @@ local function manage_hunter(id, r, gt, actor, retreat_health)
         begin_retreat(obj, r)
         return true, true
     end
-    if id == S.boss_id then nemesis_boss.update(obj, r, gt, actor) end
+    if id == S.boss_id then
+        if S.emission_hunt then nemesis_emission.boss_update(obj, r, gt, actor)
+        else nemesis_boss.update(obj, r, gt, actor) end
+    end
     nemesis_fx.cloak_update(obj, r, gt, actor)
 
     nemesis_chase.set_wanted(id, true)
@@ -512,7 +515,8 @@ end
 -- Prepare for uninstall (MCM, Debug)
 ---------------------------------------------------------------------------
 
-local UNINSTALL_SECTIONS = { nemesis_hunter_squad = true, nemesis_hunter_squad_isg = true }
+local UNINSTALL_SECTIONS = { nemesis_hunter_squad = true, nemesis_hunter_squad_isg = true,
+                             nemesis_emission_squad = true, nemesis_horde_zombied = true, nemesis_horde_snork = true }
 local UNINSTALL_SWEEP_MS = 3000
 local MAX_SE_ID = 65534
 local uninstall = nil
@@ -545,6 +549,7 @@ local function uninstall_tick(gt)
             S.follow = nil
             dbg("Nemesis: preparing for uninstall: the squad following you is called off.")
         end
+        nemesis_emission.cancel("preparing for uninstall")
         nemesis_spawn.reset_runtime()
         nemesis_guard.forget_death_marker()
         uninstall = { squads = our_squads_in_world(), at = gt + UNINSTALL_SWEEP_MS, said = false }
@@ -646,7 +651,8 @@ local function begin_follow(gt, actor)
     end
     local lname, pos = here(actor)
     local f = { members = members, faction = S.faction, boss_look = S.boss_look, boss_hunt = S.boss_hunt,
-                hunt_start = S.hunt_start, lvl = lname, ax = pos and pos.x or 0, az = pos and pos.z or 0 }
+                hunt_start = S.hunt_start, lvl = lname, ax = pos and pos.x or 0, az = pos and pos.z or 0,
+                emission_hunt = S.emission_hunt or nil }
     dbg("Nemesis: player changed maps; %s hunter(s) follow (%s of %s).", tostring(#members),
         tostring((S.follows or 0) + 1), tostring(FOLLOW_MAX))
     release_npc()
@@ -744,6 +750,7 @@ local function manage(gt, actor, slow)
     if not any_online then
         S.offline_since = S.offline_since or gt
         if gt - S.offline_since > OFFLINE_LIMIT_MS then
+            nemesis_emission.on_offline_call_off()
             call_off(gt, "hunters stayed offline too long, respawning.", 3000)
             return
         end
@@ -784,6 +791,16 @@ local function tick()
         nemesis_fx.reserve_tick(gt, actor)
     end
     if uninstall_tick(gt) then return end
+
+    local em = nemesis_emission.update(gt, actor, slow)
+    if em == "call_off" then
+        call_off(gt, "an emission began: the hunt is called off, the emission boss comes instead.", 0)
+        return
+    elseif em == true then
+        nemesis_fx.hum_stop()
+        nemesis_fx.distort_stop()
+        return
+    end
     if S.phase == "idle" then
         nemesis_fx.hum_stop()
         nemesis_fx.distort_stop()
@@ -802,8 +819,11 @@ local function on_update()
     nemesis_fx.unmask_survivors()
     nemesis_fx.process_queues(gt)
     if gt < next_tick then return end
-    next_tick = gt + ((S.phase == "idle") and TICK_IDLE_MS or TICK_HUNT_MS)
+
+    next_tick = gt + ((S.phase == "idle" and not nemesis_emission.active()) and TICK_IDLE_MS or TICK_HUNT_MS)
     tick()
+
+    if (nemesis_emission.active() or S.phase ~= "idle") and next_tick > gt + TICK_HUNT_MS then next_tick = gt + TICK_HUNT_MS end
 end
 
 local function on_se_unregister(se_obj, type_name)
@@ -836,6 +856,7 @@ local function on_first_update()
     nemesis_fx.reset_runtime()
     nemesis_spawn.reset_runtime()
     nemesis_boss.reset_runtime()
+    nemesis_emission.reset_runtime()
     for id, r in pairs(S.m) do if r.mask_vis then nemesis_fx.note_masked(id) end end
     uninstall = nil
     for _, id in ipairs(load_vanish) do nemesis_fx.queue_vanish(id, 2000) end
@@ -848,6 +869,7 @@ local function on_first_update()
     next_tick = 0
     next_slow = 0
     nemesis_damage.unseed_br()
+    if db.actor then nemesis_utils.check_obrien_at_load(db.actor) end
     if not exe_logged then
         exe_logged = true
         dbg("Nemesis: hit callback runs %s.", hit_post and "last (Post tier, latest exes)"
@@ -884,4 +906,7 @@ function on_game_start()
     RegisterScriptCallback("actor_on_hit_callback", nemesis_guard.on_actor_hit)
     RegisterScriptCallback("actor_on_before_death", nemesis_guard.on_actor_before_death)
     RegisterScriptCallback("server_entity_on_unregister", on_se_unregister)
+    RegisterScriptCallback("actor_on_weapon_zoom_in", nemesis_fx.wd_on_zoom_in)
+    RegisterScriptCallback("actor_on_weapon_zoom_out", nemesis_fx.wd_on_zoom_out)
+    RegisterScriptCallback("actor_on_weapon_reload", nemesis_emission.on_actor_reload)
 end
