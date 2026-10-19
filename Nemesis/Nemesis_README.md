@@ -10,9 +10,9 @@ Every so often, a hunter comes for you. He spawns out of sight, sprints after yo
 - **The hunter.** He spawns 70 to 140 m away and heads straight for you. Named hunters carry a Monolith rank in their name (Acolyte, Disciple, Zealot, Sentinel, Templar, Herald), so you can tell them apart from ordinary stalkers.
 - **His squad.** Sometimes he brings company: up to four more Monolith stalkers. Some of them can be named hunters too. The rest are normal stalkers you can kill.
 - **The fight.** When he sees you, he fights like any GAMMA stalker, only a better shot. Normal hits can't kill a named hunter. When his health gets low, he runs for cover and teleports out.
-- **What you kill is yours.** Anything you kill leaves a body to loot. Only those killed by others, or while cloaked, vanish.
-- **He learns.** Every hunt you beat makes the next one tougher: he takes less damage, holds on longer, and his armour catches up with yours. Escape him by outlasting the hunt and he comes back one step weaker. If he kills you, he loses half his strength.
-- **Whispers.** When a named hunter is close, you hear Monolith whispers in your head.
+- **What you kill is yours.** Regular squad members and the boss leave a body to loot when you kill them. Named hunters always escape: hurt badly, they turn invulnerable, run for cover and teleport away. Those killed by others vanish, and you never see them fall. An option keeps NPCs off your kills.
+- **He learns.** Every hunt you beat makes the next one tougher: he takes less damage (from you and from everyone else), holds on longer, and his armour catches up with yours. Escape him by outlasting the hunt and he comes back one step weaker. If he kills you, he loses half his strength.
+- **Psy hum.** When a named hunter is close, a psy hum fills your head.
 - **He remembers.** Beat a hunter somewhere and they remember the spot for a week. Fight from there again and they know exactly where you are.
 - **Buildings.** Hide inside and they don't come in after you straight away. They wait outside for a minute and a half, then storm in. Shoot at them from inside and they storm in at once.
 - **Escaping.** Survive long enough (6 in-game hours by default) and the hunters give up.
@@ -20,7 +20,7 @@ Every so often, a hunter comes for you. He spawns out of sight, sprints after yo
 
 **No safe havens, but some rules.** A hunt never starts while you are in a base or trader camp that is friendly or neutral to you, in a dialogue or asleep, or on an underground map. Squads are smaller in rookie areas like Cordon and Garbage, and in the far north more of them are named hunters. Enemy bases are no shelter. Once the warning has come through, though, the hunt is on: walking into a base won't stop it.
 
-**Playing as Monolith?** Then the hunters are UNISG instead, with military ranks.
+**Playing as Monolith, Zombified or Sin?** Then the hunters are UNISG instead, with military ranks.
 
 ### The boss
 
@@ -58,7 +58,7 @@ The **Difficulty** setting at the top of the General page picks Easy, Medium (th
 | Arrival warning PDA | Off | A PDA message from an unknown frequency shortly before a hunt. |
 | Arrival warning volume | 70 | Loudness of the warning static. |
 | Teleport sound volume | 40 | Loudness of the teleport sound. 0 mutes it. |
-| Psy whisper volume | 60 | Loudness of the whispers near a named hunter. |
+| Psy hum volume | 20 | Loudness of the psy hum near a named hunter. |
 
 ### Gameplay
 | Setting | Default | What it does |
@@ -73,7 +73,7 @@ The **Difficulty** setting at the top of the General page picks Easy, Medium (th
 | Scale hunts by area | On | Smaller squads in rookie areas, more named hunters in the far north. |
 | Hunt your last known position | On | When he loses you, he searches where he last saw or heard you. |
 | Squad tactics | On | Squadmates flank you, and snipers keep their distance. |
-| Retreat to cover first | On | A hurt hunter runs to cover before teleporting away. |
+| Retreat to cover first | On | A hurt hunter flees away from you to cover before teleporting away. |
 | Hunter cloak (experimental) | On | Named hunters turn invisible while stalking you from far away. Other stalkers ignore them while they are. |
 | Fight range (m) | 70 | When they see you within this distance, they stop chasing and fight. |
 
@@ -82,15 +82,17 @@ The **Difficulty** setting at the top of the General page picks Easy, Medium (th
 |---|---|---|
 | Retreat health (%) | 25 | Health at which a named hunter breaks off and teleports away. The boss never does. |
 | Accuracy boost (%) | 20 | How much better they shoot than normal stalkers. Squadmates get half, the boss 15 more. 0 = off. |
+| Regular stalker toughness (%) | 10 | How much less damage the regular squadmates take, from anyone. 0 = normal stalkers. |
 | Escalation per cycle | 1.1 | How much stronger each hunt gets. 1.0 = no growth. |
 | Max escalation | 3 | The most the hunters can ever scale up. |
-| Max damage reduction (%) | 80 | The most of your damage a hunter can ever shrug off. |
+| Max damage reduction (%) | 80 | The most of a hit's damage a hunter can ever shrug off. |
 | Halve escalation when a hunter kills you | On | Dying to a hunter halves their strength. |
 | Reset escalation now | – | Tick to set the hunters back to their weakest right away. |
 | Armour growth speed | 0 | How fast named hunters' armour catches up with yours. |
 | Extra BR cap | 0.20 | How much higher than yours their ballistic rating can get. |
 | BR mitigation cap (%) | 25 | How much more damage their armour can block than yours. |
 | Obrien GAMMA Overhaul armour | Off | Turn on only if you use the Obrien GAMMA Overhaul mod. |
+| Reserve your kills | Off | NPCs leave your Nemesis kills alone. With AlifePlus, its own "reserve own kills" option decides. |
 
 ### Boss
 | Setting | Default | What it does |
@@ -99,6 +101,7 @@ The **Difficulty** setting at the top of the General page picks Easy, Medium (th
 | Boss chance (%) | 2 | Chance that a hunt brings the boss. Grows 2 every 4 hunts without him; certain by the 30th. 0 = no boss. |
 | Boss days after grace | 7 | Days after the grace period before a boss can appear. |
 | Boss escort size | 4 | Named hunters who come with the boss. 0 = he comes alone. |
+| Boss presence distortion (%) | 50 | A gentle screen wave when he is near (from 60 m). 0 = off. |
 | Boss toughness (%) | 30 | How much tougher the boss is than a normal named hunter. |
 | Boss extra BR | 0 | Extra armour class for the boss only, on top of the other hunters' (not the % mitigation). |
 | Boss stash reward | Off | Kill the boss yourself and a stash on the map is marked for you. |
@@ -106,7 +109,7 @@ The **Difficulty** setting at the top of the General page picks Easy, Medium (th
 ### Debug
 | Setting | Default | What it does |
 |---|---|---|
-| Debug mode | Off | For testing: hunts come quickly and can start anywhere, and a map marker follows the boss. |
+| Debug mode | Off | For testing: hunts come quickly (15 s after the warning) and can start anywhere, and a map marker follows the boss. |
 | Debug logs | Off | Writes Nemesis lines to the console, for bug reports. |
 | Send a test PDA message | – | Checks that Nemesis messages show up. |
 | Force a boss in the next hunt | – | The next hunt brings the boss. |

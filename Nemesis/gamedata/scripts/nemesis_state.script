@@ -47,6 +47,7 @@ local function blank()
         follow = nil,
         follows = 0,
         stash_owed = nil,
+        reserved = {},
     }
 end
 
@@ -126,6 +127,18 @@ local function save_spots()
     return table.concat(out, "|")
 end
 
+local function save_reserved()
+    local out = {}
+    for id, t in pairs(S.reserved) do out[#out + 1] = string.format("%d:%d", id, math.floor(t)) end
+    return table.concat(out, ",")
+end
+
+local function load_reserved(str)
+    local out = {}
+    for id, t in string.gmatch(tostring(str or ""), "(%d+):(%d+)") do out[tonumber(id)] = tonumber(t) end
+    return out
+end
+
 local function load_spots(str)
     local out = {}
     for item in string.gmatch(tostring(str or ""), "[^|]+") do
@@ -156,7 +169,9 @@ function add_member(id, named, name)
         hp_armed = false,
         last_hp = nil,
         grace_until = nil,
-        pre_hp = nil,
+        hit_cut = nil,
+        hit_pre = nil,
+        mask_vis = nil,
         pending = false,
         retreat_at = nil,
         cover_until = nil,
@@ -248,6 +263,7 @@ function save(mdata, vanish_ids)
         spots = save_spots(),
         follows = S.follows,
         stash_owed = S.stash_owed,
+        reserved = save_reserved(),
         follow = S.follow and save_follow_list(S.follow.members) or nil,
         follow_faction = S.follow and S.follow.faction or nil,
         follow_look = S.follow and S.follow.boss_look or nil,
@@ -289,6 +305,7 @@ function load(mdata)
     S.spots = load_spots(s.spots)
     S.follows = tonumber(s.follows) or 0
     if type(s.stash_owed) == "string" and s.stash_owed ~= "" then S.stash_owed = s.stash_owed end
+    S.reserved = load_reserved(s.reserved)
     local fl = load_follow_list(s.follow)
     if fl and #fl > 0 then
         S.follow = { members = fl, faction = s.follow_faction, boss_look = s.follow_look, boss_hunt = s.follow_boss_hunt and true or nil,

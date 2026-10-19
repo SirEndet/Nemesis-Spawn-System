@@ -35,8 +35,8 @@
     <string id="ui_mcm_nemesis_teleport_volume"><text>Teleport sound volume (%)</text></string>
     <string id="ui_mcm_nemesis_teleport_volume_desc"><text>Loudness of the teleport sound when a hunter breaks off or vanishes. 0 mutes it. Default 40.</text></string>
 
-    <string id="ui_mcm_nemesis_whisper_volume"><text>Psy whisper volume (%)</text></string>
-    <string id="ui_mcm_nemesis_whisper_volume_desc"><text>Monolith whispers in your head while a named hunter is within 60 m, louder the closer he is. A named hunter is the main Nemesis enemy: hard to kill, he retreats when hurt and comes back stronger. 0 mutes the whispers. Default 60.</text></string>
+    <string id="ui_mcm_nemesis_hum_volume"><text>Psy hum volume (%)</text></string>
+    <string id="ui_mcm_nemesis_hum_volume_desc"><text>A psy hum in your head while a named hunter is within 60 m: half this volume at 60 m, full volume within 10 m. A named hunter is the main Nemesis enemy: hard to kill, he retreats when hurt and comes back stronger. 0 mutes it. Default 20.</text></string>
 
     <string id="ui_mcm_nemesis_warning_volume"><text>Arrival warning volume (%)</text></string>
     <string id="ui_mcm_nemesis_warning_volume_desc"><text>Loudness of the radio static that comes with the arrival warning. 0 mutes it. Default 70.</text></string>
@@ -62,6 +62,8 @@
     <string id="ui_mcm_nemesis_boss_br_add_desc"><text>A flat amount of ballistic rating (armour class, the same scale as Extra BR cap) added to the boss's body and head armour, on top of what every named hunter gets. Not BR mitigation percent. Needs GAMMA ballistics. 0 = no extra. Default 0.</text></string>
     <string id="ui_mcm_nemesis_boss_escort"><text>Boss escort size</text></string>
     <string id="ui_mcm_nemesis_boss_escort_desc"><text>How many named hunters come with the boss. They hunt you like any named hunter, the real threat and distraction, while he sneaks up to finish you. A boss hunt ignores Squad of 1 to 5 and Extra is a named hunter. 0 = he comes alone. Default 4.</text></string>
+    <string id="ui_mcm_nemesis_boss_distortion"><text>Boss presence distortion (%)</text></string>
+    <string id="ui_mcm_nemesis_boss_distortion_desc"><text>A gentle wave over your screen while the boss is near: it starts softly at 60 m and grows to this strength at 5 m. It works while he is cloaked too, and fades out when he dies. 0 turns it off. Default 50.</text></string>
     <string id="ui_mcm_nemesis_boss_min_day"><text>Boss days after grace</text></string>
     <string id="ui_mcm_nemesis_boss_min_day_desc"><text>In-game days after the grace period before a boss can appear. Default 7.</text></string>
 
@@ -69,7 +71,7 @@
     <string id="ui_mcm_nemesis_hd_icon_desc"><text>Use the high definition portrait on PDA messages. Off uses the original low definition icon.</text></string>
 
     <string id="ui_mcm_nemesis_debug_mode"><text>Debug mode</text></string>
-    <string id="ui_mcm_nemesis_debug_mode_desc"><text>For testing: hunts start sooner (no grace period, 120 seconds between hunts) and can spawn anywhere, even near traders and bases. A red map marker follows the boss. Turn it off for normal play.</text></string>
+    <string id="ui_mcm_nemesis_debug_mode_desc"><text>For testing: hunts start sooner (no grace period, 120 seconds between hunts, 15 seconds from the warning to the hunt) and can spawn anywhere, even near traders and bases. A red map marker follows the boss. Turn it off for normal play.</text></string>
 
     <string id="ui_mcm_nemesis_test_pda"><text>Send a test PDA message</text></string>
     <string id="ui_mcm_nemesis_test_pda_desc"><text>Tick and apply: one Nemesis PDA message is sent at once, with the banner icon and the PDA sound. With Debug logs on, the console says whether it went out. The box unticks itself.</text></string>
@@ -103,6 +105,8 @@
     <string id="ui_mcm_nemesis_accuracy_boost"><text>Accuracy boost (%)</text></string>
 
     <string id="ui_mcm_nemesis_accuracy_boost_desc"><text>How many more of their shots hit you at range than a normal stalker with the same weapon, in percent. Named hunters get this value, regular squad members half of it, and the boss this value plus 15. 0 turns it off. Default 20.</text></string>
+    <string id="ui_mcm_nemesis_regular_toughness"><text>Regular stalker toughness (%)</text></string>
+    <string id="ui_mcm_nemesis_regular_toughness_desc"><text>How much less damage the regular squad members take, from every hit: yours, other NPCs' and mutants'. Named hunters and the boss have their own protection (escalation and armour) and are not affected. It does not grow with the cycle. 0 makes them normal stalkers. Default 10.</text></string>
 
     <string id="ui_mcm_nemesis_reset_on_death"><text>Halve escalation when a hunter kills you</text></string>
     <string id="ui_mcm_nemesis_reset_on_death_desc"><text>If a hunter kills you, the escalation is halved (cycle 8 becomes 4, never below 1), even when you reload a save. Default on.</text></string>
@@ -116,12 +120,15 @@
     <string id="ui_mcm_nemesis_br_class_cap_desc"><text>How much higher than yours a named hunter's ballistic rating (BR) can get. Default 0.20. 1.0 = almost bulletproof.</text></string>
 
     <string id="ui_mcm_nemesis_max_damage_reduction"><text>Max damage reduction (%)</text></string>
-    <string id="ui_mcm_nemesis_max_damage_reduction_desc"><text>The most of your damage a named hunter or the boss can ever shrug off, however escalation, BR mitigation and boss toughness stack. At 80 they always take at least a fifth of your damage, so a long run never becomes unwinnable. Default 80.</text></string>
+    <string id="ui_mcm_nemesis_max_damage_reduction_desc"><text>The most of a hit's damage (yours or an NPC's) a named hunter or the boss can ever shrug off, however escalation, BR mitigation and boss toughness stack. At 80 they always take at least a fifth of it, so a long run never becomes unwinnable. Default 80.</text></string>
     <string id="ui_mcm_nemesis_br_pct_cap"><text>BR mitigation cap (%)</text></string>
     <string id="ui_mcm_nemesis_br_pct_cap_desc"><text>How much more damage, in percent, a named hunter's armour can block than yours. Default 25. He never blocks more than 90 percent.</text></string>
 
     <string id="ui_mcm_nemesis_obrien_armor"><text>Obrien GAMMA Overhaul armour</text></string>
     <string id="ui_mcm_nemesis_obrien_armor_desc"><text>Turn on only if you use the Obrien GAMMA Overhaul mod. It makes hunters read your armour the way that mod does. Default off.</text></string>
+    <string id="ui_mcm_nemesis_head_bodies"><text>Bodies</text></string>
+    <string id="ui_mcm_nemesis_reserve_kills"><text>Reserve your kills</text></string>
+    <string id="ui_mcm_nemesis_reserve_kills_desc"><text>Nemesis stalkers you kill are not looted by NPCs. With AlifePlus installed, its own "reserve own kills" option decides (its range and time apply), and nothing is reserved while that option is off. Without AlifePlus a body stays yours for 2 in-game hours, or until you have been more than 150 m away from it for 3 minutes. Off by default: NPCs may loot them.</text></string>
 
     <string id="ui_mcm_nemesis_last_known_chase"><text>Hunt your last known position</text></string>
     <string id="ui_mcm_nemesis_last_known_chase_desc"><text>On: when a hunter loses track of you, he searches where he last saw or heard you, and finds you again after 60 seconds. Off: he always knows where you are. Default on.</text></string>
@@ -130,7 +137,7 @@
     <string id="ui_mcm_nemesis_squad_tactics_desc"><text>Extra squad members approach from the sides on clear lanes instead of running straight at you, and those carrying sniper rifles stop short and take a firing position. Named hunters still come straight for you. Default on.</text></string>
 
     <string id="ui_mcm_nemesis_retreat_to_cover"><text>Retreat to cover first</text></string>
-    <string id="ui_mcm_nemesis_retreat_to_cover_desc"><text>Before teleporting away, a hurt hunter first runs to nearby cover for up to 4 seconds. He cannot be hurt while he runs. Default on.</text></string>
+    <string id="ui_mcm_nemesis_retreat_to_cover_desc"><text>Before teleporting away, a hurt hunter first flees away from you to cover (or, without cover, along a clear lane) for up to 4 seconds. He cannot be hurt while he runs. Default on.</text></string>
 
     <string id="ui_mcm_nemesis_hunter_cloak"><text>Hunter cloak (experimental)</text></string>
     <string id="ui_mcm_nemesis_hunter_cloak_desc"><text>Named hunters turn invisible while they stalk you from more than 30 m, and reappear when they fight, get within 15 m or take a hit that does damage. At most once every 20 seconds. While cloaked, other stalkers ignore them. Uses the same invisible model as the teleport. Experimental: a held weapon may stay visible. Default on.</text></string>

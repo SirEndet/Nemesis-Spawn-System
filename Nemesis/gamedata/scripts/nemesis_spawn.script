@@ -146,6 +146,7 @@ end
 ---------------------------------------------------------------------------
 
 local WARN_MIN_S, WARN_MAX_S = 30, 120
+local WARN_DEBUG_S = 15
 local WARN_STALE_MS = 600000
 local warn_spawn_at = nil
 local STATIC_SOUNDS = { "radio\\white_noise\\white_noise_heavy_fade_in", "radio\\white_noise\\white_noise_light", "ambient\\radar_1" }
@@ -155,7 +156,7 @@ local function warning_audio() return nemesis_mcm.get_bool("warning_audio", true
 function warning_on() return warning_pda() or warning_audio() end
 
 local function give_warning(gt)
-    local delay = math.random(WARN_MIN_S, WARN_MAX_S)
+    local delay = nemesis_mcm.get_bool("debug_mode", false) and WARN_DEBUG_S or math.random(WARN_MIN_S, WARN_MAX_S)
     warn_spawn_at = gt + delay * 1000
 
     S.faction = nemesis_utils.faction_for_player()
@@ -168,8 +169,9 @@ local function give_warning(gt)
 
         if vol > 0 then
             if snd then pcall(function() xsound.play(snd, { volume = vol }) end) end
-            pcall(function() xsound.play("anomaly\\psy_antenna_voices_1_l", { volume = vol }) end)
-            pcall(function() xsound.play("anomaly\\psy_antenna_voices_1_r", { volume = vol }) end)
+            local psy_l, psy_r = nemesis_utils.psy_voices()
+            if psy_l then pcall(function() xsound.play(psy_l, { volume = vol }) end) end
+            if psy_r then pcall(function() xsound.play(psy_r, { volume = vol }) end) end
         end
     else
         if pda then nemesis_utils.send_news(nemesis_utils.warning_line(), "Unknown frequency") end
@@ -502,6 +504,12 @@ local function try_spawn(gt, follow)
     local actor = db.actor
     if not actor then return end
 
+    if S.phase ~= "idle" or #S.hunter_ids > 0 or (S.sim_squad_id and alife():object(S.sim_squad_id)) or (S.follow and not follow) then
+        dbg("Nemesis: a hunt is already active; no second one is started.")
+        retry_later(gt)
+        return
+    end
+
     local spawn_smart = pick_spawn_smart(actor)
     local ring_lv, ring_pos = nil, nil
     if not spawn_smart then
@@ -662,6 +670,7 @@ local function try_spawn(gt, follow)
 end
 
 function idle_tick(gt, actor, slow)
+    if S.follow then return end
     local warn_on = warning_on()
 
     if warn_spawn_at and gt - warn_spawn_at > WARN_STALE_MS then warn_spawn_at = nil end

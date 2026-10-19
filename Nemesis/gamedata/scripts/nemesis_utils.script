@@ -222,8 +222,9 @@ function player_community()
     return type(comm) == "string" and comm or nil
 end
 
+local UNISG_HUNTS = { monolith = true, zombied = true, greh = true }
 function faction_for_player()
-    return player_community() == "monolith" and "isg" or "monolith"
+    return UNISG_HUNTS[player_community()] and "isg" or "monolith"
 end
 
 local function hunt_faction() return nemesis_state.S.faction == "isg" and "isg" or "monolith" end
@@ -913,9 +914,18 @@ function pick_sound(key, paths)
         for _, p in ipairs(paths) do
             if sound_exists(p) then sound_pick[key] = p; break end
         end
-        log_msg("Nemesis: %s sound: %s.", key, sound_pick[key] or "none found")
+        if sound_pick[key] then log_msg("Nemesis: %s sound: %s.", key, sound_pick[key])
+        else log_msg("!Nemesis ERROR: no %s sound file found (tried %s); it stays silent.", key, table.concat(paths, ", ")) end
     end
     return sound_pick[key] or nil
+end
+
+local PSY_L = { "anomaly\\psy_voices_1_l" }
+local PSY_R = { "anomaly\\psy_voices_1_r" }
+function psy_voices()
+    local l = pick_sound("psy voices (left)", PSY_L)
+    if not l then return nil end
+    return l, pick_sound("psy voices (right)", PSY_R)
 end
 
 function volume_setting(id, default)

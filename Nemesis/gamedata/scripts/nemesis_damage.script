@@ -48,6 +48,18 @@ function absorb(obj, r, prev, hp, div)
     return hp
 end
 
+function regular_cut()
+    local t = nemesis_mcm.get_number("regular_toughness", 10)
+    if t < 0 then t = 0 end
+    if t > 75 then t = 75 end
+    return t / 100
+end
+
+local function ask_retreat(npc, r)
+    r.pending = true
+    nemesis_utils.set_health(npc, 1)
+end
+
 local function in_grace(r)
     return (not r.hp_armed) or (r.grace_until ~= nil and time_global() < r.grace_until)
 end
@@ -76,10 +88,22 @@ local function is_head(bone_id)
     return bid >= 14 and bid <= 19
 end
 
+local function worst_loss(power, bone_id)
+    return (power or 0) * (is_head(bone_id) and 4 or 2)
+end
+
 local function _from_player(shit) return shit.draftsman:id() == db.actor:id() end
 local function from_player(shit)
     local ok, yes = pcall(_from_player, shit)
     return ok and yes == true
+end
+
+local function mask_if_lethal(npc, r, shit, bone_id)
+    if r.cloak_vis or r.mask_vis or not shit or from_player(shit) then return end
+    local hp = tonumber(npc.health)
+    if not hp or hp - worst_loss(shit.power, bone_id) > 0 then return end
+    local vis = nemesis_fx.get_visual(npc)
+    if vis and nemesis_fx.make_invisible(npc) then r.mask_vis = vis end
 end
 
 ---------------------------------------------------------------------------
@@ -104,7 +128,15 @@ function on_before_hit(npc, shit, bone_id, flags)
             nemesis_utils.break_siege()
         end
     end
-    if not r.named then return end
+    if not r.named then
+
+        if S.phase == "hunting" and shit and not (gbo_wrapped and from_player(shit)) then
+            local cut = regular_cut()
+            if cut > 0 then shit.power = (shit.power or 0) * (1 - cut) end
+        end
+        if S.phase == "hunting" then mask_if_lethal(npc, r, shit, bone_id) end
+        return
+    end
     if r.retreat_at then
 
         if flags then flags.ret_value = false end
@@ -116,50 +148,45 @@ function on_before_hit(npc, shit, bone_id, flags)
 
     local div = capped_div(id)
     local pct = 0
-    if not gbo_wrapped and shit then
+    if shit then
         local _, _, body_pct, head_pct = hunter_br_now(id)
         pct = (is_head(bone_id) and head_pct or body_pct) or 0
         pct, div = capped_pair(id, pct)
         if pct > 0 then shit.power = (shit.power or 0) * (1 - pct) end
     end
 
+    if shit then shit.power = (shit.power or 0) / div end
+    r.hit_cut = true
+    r.hit_pre = tonumber(npc.health)
+
     if id == S.boss_id then
-        if shit then shit.power = (shit.power or 0) / div end
-        r.boss_cut = true
+        mask_if_lethal(npc, r, shit, bone_id)
         return
     end
 
     local hp = tonumber(npc.health)
     if not hp then return end
-    local power = (shit and shit.power) or 0
-    if hp - (power / div) <= LETHAL_FLOOR then
+    if hp - worst_loss(shit and shit.power, bone_id) <= LETHAL_FLOOR then
         if flags then flags.ret_value = false end
-        if not in_grace(r) then r.pending = true end
+        r.hit_cut = nil
+        if not in_grace(r) then ask_retreat(npc, r) end
         return
     end
-    r.pre_hp = hp
-    r.hit_div = div
 end
 
 function on_hunter_hit(npc, amount, dir, who, bone)
     if not npc then return end
     local r = nemesis_state.member(npc:id())
-    if r and r.boss_cut then
+    if not r or not r.hit_cut then return end
 
-        r.boss_cut = nil
-        local bh = tonumber(npc.health)
-        if bh and bh > 0.05 then r.last_hp = bh end
-        return
-    end
-    if not r or not r.pre_hp then return end
-    local pre, div = r.pre_hp, r.hit_div
-    r.pre_hp, r.hit_div = nil, nil
-    if S.phase ~= "hunting" or r.retreat_at then return end
+    r.hit_cut = nil
+    local pre = r.hit_pre or r.last_hp
+    r.hit_pre = nil
     local hp = tonumber(npc.health)
     if not hp or hp <= 0 then return end
-    hp = absorb(npc, r, pre, hp, div)
-    if not in_grace(r) and hp < pre - 0.02 and hp <= nemesis_utils.get_retreat_health(S.cycle) then
-        r.pending = true
+    if r.id ~= S.boss_id and S.phase == "hunting" and not r.retreat_at and not in_grace(r)
+        and pre and hp < pre - 0.02 and hp <= nemesis_utils.get_retreat_health(S.cycle) then
+        ask_retreat(npc, r)
     end
     if hp > 0.05 then r.last_hp = hp end
 end
@@ -317,6 +344,18 @@ function install_br_wrap()
         local r = npc and nemesis_state.member(npc:id())
 
         if r and r.named and r.retreat_at then return end
+
+        if r and not r.named and S.phase == "hunting" and from_player(shit) and regular_cut() > 0 then
+            local cut = regular_cut()
+            local hp0 = tonumber(npc.health) or 1
+            local ok, err = pcall(orig, npc, shit, bone_id, flags)
+            local hp1 = tonumber(npc.health) or hp0
+            if hp1 > 0 and hp1 < hp0 then
+                nemesis_utils.set_health(npc, hp0 - (hp0 - hp1) * (1 - cut))
+            end
+            if not ok then dbg("!Nemesis ERROR: grok_bo hit failed (%s).", tostring(err)) end
+            return
+        end
         if not (r and r.named and S.phase == "hunting") or not from_player(shit) then
             return orig(npc, shit, bone_id, flags)
         end
@@ -335,7 +374,6 @@ function install_br_wrap()
         local div
         pct, div = capped_pair(id, pct)
         local hp = hp0 - dmg * (1 - pct) / div
-        r.pre_hp = nil
         if id == S.boss_id then
 
             if hp <= 0 then
@@ -352,7 +390,7 @@ function install_br_wrap()
         nemesis_utils.set_health(npc, hp)
         r.last_hp = hp
         if not in_grace(r) and (hp <= LETHAL_FLOOR + 0.001 or hp <= nemesis_utils.get_retreat_health(S.cycle)) then
-            r.pending = true
+            ask_retreat(npc, r)
         end
         if not ok then dbg("!Nemesis ERROR: grok_bo hit failed (%s).", tostring(err)) end
     end

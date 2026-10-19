@@ -207,7 +207,9 @@ local function hostile_bump(obj)
     pcall(function()
         level.iterate_nearest(obj:position(), BUMP_M, function(o)
             if found or not o or o:id() == 0 or o:id() == obj:id() then return end
-            if nemesis_state.member(o:id()) or not alive_obj(o) then return end
+            if nemesis_state.member(o:id()) then return end
+
+            if not (IsMonster(o) or IsStalker(o)) or not alive_obj(o) then return end
             if IsMonster(o) then found = true
             elseif IsStalker(o) then
                 local ok, rel = pcall(function() return obj:relation(o) end)
@@ -279,9 +281,20 @@ end
 function forget_boss() if S.boss_ghost then set_neutral(S.boss_ghost, false) end end
 function forget_neutral(id) if id then set_neutral(id, false) end end
 
+function unmask(obj, r)
+    if not (r and r.mask_vis) or not alive_obj(obj) then return end
+    local vis = r.mask_vis
+    r.mask_vis = nil
+    set_visual(obj, vis)
+end
+
 function reveal_all()
     neutral, neutral_any = {}, false
     for id, r in pairs(S.m) do
+        if r.mask_vis then
+            local obj = level.object_by_id(id)
+            if obj then unmask(obj, r) end
+        end
         if r.cloak_vis then
             local obj = level.object_by_id(id)
             if obj then reveal(obj, r, nil, "hunt over") end
@@ -291,21 +304,21 @@ function reveal_all()
 end
 
 ---------------------------------------------------------------------------
--- Psy whispers
+-- Psy hum
 ---------------------------------------------------------------------------
 
-local WHISPER_RANGE_M = 60
-local WHISPER_L, WHISPER_R = "anomaly\\psy_antenna_voices_1_l", "anomaly\\psy_antenna_voices_1_r"
-local whisper = nil
+local HUM_RANGE_M = 60
+local HUM_FULL_M = 10
+local hum = nil
 
-function whisper_stop()
-    if not whisper then return end
-    pcall(function() xsound.release(whisper.l) end)
-    pcall(function() xsound.release(whisper.r) end)
-    whisper = nil
+function hum_stop()
+    if not hum then return end
+    pcall(function() xsound.release(hum.l) end)
+    if hum.r then pcall(function() xsound.release(hum.r) end) end
+    hum = nil
 end
 
-function whisper_update(actor)
+function hum_update(actor)
     local nearest = nil
     if actor and S.phase == "hunting" then
         for _, id in ipairs(S.hunter_ids) do
@@ -317,33 +330,212 @@ function whisper_update(actor)
             end
         end
     end
-    local slider = nemesis_utils.volume_setting("whisper_volume", 60)
+    local slider = nemesis_utils.volume_setting("hum_volume", 20)
     local target = 0
-    if nearest and nearest < WHISPER_RANGE_M then
-        target = slider * (1 - nearest / WHISPER_RANGE_M)
+    if nearest and nearest < HUM_RANGE_M then
+        local close = (HUM_RANGE_M - nearest) / (HUM_RANGE_M - HUM_FULL_M)
+        if close > 1 then close = 1 end
+        target = slider * (0.5 + 0.5 * close)
     end
     if target <= 0.001 then
-        whisper_stop()
+        hum_stop()
         return
     end
-    if not whisper then
+    if not hum then
+        local path_l, path_r = nemesis_utils.psy_voices()
+        if not path_l then return end
         local l, rr = nil, nil
         pcall(function()
-            l = xsound.create_sound(WHISPER_L, { looped = true, s2d = true, smoothing = 0.6 })
-            rr = xsound.create_sound(WHISPER_R, { looped = true, s2d = true, smoothing = 0.6 })
+            l = xsound.create_sound(path_l, { looped = true, s2d = true, smoothing = 0.6 })
+            if path_r then rr = xsound.create_sound(path_r, { looped = true, s2d = true, smoothing = 0.6 }) end
         end)
-        if not (l and rr) then return end
-        whisper = { l = l, r = rr }
+        if not l then
+            if rr then pcall(function() xsound.release(rr) end) end
+            return
+        end
+        hum = { l = l, r = rr }
+        dbg("Nemesis: psy hum starts (a named hunter is within %s m).", HUM_RANGE_M)
     end
     pcall(function()
-        xsound.set_volume(whisper.l, target)
-        xsound.set_volume(whisper.r, target)
+        xsound.set_volume(hum.l, target)
+        if hum.r then xsound.set_volume(hum.r, target) end
     end)
 end
 
+---------------------------------------------------------------------------
+-- Boss distortion (MCM "Boss presence distortion", round 76)
+---------------------------------------------------------------------------
+
+local DISTORT_PPE = "alcohol.ppe"
+local DISTORT_RANGE_M = 60
+local DISTORT_FULL_M = 5
+local DISTORT_KEEP_M = 70
+local DISTORT_SPEED = 0.5
+local distort = nil
+local distort_ok = nil
+
+local function distort_file_ok()
+    if distort_ok == nil then
+        distort_ok = false
+        pcall(function() distort_ok = getFS():exist("$game_anims$", DISTORT_PPE) and true or false end)
+        if not distort_ok then dbg("!Nemesis ERROR: %s not found; the boss distortion stays off.", DISTORT_PPE) end
+    end
+    return distort_ok
+end
+
+function distort_stop()
+    if not distort then return end
+    pcall(function() xpp.release(distort) end)
+    distort = nil
+end
+
+function distort_update(actor)
+    local d = nil
+    local boss = S.boss_id
+    if actor and S.phase == "hunting" and boss then
+        local r = S.m[boss]
+        local obj = level.object_by_id(boss)
+        if r and not r.death and obj and alive_obj(obj) then
+            local ok, dist = pcall(_dist, obj, actor)
+            if ok then d = dist end
+        end
+    end
+    local slider = nemesis_mcm.get_number("boss_distortion", 50)
+    if slider < 0 then slider = 0 end
+    if slider > 100 then slider = 100 end
+    if not d or d > DISTORT_KEEP_M or slider <= 0 then
+        distort_stop()
+        return
+    end
+    local strength = 0
+    if d < DISTORT_RANGE_M then
+        local close = (DISTORT_RANGE_M - d) / (DISTORT_RANGE_M - DISTORT_FULL_M)
+        if close > 1 then close = 1 end
+        strength = slider / 100 * close * close
+    end
+    if not distort then
+        if strength <= 0.001 or not distort_file_ok() then return end
+        local h = nil
+        pcall(function() h = xpp.create_effector(DISTORT_PPE, { cyclic = true, smoothing = DISTORT_SPEED }) end)
+        if not h then return end
+
+        pcall(function() level.set_pp_effector_factor(h, 0.0001) end)
+        distort = h
+        dbg("Nemesis: boss distortion starts (he is within %s m).", DISTORT_RANGE_M)
+    end
+    pcall(function() xpp.set_target(distort, strength) end)
+end
+
+---------------------------------------------------------------------------
+-- Reserved bodies (MCM "Reserve your kills", round 76, user design)
+---------------------------------------------------------------------------
+
+local RESERVE_S = 2 * 3600
+local RESERVE_AWAY_M = 150
+local RESERVE_AWAY_MS = 180000
+local reserve_away = {}
+local reserve_hooked = false
+
+local function reserve_on() return nemesis_mcm.get_bool("reserve_kills", false) end
+
+function alifeplus_reserve()
+    local present, on = false, false
+    pcall(function()
+        if ap_ext_loot_claim and ap_core_mcm and ap_core_mcm.cfg then
+            present = true
+            on = ap_core_mcm.cfg.loot_reserve_own_enabled == true
+        end
+    end)
+    return present, on
+end
+
+local function is_reserved(id)
+    local t = id and S.reserved[id]
+    if not t or not reserve_on() then return false end
+    return nemesis_utils.game_seconds() - t <= RESERVE_S
+end
+
+local function near_actor_wrap(orig, obj, ...)
+    local ok, yes = pcall(function() return obj and is_reserved(obj:id()) end)
+    if ok and yes then return true end
+    return orig(obj, ...)
+end
+
+local function install_reserve_hook()
+    if reserve_hooked then return true end
+    local cd = nil
+    pcall(function() cd = xr_corpse_detection end)
+    if not (cd and type(cd.near_actor) == "function") then
+        dbg("!Nemesis ERROR: xr_corpse_detection.near_actor not found; bodies cannot be reserved.")
+        return false
+    end
+    local done = false
+    pcall(function()
+        done = xevent and not xevent.is_hooked("xr_corpse_detection", "near_actor")
+            and xevent.register_hook("xr_corpse_detection", "near_actor", near_actor_wrap) and true or false
+    end)
+    if not done then
+        local orig = cd.near_actor
+        cd.near_actor = function(obj, ...) return near_actor_wrap(orig, obj, ...) end
+    end
+    reserve_hooked = true
+    dbg("Nemesis: NPC looting of your Nemesis kills is gated (xr_corpse_detection.near_actor).")
+    return true
+end
+
+function reserve_body(id)
+    if not id or not reserve_on() then return end
+    local present, on = alifeplus_reserve()
+    if present then
+        dbg("Nemesis: body %s: %s", tostring(id), on and "AlifePlus reserves your kills (its own radius and time)."
+            or "AlifePlus's \"reserve own kills\" is off, so the body is not reserved.")
+        return
+    end
+    if not install_reserve_hook() then return end
+    S.reserved[id] = nemesis_utils.game_seconds()
+    reserve_away[id] = nil
+    dbg("Nemesis: body %s reserved for you (2 in-game hours, or 3 min more than 150 m away).", tostring(id))
+end
+
+function reserve_tick(gt, actor)
+    if next(S.reserved) == nil then return end
+    if not reserve_on() or alifeplus_reserve() then
+        S.reserved, reserve_away = {}, {}
+        return
+    end
+    install_reserve_hook()
+    local now = nemesis_utils.game_seconds()
+    for id, t in pairs(S.reserved) do
+        local why = nil
+        local se = alife():object(id)
+        if now - t > RESERVE_S or now < t then why = "2 in-game hours passed"
+        elseif not se then why = "the body is gone"
+        else
+            local far = true
+            pcall(function()
+                if nemesis_utils.same_level(se, alife():actor()) ~= false then
+                    far = se.position:distance_to(actor:position()) > RESERVE_AWAY_M
+                end
+            end)
+            if far then
+                reserve_away[id] = reserve_away[id] or gt
+                if gt - reserve_away[id] > RESERVE_AWAY_MS then why = "you were more than 150 m away for 3 min" end
+            else
+                reserve_away[id] = nil
+            end
+        end
+        if why then
+            S.reserved[id], reserve_away[id] = nil, nil
+            dbg("Nemesis: body %s is free to loot again (%s).", tostring(id), why)
+        end
+    end
+end
+
 function reset_runtime()
+    distort = nil
+    reserve_away = {}
     neutral, neutral_any = {}, false
-    whisper = nil
+    hum = nil
     vanish_queue = {}
     squad_cleanup = {}
 end
