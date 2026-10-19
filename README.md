@@ -59,7 +59,7 @@ LICENSE                   MIT
 
 ## Uninstalling
 
-Load a save made while no hunt was running: a save made during a hunt holds the hunt squad, which only exists with this mod, and will most likely not load without it. The easy way: in MCM → Nemesis → Debug, tick **Prepare for uninstall** and apply, wait for the PDA message that it is safe, save, then remove the mod and load that save.
+Load a save made while no hunt was running: a save made during a hunt holds the hunt squad, which only exists with this mod, and will most likely not load without it. The easy way: in MCM → Nemesis Wave Spawn System → Debug, tick **Prepare for uninstall** and apply, wait for the PDA message that it is safe, save, then remove the mod and load that save.
 
 ## Reporting a bug
 
