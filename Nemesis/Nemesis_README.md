@@ -150,7 +150,7 @@ Install with Mod Organizer like any other mod. Load order doesn't matter. Settin
 
 **Load a save made while no hunt was running.** During a hunt, the save contains the hunt squad, which is built from this mod's own squad type. Without the mod the game cannot rebuild it, and loading that save will most likely crash. Saves made between hunts don't contain it: the squad is removed when a hunt ends.
 
-1. In MCM → Nemesis → Debug, tick **Prepare for uninstall** and apply. Any running hunt is called off, every Nemesis squad is removed from the world (leftovers of older hunts included), and no new hunt starts. Within about 10 seconds a PDA message says it is safe to save.
+1. In MCM → Nemesis Wave Spawn System→ Debug, tick **Prepare for uninstall** and apply. Any running hunt is called off, every Nemesis squad is removed from the world (leftovers of older hunts included), and no new hunt starts. Within about 10 seconds a PDA message says it is safe to save.
 2. Save.
 3. Disable or remove the mod, and load that save.
 
