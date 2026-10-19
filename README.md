@@ -4,7 +4,7 @@ A recurring Monolith hunter for S.T.A.L.K.E.R. Anomaly / G.A.M.M.A.
 
 Every so often, a hunter comes for you. He spawns out of sight, sprints after you and is very hard to kill. Hurt him badly enough and he teleports away in a Monolith burst. He always comes back, and each time he is stronger.
 
-**Status:** Release Candidate 9 + hotfix.
+**Status:** Release Candidate 10.
 
 ## Features
 
@@ -30,8 +30,8 @@ Every so often, a hunter comes for you. He spawns out of sight, sprints after yo
 
 Works with:
 - **AlifePlus** and **AlifeTactics**: no setup needed. With *Reserve your kills* on, AlifePlus' own "reserve own kills" setting decides who may loot your Nemesis kills.
-- **Wearable Devices** by sulikz: detected by itself. When a hunt spawns, your device screens flicker; when the boss comes, they go black for 2 seconds (Debug page: *Wearable Devices mod Malfunction*).
-- **Obrien GAMMA Overhaul**: turn on *Obrien GAMMA Overhaul armour* in the mod's MCM settings. Your PDA reminds you if it's off.
+- **Wearable Devices** by sulikz: detected by itself. When a hunt spawns, your device screens flicker; when the boss comes, they go black for 2 seconds (General page: *Wearable Devices mod Malfunction*).
+- **Obrien GAMMA Overhaul**: detected by itself, no setup needed.
 
 ## Installation (Mod Organizer 2)
 
@@ -63,7 +63,7 @@ Load a save made while no hunt was running: a save made during a hunt holds the 
 
 ## Reporting a bug
 
-Turn on **Debug logs** in MCM (Debug page), play until the problem happens, and attach your log file (`anomaly/appdata/logs/xray_<name>.log`) to a GitHub issue. Lines starting with `!Nemesis` are errors. If the game crashed, the same log has the crash at the end.
+Turn on **Debug logs** in MCM (Debug & tools page), play until the problem happens, and attach your log file (`anomaly/appdata/logs/xray_<name>.log`) to a GitHub issue. Lines starting with `!Nemesis` are errors. If the game crashed, the same log has the crash at the end.
 
 ## Credits
 

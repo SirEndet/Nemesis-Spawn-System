@@ -432,7 +432,7 @@ function install_br_wrap()
         local id = r.id
         local body_br, head_br, body_pct, head_pct, body_hf, head_hf = hunter_br_now(id)
 
-        if nemesis_mcm.get_bool("obrien_armor", false) then br_seeded[id] = nil end
+        if nemesis_utils.obrien_on() then br_seeded[id] = nil end
         pcall(seed, gbo, id, body_br, head_br, body_hf, head_hf)
         local hp0 = tonumber(npc.health) or 1
         nemesis_utils.set_health(npc, 1)

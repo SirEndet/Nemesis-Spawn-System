@@ -397,6 +397,7 @@ local function manage_hunter(id, r, gt, actor, retreat_health)
     nemesis_fx.unmask(obj, r)
     nemesis_damage.lift_bypass_guard(obj, r)
     nemesis_utils.apply_ai(obj, r, gt)
+    nemesis_utils.stall_check(obj, gt)
 
     if not r.inited then
         r.inited = true
@@ -469,6 +470,7 @@ local function manage_extra(id, r, actor)
     end
     if not (extra and nemesis_fx.alive_obj(extra)) then return end
     nemesis_fx.unmask(extra, r)
+    nemesis_utils.stall_check(extra, time_global())
     if not r.inited then
         r.inited = true
         never_ignore_player(extra)
@@ -871,7 +873,7 @@ local function on_first_update()
     next_tick = 0
     next_slow = 0
     nemesis_damage.unseed_br()
-    if db.actor then nemesis_utils.check_obrien_at_load(db.actor) end
+    nemesis_utils.reset_obrien()
     if not exe_logged then
         exe_logged = true
         dbg("Nemesis: hit callback runs %s.", hit_post and "last (Post tier, latest exes)"

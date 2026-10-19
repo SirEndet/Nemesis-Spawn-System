@@ -63,8 +63,9 @@ The **Difficulty** setting at the top of the General page picks Easy, Medium (th
 | Arrival warning volume | 70 | Loudness of the warning static. |
 | Teleport sound volume | 40 | Loudness of the teleport sound. 0 mutes it. |
 | Psy hum volume | 20 | Loudness of the psy hum near a named hunter. |
+| Wearable Devices mod Malfunction | On | With the Wearable Devices mod: when a hunt spawns, your device screens flicker; for the boss they also go black for 2 s. |
 
-### Gameplay
+### Hunts
 | Setting | Default | What it does |
 |---|---|---|
 | Grace period (days) | 12 | Days of peace before the first hunt of a new game. |
@@ -95,7 +96,6 @@ The **Difficulty** setting at the top of the General page picks Easy, Medium (th
 | Armour growth speed | 0 | How fast named hunters' armour catches up with yours. |
 | Extra BR cap | 0.20 | How much higher than yours their ballistic rating can get. |
 | BR mitigation cap (%) | 25 | How much more damage their armour can block than yours. |
-| Obrien GAMMA Overhaul armour | Off | Turn on only if you use the Obrien GAMMA Overhaul mod. Your PDA reminds you if Obrien is installed and this is off. |
 | Reserve your kills | Off | NPCs leave your Nemesis kills alone. With AlifePlus, its own "reserve own kills" option decides. |
 | Latest exe AI features | On | Uses new engine features on the newest demonized exes. Older exes: no change. |
 | Hunter attack pull | 900 | Latest exes: how readily named hunters turn on whoever shoots them. 0 = engine default. |
@@ -123,15 +123,16 @@ The **Difficulty** setting at the top of the General page picks Easy, Medium (th
 | Ghost psy damage (%) | 4 | The share of your psy bar you lose when the ghosts shove you back inside, whatever you wear. 0 = none. |
 | Lightning strike volume (%) | 80 | The sound of his arrival. 0 = muted. |
 
-### Debug
+### Emission boss
+
+The emission boss's settings have their own page; the lightning volume is on the General page with the other sounds.
+
+### Debug & tools
 | Setting | Default | What it does |
 |---|---|---|
 | Debug mode | Off | For testing: hunts come quickly (15 s after the warning) and can start anywhere, and a map marker follows the boss. |
 | Debug logs | Off | Writes Nemesis lines to the console, for bug reports. |
-| Send a test PDA message | – | Checks that Nemesis messages show up. |
-| Force a boss in the next hunt | – | The next hunt brings the boss. |
-| Force the emission boss now | – | The emission boss comes now, emission or not. |
-| Wearable Devices mod Malfunction | On | With the Wearable Devices mod: when a hunt spawns, your device screens flicker; for the boss they also go black for 2 s. |
+| Force the next hunt | None | For testing: Boss brings the boss in the next hunt; Emission boss brings him now, emission or not. Goes back to None. |
 | Prepare for uninstall | Off | Ends any hunt and removes every Nemesis squad, so you can save and uninstall safely. No hunts while ticked. |
 
 ## Requirements

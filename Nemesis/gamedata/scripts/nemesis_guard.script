@@ -124,17 +124,18 @@ local function check_boxes()
         nemesis_damage.unseed_br()
         nemesis_utils.send_news("Escalation reset. The next hunt starts at cycle 1.", "Nemesis")
     end
-    if box("test_pda") then
-        local ok = nemesis_utils.send_news("PDA test: if you can read this, Nemesis messages work.", "Nemesis")
-        dbg("Nemesis: PDA test requested from MCM, result: %s.", ok and "sent" or "FAILED")
-    end
-    if box("force_boss") then
-        nemesis_boss.force()
-        dbg("Nemesis: the next hunt brings the boss (MCM).")
-    end
-    if box("force_emission") then
-        nemesis_emission.force()
-        dbg("Nemesis: the emission boss comes now, emission or not (MCM).")
+
+    local f = nemesis_mcm.get_string("force_next", "none")
+    if f == "boss" or f == "emission" then
+        pcall(function() ui_mcm.set(nemesis_mcm.path("force_next"), "none") end)
+        nemesis_mcm.invalidate()
+        if f == "boss" then
+            nemesis_boss.force()
+            dbg("Nemesis: the next hunt brings the boss (MCM).")
+        else
+            nemesis_emission.force()
+            dbg("Nemesis: the emission boss comes now, emission or not (MCM).")
+        end
     end
 end
 

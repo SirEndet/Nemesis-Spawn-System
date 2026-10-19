@@ -419,7 +419,7 @@ local function guard_tick(gt, actor)
     shove_ppe()
     local n = phantoms(pos)
     em.shoves = (em.shoves or 0) + 1
-    dbg("Nemesis: the ghosts shove you back inside (%s phantoms, psy %s%%).", tostring(n), string.format("%.0f", psy_damage() * 100))
+    dbg("Nemesis: the ghosts shove you back inside (%s phantoms, psy %s).", tostring(n), string.format("%.0f", psy_damage() * 100) .. "%")
 end
 
 ---------------------------------------------------------------------------
@@ -668,7 +668,7 @@ local function rolled()
     if roll == nil then
         local c = chance()
         roll = c > 0 and (c >= 100 or math.random() * 100 < c)
-        dbg("Nemesis: an emission: the emission boss %s (chance %s%%).", roll and "comes with the next hunt" or "stays away this time", tostring(c))
+        dbg("Nemesis: an emission: the emission boss %s (chance %s).", roll and "comes with the next hunt" or "stays away this time", tostring(c) .. "%")
     end
     return roll
 end
@@ -770,7 +770,7 @@ function update(gt, actor, slow)
         extra = true
         local c = extra_chance()
         local yes = c > 0 and math.random() * 100 < c
-        dbg("Nemesis: an emission: the emission boss's own chance %s (%s%%).", yes and "came up" or "did not", tostring(c))
+        dbg("Nemesis: an emission: the emission boss's own chance %s (%s).", yes and "came up" or "did not", tostring(c) .. "%")
         if yes then begin(gt, "the emission's own chance", false) end
     end
 

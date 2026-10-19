@@ -154,30 +154,26 @@ function obrien_item_stats(sec, cond)
     return br * cond, pct * cond
 end
 
-local obrien_warned = false
+local obrien_found = false
 local obrien_checked = {}
 local OBRIEN_PROBES = { "novice_outfit", "stalker_outfit", "helm_respirator" }
-function warn_obrien_off(sec)
-    if obrien_warned or not sec or obrien_checked[sec] then return false end
+local function obrien_check(sec)
+    if obrien_found or not sec or obrien_checked[sec] then return end
     obrien_checked[sec] = true
     local has = false
     pcall(function() has = ini_sys:line_exist(sec, "br_class") == true end)
-    if not has then return false end
-    obrien_warned = true
-    log_msg("!Nemesis: your armour has br_class (Obrien GAMMA Overhaul) but the MCM option 'Obrien GAMMA Overhaul armour' is off. Hunters will get far too much armour; turn it on.")
-    send_news("Obrien GAMMA Overhaul is installed, but \"Obrien GAMMA Overhaul armour\" is off in the Nemesis MCM (Combat page). Hunters get far too much armour until you turn it on.", "Nemesis")
-    return true
+    if has then
+        obrien_found = true
+        log_msg("Nemesis: Obrien GAMMA Overhaul detected (%s has br_class); hunters copy its armour.", tostring(sec))
+    end
 end
 
-function check_obrien_at_load(actor)
-    if obrien_warned or nemesis_mcm.get_bool("obrien_armor", false) then return end
-    local secs = {}
-    pcall(function()
-        local o = actor:item_in_slot(7); if o then secs[#secs + 1] = o:section() end
-        local h = actor:item_in_slot(12); if h then secs[#secs + 1] = h:section() end
-    end)
-    for _, sec in ipairs(OBRIEN_PROBES) do secs[#secs + 1] = sec end
-    for _, sec in ipairs(secs) do if warn_obrien_off(sec) then return end end
+function reset_obrien() obrien_found, obrien_checked = false, {} end
+function obrien_on(outfit_sec, helmet_sec)
+    for _, sec in ipairs(OBRIEN_PROBES) do obrien_check(sec) end
+    obrien_check(outfit_sec)
+    obrien_check(helmet_sec)
+    return obrien_found
 end
 
 local function clamp_br(v)
@@ -210,7 +206,6 @@ local function read_br_stats(actor, outfit, helmet, obrien)
                 if c and BoneID and BoneID["bip01_spine"] then
                     body_pct = (c:GetBoneArmor(BoneID["bip01_spine"]) or 0) * cond * 0.80
                 end
-                warn_obrien_off(outfit:section())
             end
         end
         if helmet then
@@ -224,7 +219,6 @@ local function read_br_stats(actor, outfit, helmet, obrien)
                 if c and BoneID and BoneID["bip01_head"] then
                     head_pct = (c:GetBoneArmor(BoneID["bip01_head"]) or 0) * cond * 0.80
                 end
-                warn_obrien_off(helmet:section())
             end
         end
     end)
@@ -252,7 +246,9 @@ function player_br_stats()
     if not ok1 then outfit = nil end
     if not ok2 then helmet = nil end
     local oid, hid = item_key(outfit), item_key(helmet)
-    local obrien = nemesis_mcm.get_bool("obrien_armor", false)
+    local okso, so = pcall(_item_sec, outfit)
+    local oksh, sh = pcall(_item_sec, helmet)
+    local obrien = obrien_on(okso and so or nil, oksh and sh or nil)
     local now = time_global()
     local c = br_cache
     if not (c.v and c.oid == oid and c.hid == hid and c.obrien == obrien and now - c.at < BR_CACHE_MS) then
@@ -332,6 +328,17 @@ local focus = {}
 local sneak = {}
 local chase = {}
 
+local NPC_FIGHT_MS = 10000
+
+local CHECK_FIRST_MS, CHECK_SECOND_MS, CHECK_EVERY_MS = 4000, 15000, 30000
+local REHIT_MS = 1500
+local npc_drop = {}
+
+local sniper_spot = {}
+
+local STALL_MS, STALL_START_MS, STALL_MOVE_M = 3000, 8000, 1
+local stall = {}
+
 local function copy_vec(v)
     local c = vector()
     c:set(v.x, v.y, v.z)
@@ -351,6 +358,7 @@ function reset_chase(id)
     else
         chase = {}
         fight_memo = {}
+        npc_drop, sniper_spot, stall = {}, {}, {}
         known_spot_on, indoor_since, siege_spot = false, nil, {}
         indoor_now, outdoor_since, siege_broken = false, nil, false
     end
@@ -369,6 +377,7 @@ end
 function forget_fight(id)
     if not id then return end
     fight_memo[id] = nil
+    npc_drop[id], sniper_spot[id], stall[id] = nil, nil, nil
     roles[id] = nil
     retreat_dest[id] = nil
     focus[id] = nil
@@ -531,8 +540,56 @@ function combat_owns_now(npc, memo, now)
     if contact then memo.last_fight = now end
     local okb, be = pcall(_best_enemy, npc)
     if okb and be then
+        local eid = be:id()
+        if eid ~= 0 then
+
+            if drops_enemy(id, eid) then
+                memo.npc_fight = nil
+                return false
+            end
+            local f = memo.npc_fight
+            if not f or f.id ~= eid then
+                f = { id = eid, until_t = now + NPC_FIGHT_MS }
+                memo.npc_fight = f
+            end
+            local r = nemesis_state.member(id)
+            if r and r.hit_from == eid and r.hit_at and r.hit_at + NPC_FIGHT_MS > f.until_t then
+                f.until_t = r.hit_at + NPC_FIGHT_MS
+            end
+            if now >= f.until_t then
+                npc_drop[id] = npc_drop[id] or {}
+                npc_drop[id][eid] = true
+                memo.npc_fight = nil
+                memo.last_fight = 0
+                if debug_on() then
+                    log_msg("Nemesis: %s drops his fight with %s after %s s without a hit from him; back on the hunt.",
+                        tostring(nemesis_state.name_of(id) or id), tostring(eid), tostring(NPC_FIGHT_MS / 1000))
+                end
+                return false
+            end
+        else
+            memo.npc_fight = nil
+        end
         memo.hold_start, memo.holding = nil, false
-        return contact or now - memo.last_fight < CONTACT_LINGER_MS
+        local fighting = contact or now - memo.last_fight < CONTACT_LINGER_MS
+        local S0 = nemesis_state.S
+        if id == S0.boss_id and not S0.emission_hunt then return fighting end
+        if not memo.res then
+
+            if fighting then
+                memo.combat_since, memo.next_check = now, now + CHECK_FIRST_MS
+            end
+            return fighting
+        end
+        if now < (memo.next_check or 0) then return true end
+
+        if fighting then
+            local since = memo.combat_since or now
+            if memo.next_check < since + CHECK_SECOND_MS then memo.next_check = since + CHECK_SECOND_MS
+            else memo.next_check = memo.next_check + CHECK_EVERY_MS end
+            return true
+        end
+        return false
     end
     local r = (sees or hit) and nemesis_state.member(id)
     local player_contact = sees or (hit and r and r.hit_by_player == true)
@@ -556,11 +613,23 @@ function combat_owns_now(npc, memo, now)
             pcall(_show_enemy, npc, db.actor)
         end
         memo.hold_start = memo.hold_start or now
-        memo.holding = now - memo.hold_start < HOLD_MAX_MS
+
+        memo.holding = now - memo.hold_start < HOLD_MAX_MS or sniper_spot[id] == true
     else
         memo.hold_start, memo.holding = nil, false
     end
     return false
+end
+
+function drops_enemy(a, e)
+    local t = a and npc_drop[a]
+    if not (t and t[e]) then return false end
+    local r = nemesis_state.member(a)
+    if r and r.hit_from == e and r.hit_at and time_global() - r.hit_at < REHIT_MS then
+        t[e] = nil
+        return false
+    end
+    return true
 end
 
 function contact_hold(id)
@@ -755,7 +824,8 @@ local function chase_target(npc, actor)
     local tpos, tlv, mode = player_target(npc, actor)
     local role = roles[npc:id()]
     if role and role.extra and nemesis_mcm.get_bool("squad_tactics", true) then
-        local svid = sniper_vertex(npc, tpos)
+
+        local svid = mode == "seen" and sniper_vertex(npc, tpos)
         if svid then return level.vertex_position(svid), svid, mode .. ", sniper position" end
         local fvid = flank_vertex(npc, tpos, role)
         if fvid then return level.vertex_position(fvid), fvid, mode .. ", flank" end
@@ -916,7 +986,48 @@ function drive_chase(npc, actor)
     if not used then return false, refreshed end
     local moved = apply_state(npc, slot, far, sneaky)
     slot.sent_lv, slot.sent_at = slot.lv, gt
+
+    local at_spot = false
+    if slot.mode and slot.mode:find("sniper position", 1, true) and slot.pos then
+        pcall(function() at_spot = npc:position():distance_to(slot.pos) < 3 end)
+    end
+    sniper_spot[id] = at_spot or nil
     return moved, refreshed
+end
+
+function stall_check(npc, gt)
+    if not npc or not debug_on() then return end
+    local id = npc:id()
+    local pos = nil
+    pcall(function() pos = npc:position() end)
+    if not pos then return end
+    local s = stall[id]
+    if not s then
+        stall[id] = { first = gt, pos = pos, since = gt }
+        return
+    end
+    if pos:distance_to(s.pos) >= STALL_MOVE_M then
+        if s.logged then log_msg("Nemesis STALL: %s moves again after %s s.", tostring(nemesis_state.name_of(id) or id), string.format("%.1f", (gt - s.since) / 1000)) end
+        s.pos, s.since, s.logged = pos, gt, nil
+        return
+    end
+    if s.logged or gt - s.since < STALL_MS or gt - s.first < STALL_START_MS then return end
+    s.logged = true
+    local memo, slot = fight_memo[id], chase[id]
+    local owner = "the chase"
+    if memo and memo.res then
+        local be_name = "none"
+        pcall(function() local be = npc:best_enemy(); if be then be_name = be:id() == 0 and "you" or (be:character_name() .. " (" .. be:id() .. ")") end end)
+        owner = "combat AI (enemy: " .. be_name .. ")"
+    elseif memo and memo.holding then
+        owner = "the chase, holding for the engine to pick you"
+    end
+    local dest = "-"
+    if slot and slot.pos then pcall(function() dest = string.format("%.0f m", pos:distance_to(slot.pos)) end) end
+    log_msg("Nemesis STALL: %s has stood still for 3 s. Driven by %s; target %s, %s to it; state %s%s%s%s.",
+        tostring(nemesis_state.name_of(id) or id), owner, tostring(slot and slot.mode or "-"), dest,
+        tostring(slot and slot.state or "-"), sniper_spot[id] and ", on his sniper spot" or "",
+        siege_active() and ", siege (you are indoors)" or "", sneak_active(id) and ", sneaking" or "")
 end
 
 ---------------------------------------------------------------------------

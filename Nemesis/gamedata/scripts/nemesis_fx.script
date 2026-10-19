@@ -324,6 +324,12 @@ function on_enemy_eval(npc, enemy, flags)
         flags.result = false
         return
     end
+
+    if enemy:id() ~= 0 and nemesis_utils.drops_enemy(npc:id(), enemy:id()) then
+        flags.override = true
+        flags.result = false
+        return
+    end
     if not neutral_any then return end
     local a, e = npc:id(), enemy:id()
     if not neutral[a] and not neutral[e] then return end
