@@ -516,7 +516,9 @@ end
 ---------------------------------------------------------------------------
 
 local UNINSTALL_SECTIONS = { nemesis_hunter_squad = true, nemesis_hunter_squad_isg = true,
-                             nemesis_emission_squad = true, nemesis_horde_zombied = true, nemesis_horde_snork = true }
+                             nemesis_emission_squad = true, nemesis_emission_squad_isg = true,
+                             nemesis_horde_zombied = true, nemesis_horde_snork = true, nemesis_horde_snork_normal = true,
+                             nemesis_emission_boss = true, nemesis_emission_boss_isg = true, nemesis_phantom = true }
 local UNINSTALL_SWEEP_MS = 3000
 local MAX_SE_ID = 65534
 local uninstall = nil
@@ -549,7 +551,7 @@ local function uninstall_tick(gt)
             S.follow = nil
             dbg("Nemesis: preparing for uninstall: the squad following you is called off.")
         end
-        nemesis_emission.cancel("preparing for uninstall")
+        nemesis_emission.prepare_uninstall()
         nemesis_spawn.reset_runtime()
         nemesis_guard.forget_death_marker()
         uninstall = { squads = our_squads_in_world(), at = gt + UNINSTALL_SWEEP_MS, said = false }
@@ -878,7 +880,9 @@ local function on_first_update()
 end
 
 local function save_state(mdata)
+    S.em_flow = nemesis_emission.save_flow()
     nemesis_state.save(mdata, nemesis_fx.vanish_ids())
+    S.em_flow = nil
 end
 
 local function load_state(mdata)

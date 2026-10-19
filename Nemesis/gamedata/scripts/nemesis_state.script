@@ -53,6 +53,7 @@ local function blank()
         em_released = nil,
         em_squads = nil,
         reload_said = nil,
+        em_flow = nil,
         reserved = {},
     }
 end
@@ -309,6 +310,7 @@ function save(mdata, vanish_ids)
         em_released = S.em_released and true or nil,
         em_squads = S.em_squads and table.concat(S.em_squads, ",") or nil,
         reload_said = S.reload_said and true or nil,
+        em_flow = S.em_flow,
         squad_follow = p and save_follow_list(p.follow) or nil,
         squad_all_named = p and p.all_named and true or nil,
         hunter_ids = table.concat(S.hunter_ids, ","),
@@ -359,6 +361,7 @@ function load(mdata)
     S.em_released = s.em_released and true or nil
     S.reload_said = s.reload_said and true or nil
     if type(s.em_squads) == "string" and s.em_squads ~= "" then S.em_squads = load_ids(s.em_squads) end
+    if type(s.em_flow) == "string" and s.em_flow ~= "" then S.em_flow = s.em_flow end
 
     local hunters = load_ids(s.hunter_ids)
     local squad = load_ids(s.squad_ids)

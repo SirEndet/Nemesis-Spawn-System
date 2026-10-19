@@ -10,10 +10,15 @@ faction = isg
 npc = sim_default_isg_3
 common = false
 
-; Nemesis emission boss (Sin)
+; Nemesis emission boss (Sin, and UNISG)
 [nemesis_emission_squad]:online_offline_group
 faction = greh
-npc = sim_default_greh_4
+npc = nemesis_emission_boss
+common = false
+
+[nemesis_emission_squad_isg]:online_offline_group
+faction = isg
+npc = nemesis_emission_boss_isg
 common = false
 
 ; Nemesis emission boss horde
@@ -25,4 +30,9 @@ common = false
 [nemesis_horde_snork]:online_offline_group
 faction = monster
 npc = snork_weak
+common = false
+
+[nemesis_horde_snork_normal]:online_offline_group
+faction = monster
+npc = snork_normal
 common = false
