@@ -13,8 +13,10 @@ function sneak_closing(id) local s = id and sneak[id]; return s ~= nil and s.clo
 
 local MOVE_ANY, MOVE_CROUCH, MOVE_WALK, MOVE_SPRINT = 15, 16, 32, 4096
 function player_running(actor)
+
     local ok, st = pcall(level.actor_moving_state)
     if not ok or type(st) ~= "number" then return false end
+
     if bit_and(st, MOVE_SPRINT) ~= 0 then return true end
     return bit_and(st, MOVE_ANY) ~= 0 and bit_and(st, MOVE_CROUCH + MOVE_WALK) == 0
 end

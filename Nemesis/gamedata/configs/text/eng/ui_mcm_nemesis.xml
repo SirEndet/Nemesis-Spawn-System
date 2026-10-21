@@ -8,7 +8,6 @@
     <string id="ui_mcm_nemesis_page_boss"><text>Boss</text></string>
     <string id="ui_mcm_nemesis_page_combat"><text>Combat</text></string>
     <string id="ui_mcm_nemesis_page_gameplay"><text>Hunts</text></string>
-    <string id="ui_mcm_nemesis_page_emission"><text>Emission boss</text></string>
     <string id="ui_mcm_nemesis_head_warnings"><text>Warnings</text></string>
     <string id="ui_mcm_nemesis_head_sound"><text>Sound</text></string>
     <string id="ui_mcm_nemesis_head_effects"><text>Effects</text></string>
@@ -57,22 +56,6 @@
 
     <string id="ui_mcm_nemesis_warning_pda_desc"><text>A PDA message from an unknown frequency 30 to 120 seconds before a hunt starts. With this or the audio warning on, the hunt follows the warning; with both off it starts without one. Default off.</text></string>
 
-    <string id="ui_mcm_nemesis_emission_enabled"><text>Emission boss</text></string>
-    <string id="ui_mcm_nemesis_emission_enabled_desc"><text>On: the emission boss can come when an emission meets a hunt (see Emission boss chance). Off: he never comes, hunts during emissions are normal hunts, and one waiting to come is called off. The debug box still forces him. Default on.</text></string>
-    <string id="ui_mcm_nemesis_emission_chance"><text>Emission boss chance (%)</text></string>
-    <string id="ui_mcm_nemesis_emission_chance_desc"><text>Chance, rolled once per emission, that the emission boss comes when an emission meets a hunt: a hunt running when the emission starts is called off, or a hunt about to start during one is taken over. He haunts the exits of the building you shelter in, arrives with a lightning strike and walks in after you. He comes in the deadly part of the emission, when its waves hit, and never outside one. 0 turns him off. Default 100.</text></string>
-    <string id="ui_mcm_nemesis_emission_extra"><text>Emission boss extra chance (%)</text></string>
-    <string id="ui_mcm_nemesis_emission_extra_desc"><text>Chance, rolled once per emission, that the emission boss comes even when no hunt meets the emission, so between hunts too. Not in the grace period, and not while you are in a base, in a dialogue, asleep or underground. 0 turns it off. Default 6.</text></string>
-    <string id="ui_mcm_nemesis_emission_name"><text>Emission boss name</text></string>
-    <string id="ui_mcm_nemesis_emission_name_desc"><text>Name of the emission boss, a Sin (UNISG when you are Monolith, Zombified or Sin). Default: Ilarion Hrech</text></string>
-    <string id="ui_mcm_nemesis_emission_dr"><text>Emission boss damage reduction (%)</text></string>
-    <string id="ui_mcm_nemesis_emission_dr_desc"><text>How much less damage the emission boss takes from every hit, on top of his armour and the escalation. NPC damage reduction below comes on top for hits from other stalkers and mutants. Default 30.</text></string>
-    <string id="ui_mcm_nemesis_emission_npc_cut"><text>Emission boss NPC damage reduction (%)</text></string>
-    <string id="ui_mcm_nemesis_emission_npc_cut_desc"><text>How much less damage the emission boss takes from other stalkers and mutants, so they are little help against him. Your own hits are not affected. Him only. Default 70.</text></string>
-    <string id="ui_mcm_nemesis_emission_horde"><text>Emission boss horde size</text></string>
-    <string id="ui_mcm_nemesis_emission_horde_desc"><text>Mutants that come through the door 15 seconds after the emission boss arrives and rush in after you: zombified stalkers, with a snork on mid maps and two tougher snorks on late maps. 0 sends none. Default 4.</text></string>
-    <string id="ui_mcm_nemesis_emission_psy"><text>Ghost psy damage (%)</text></string>
-    <string id="ui_mcm_nemesis_emission_psy_desc"><text>The share of your whole psy bar you lose each time the ghosts at the exits shove you back inside before the emission boss arrives. Psy protection does not lower it. 0 turns it off. Default 4.</text></string>
     <string id="ui_mcm_nemesis_lightning_volume"><text>Lightning strike volume (%)</text></string>
     <string id="ui_mcm_nemesis_lightning_volume_desc"><text>Loudness of the lightning strike sound when the emission boss arrives. The emission is already loud, so it is off by default; his teleport burst (Teleport volume) marks his arrival. 0 mutes it. Default 0.</text></string>
     <string id="ui_mcm_nemesis_npc_name"><text>Boss name</text></string>
@@ -141,6 +124,8 @@
     <string id="ui_mcm_nemesis_reset_on_death"><text>Halve escalation when a hunter kills you</text></string>
     <string id="ui_mcm_nemesis_reset_on_death_desc"><text>If a hunter kills you, the escalation is halved (cycle 8 becomes 4, never below 1), even when you reload a save. Default on.</text></string>
 
+    <string id="ui_mcm_nemesis_load_custom_backup"><text>Load settings from Automatic Backup</text></string>
+    <string id="ui_mcm_nemesis_load_custom_backup_desc"><text>This will load your last saved custom settings. They are saved automatically when a difficulty setting is applied. The backup is kept, and the box unticks itself.</text></string>
     <string id="ui_mcm_nemesis_reset_escalation_now"><text>Reset escalation now</text></string>
     <string id="ui_mcm_nemesis_reset_escalation_now_desc"><text>Tick and apply to set the hunts back to their starting strength (cycle 1) right now. The box unticks itself.</text></string>
 
@@ -160,7 +145,6 @@
     <string id="ui_mcm_nemesis_force_next_desc"><text>For testing. Pick one and apply: Boss brings the boss in the next hunt, ignoring the chance, the day limit and the once-a-day rule. Emission boss brings him now, even without an emission (a running hunt is called off for him; get indoors to see the haunted exits). It acts once and goes back to None. Default None.</text></string>
     <string id="ui_mcm_nemesis_force_next_none"><text>None</text></string>
     <string id="ui_mcm_nemesis_force_next_boss"><text>Boss</text></string>
-    <string id="ui_mcm_nemesis_force_next_emission"><text>Emission boss</text></string>
     <string id="ui_mcm_nemesis_exe_ai"><text>Latest exe AI features</text></string>
     <string id="ui_mcm_nemesis_exe_ai_desc"><text>On the newest demonized exes, hunters use new engine features where they help: named hunters and the boss prefer you as their target and turn on whoever shoots them, and a retreating hunter is held in place by the engine for his teleport. On older exes, or with this off, the mod's own way is used. Default on.</text></string>
     <string id="ui_mcm_nemesis_hunter_attack_pull"><text>Hunter attack pull</text></string>

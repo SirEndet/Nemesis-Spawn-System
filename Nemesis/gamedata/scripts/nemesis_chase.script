@@ -22,6 +22,7 @@ local planner_list = nil
 local planner_warned = false
 local function planner_ids()
     if planner_list then return planner_list end
+
     local ok, list = pcall(xgraft.get_blocked_planners)
     if not (ok and type(list) == "table" and #list > 0) then
         if not planner_warned then
@@ -40,6 +41,7 @@ local function planner_ids()
 end
 
 local function takeover_running(npc)
+
     local ok, busy = pcall(xgraft.is_takeover_current, npc)
     return ok and busy == true
 end
@@ -55,23 +57,32 @@ local function gate_open(npc)
 end
 
 class "nemesis_chase_gate" (property_evaluator)
+
 function nemesis_chase_gate:__init(name) super(nil, name) end
+
 function nemesis_chase_gate:evaluate()
     return gate_open(self.object) == true
 end
 
 class "nemesis_chase_action" (action_base)
+
 function nemesis_chase_action:__init(name) super(nil, name) end
+
 function nemesis_chase_action:initialize()
     action_base.initialize(self)
     local npc = self.object
+
     pcall(function() npc:clear_animations() end)
+
     npc:set_path_type(game_object.level_path)
+
     npc:set_desired_position()
+
     npc:set_desired_direction()
 
     reset_slot(npc:id())
 end
+
 function nemesis_chase_action:execute()
     action_base.execute(self)
     local npc = self.object
@@ -81,6 +92,7 @@ function nemesis_chase_action:execute()
     ran[npc:id()] = true
     drive_chase(npc, actor)
 end
+
 function nemesis_chase_action:finalize()
     action_base.finalize(self)
     local npc = self.object
@@ -91,6 +103,7 @@ function install(npc)
     if not npc then return false end
     local id = npc:id()
     if complete[id] then return true end
+
     local manager = npc:motivation_action_manager()
     if not manager then return false end
 
@@ -98,14 +111,18 @@ function install(npc)
         local ok, err = pcall(function()
             local eva = nemesis_chase_gate("eva_nemesis_chase")
             local act = nemesis_chase_action("act_nemesis_chase")
+
             act:add_precondition(world_property(stalker_ids.property_alive, true))
 
             if xr_evaluators_id and type(xr_evaluators_id.sidor_wounded_base) == "number" then
                 act:add_precondition(world_property(xr_evaluators_id.sidor_wounded_base, false))
             end
             act:add_precondition(world_property(CHASE_ID, true))
+
             act:add_effect(world_property(CHASE_ID, false))
+
             manager:add_evaluator(CHASE_ID, eva)
+
             manager:add_action(CHASE_ID, act)
             refs[id] = { eva, act }
         end)
@@ -122,6 +139,7 @@ function install(npc)
     local missing = false
     for _, pid in ipairs(list) do
         if not done[pid] then
+
             local planner = manager:action(pid)
             if planner then
                 planner:add_precondition(world_property(CHASE_ID, false))
@@ -198,7 +216,7 @@ function retreat_arrived(npc)
     if not vid then return true end
     local here = false
     pcall(function()
-        here = npc:level_vertex_id() == vid or npc:position():distance_to(level.vertex_position(vid)) < 1.5
+        here = npc:level_vertex_id() == vid or npc:position():distance_to(nemesis_engine.vertex_pos(vid)) < 1.5
     end)
     return here
 end
@@ -212,17 +230,19 @@ function get_retreat_dest(id) return id and retreat_dest[id] or nil end
 
 function pick_dest(npc, pos, lv)
     if not pos then return nil end
-    lv = lv or level.vertex_id(pos)
+    lv = lv or nemesis_engine.vertex_at(pos)
     local reachable = false
+
     local ok_acc, acc = pcall(function() return npc:accessible(pos) end)
     if ok_acc then reachable = acc end
     if not reachable then
         local ok_near, near = pcall(function()
+
             return npc:accessible_nearest(pos, vector())
         end)
         if ok_near and near and near < NO_VERTEX then
             lv = near
-            local vp = level.vertex_position(near)
+            local vp = nemesis_engine.vertex_pos(near)
             if vp then pos = vp end
         end
     end
@@ -233,9 +253,13 @@ end
 local function _dist(a, b) return a:position():distance_to(b:position()) end
 
 local function _prep_path(npc)
+
     npc:set_path_type(game_object.level_path)
+
     npc:set_detail_path_type(move.line)
+
     npc:set_desired_position()
+
     npc:set_desired_direction()
 end
 
@@ -247,11 +271,14 @@ local function player_target(npc, actor)
 
     if nemesis_siege.known_spot() then return live_pos, live_lv, "remembered spot" end
     local mt, sees = 0, false
+
     pcall(function() mt = npc:memory_time(actor) end)
+
     pcall(function() sees = npc:see(actor) end)
     if sees then return live_pos, live_lv, "seen" end
     if not mt or mt <= 0 or time_global() - mt > LKP_GIVE_UP_MS then return live_pos, live_lv, "live" end
     local pos = nil
+
     pcall(function() pos = xcombat.get_track_pos(npc, actor, false) end)
     if not pos or (pos.x == 0 and pos.y == 0 and pos.z == 0) then return live_pos, live_lv, "live" end
     return pos, nil, "last known"
@@ -269,6 +296,7 @@ local function flank_vertex(npc, tpos, role)
     local dir = vector()
     dir:set((dx * ca - dz * sa) / d, 0, (dx * sa + dz * ca) / d)
     local vid = nil
+
     pcall(function() vid = xcombat.find_flee_lane(npc, dir, math.min(d * 0.5, 35), 10, 30) end)
     return vid
 end
@@ -276,7 +304,7 @@ end
 local function chase_target(npc, actor)
     if nemesis_siege.siege_active() and not nemesis_combat.has_focus(npc:id()) then
         local lv = nemesis_siege.vertex(npc, actor)
-        if lv then return level.vertex_position(lv), lv, "waiting outside" end
+        if lv then return nemesis_engine.vertex_pos(lv), lv, "waiting outside" end
     end
     if nemesis_sneak.sneak_active(npc:id()) then
 
@@ -295,7 +323,7 @@ local function chase_target(npc, actor)
     local role = roles[npc:id()]
     if role and role.extra and nemesis_mcm.get_bool("squad_tactics", true) then
         local fvid = flank_vertex(npc, tpos, role)
-        if fvid then return level.vertex_position(fvid), fvid, mode .. ", flank" end
+        if fvid then return nemesis_engine.vertex_pos(fvid), fvid, mode .. ", flank" end
     end
     return tpos, tlv, mode
 end
@@ -329,11 +357,12 @@ end
 
 local route_logged = {}
 local function apply_state(npc, slot, far, sneaky)
-    local walking = nemesis_emission.walks(npc:id())
+    local walking = nemesis_events.ask("walks", npc:id()) == true
     local name = pick_state(far, sneaky, walking)
     local ok = false
     if name and db.storage[npc:id()] and db.storage[npc:id()].state_mgr then
         ok = pcall(function()
+
             state_mgr.set_state(npc, name, nil, nil, nil, { fast_set = true })
         end)
     end
@@ -350,8 +379,11 @@ local function apply_state(npc, slot, far, sneaky)
     end
     slot.state = nil
     return pcall(function()
+
         npc:set_movement_type(walking and move.walk or move.run)
+
         npc:set_mental_state(anim.danger)
+
         npc:set_sight(look.path_dir, nil, 0)
     end)
 end
@@ -359,9 +391,11 @@ end
 local function send_to(npc, lv)
     local used = nil
     if utils_obj and utils_obj.send_to_nearest_accessible_vertex then
+
         pcall(function() used = utils_obj.send_to_nearest_accessible_vertex(npc, lv, "nemesis_chase") end)
     end
     if type(used) == "number" and used < NO_VERTEX then return used end
+
     local ok = pcall(function() npc:set_dest_level_vertex_id(lv) end)
     return ok and lv or nil
 end
@@ -382,6 +416,7 @@ function drive_chase(npc, actor)
         if slot.cover_lv == cover and now - (slot.cover_at or -1000000) < RESEND_MS then return true, false end
         slot.cover_lv, slot.cover_at = cover, now
         pcall(_prep_path, npc)
+
         pcall(function() xcombat.set_destination(npc, cover) end)
         return apply_state(npc, slot, true), false
     end
@@ -396,7 +431,9 @@ function drive_chase(npc, actor)
         if not slot.holding then
             slot.holding = true
             pcall(function()
+
                 npc:set_desired_position()
+
                 npc:set_desired_direction()
             end)
             local here = nil

@@ -1,0 +1,53 @@
+-- Nemesis Config (round 117): the player's own file, gamedata/configs/nwss_player.ltx.
+
+local function dbg(...) nemesis_utils.log_tag("CONFIG", ...) end
+
+FILE = "nwss_player.ltx"
+
+local ini = nil
+
+local function open()
+    if ini then return ini end
+    if type(ini_file_ex) == "nil" then return nil end
+
+    local ok, f = pcall(ini_file_ex, FILE, true)
+    if ok and f then ini = f else dbg("!Nemesis ERROR: %s could not be opened (%s).", FILE, tostring(f)) end
+    return ini
+end
+
+function get(section, key, typ, def)
+    local f = open()
+    if not f then return def end
+
+    local ok, v = pcall(function() return f:r_value(section, key, typ, def) end)
+    if ok then return v end
+    return def
+end
+
+function set(section, key, val)
+    local f = open()
+    if not f then return false end
+
+    return pcall(function() f:w_value(section, key, val) end) == true
+end
+
+function save_checked(section, want)
+    local f = open()
+    if not f then return "failed", "(no file)" end
+
+    if not pcall(function() f:save() end) then return "failed", "(save)" end
+
+    local ok, fresh = pcall(ini_file_ex, FILE)
+    if not (ok and fresh) then return "unverified" end
+    local seen = false
+
+    pcall(function() seen = fresh:section_exist(section) end)
+    if not seen then return "unverified" end
+    for k, v in pairs(want or {}) do
+        local got = nil
+
+        pcall(function() got = fresh:r_value(section, k) end)
+        if tostring(got) ~= tostring(v) then return "failed", k end
+    end
+    return "ok"
+end

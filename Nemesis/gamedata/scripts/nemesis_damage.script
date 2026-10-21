@@ -13,7 +13,9 @@ end
 local function type_dr(id, r)
     local U = nemesis_utils
     if id ~= nil and id == S.boss_id then
-        if S.emission_hunt then return U.clamped("emission_dr", 30, 0, 85) / 100 end
+
+        local own = nemesis_events.ask("boss_dr")
+        if own then return own end
         return U.clamped("boss_dr", 30, 0, 85) / 100
     end
     if r and not r.named then return U.clamped("regular_dr", 0, 0, 50) / 100 end
@@ -91,6 +93,73 @@ end
 ---------------------------------------------------------------------------
 local gbo_wrapped = false
 
+---------------------------------------------------------------------------
+-- One bullet, one hit (round 118, owner: a hunter hit twice by one bullet skews the difficulty)
+---------------------------------------------------------------------------
+
+local SAME_BULLET_FRAMES = 1
+local IMPACTS_KEPT = 16
+local frame_no = 0
+function count_frame() frame_no = frame_no + 1 end
+local impact = {}
+local buck_cache = {}
+local same_logged_at = -1000000
+
+function on_bullet_impact(bullet)
+    if not bullet then return end
+    local tid = bullet.target_id
+    if not tid or tid == 65535 or not S.m[tid] then return end
+    local list = impact[tid]
+    if not list then list = {}; impact[tid] = list end
+    if #list >= IMPACTS_KEPT then table.remove(list, 1) end
+    list[#list + 1] = { id = bullet.bullet_id, sec = bullet.section, frame = frame_no }
+end
+
+local function next_impact(id)
+    local list = impact[id]
+    if not list then return nil end
+    while list[1] and frame_no - list[1].frame > SAME_BULLET_FRAMES do table.remove(list, 1) end
+    local b = table.remove(list, 1)
+    if not list[1] then impact[id] = nil end
+    return b
+end
+
+local function buckshot(sec)
+    if not sec then return false end
+    local b = buck_cache[sec]
+    if b == nil then
+        local n = 0
+
+        pcall(function() n = ini_sys:r_float_ex(sec, "buck_shot") or 0 end)
+        b = (tonumber(n) or 0) > 1
+        buck_cache[sec] = b
+    end
+    return b
+end
+
+local function same_bullet(r, shit, flags)
+    if not (r and shit) then return false end
+    local ok, fire = pcall(function() return shit.type == hit.fire_wound end)
+    if not (ok and fire) then return false end
+    local b = next_impact(r.id)
+    local now = time_global()
+    if not (b and b.id ~= nil) or buckshot(b.sec) then return false end
+    if r.bullet_id == b.id and frame_no - (r.bullet_frame or -1000000) <= SAME_BULLET_FRAMES then
+        shit.power = 0
+        pcall(function() shit.bone_id = 65535 end)
+        if flags then flags.ret_value = false end
+        if now - same_logged_at > 5000 then
+            same_logged_at = now
+            dbg("Nemesis: one bullet hit '%s' again: the second hit is dropped.", r.name or "?")
+        end
+        return true
+    end
+    r.bullet_id, r.bullet_frame = b.id, frame_no
+    return false
+end
+
+function forget_bullets() impact = {} end
+
 local function _draft_id(shit) return shit.draftsman and shit.draftsman:id() end
 local function boss_npc_hit(shit)
     local ok, did = pcall(_draft_id, shit)
@@ -130,7 +199,10 @@ function hit_mult(id, bone_id, by_player)
     end
     local _, _, body_pct, head_pct = hunter_br_now(id)
     local m = damage_mult(id, (is_head(bone_id) and head_pct or body_pct) or 0)
-    if not by_player and nemesis_member.is_boss(id) and S.emission_hunt then m = m * (1 - nemesis_emission.npc_cut()) end
+    if not by_player and nemesis_member.is_boss(id) then
+        local cut = nemesis_events.ask("boss_npc_cut", id)
+        if cut then m = m * (1 - cut) end
+    end
     return m
 end
 
@@ -154,9 +226,15 @@ function on_before_hit(npc, shit, bone_id, flags)
         return
     end
     if not nemesis_member.hittable(npc) then return end
+
+    if not gbo_wrapped and same_bullet(r, shit, flags) then return end
     r.bh_frame = time_global()
     local by_player = shit ~= nil and from_player(shit)
     if shit then note_hit(r, shit.power, shooter_id(shit.draftsman), by_player, true) end
+
+    if by_player and r.cloak_vis and r.player_hit_at == time_global() and nemesis_member.is_boss(id) then
+        nemesis_fx.reveal(npc, r, time_global(), "hit")
+    end
     if not r.named then
 
         if S.phase == "hunting" and shit and not (gbo_wrapped and by_player) then
@@ -193,13 +271,14 @@ local bypass_logged = {}
 local function bypass_hit(npc, r, amount, who, bone)
     if S.phase ~= "hunting" or r.retreat_at or not r.named or nemesis_member.is_boss(r.id) then return end
     local wid = shooter_id(who)
+
     note_hit(r, amount, wid, wid ~= nil and db.actor ~= nil and wid == db.actor:id(), false)
     if not bypass_logged[r.id] then
         bypass_logged[r.id] = true
         dbg("Nemesis: a hit on '%s' skipped the damage check (smart cover); guarded here.", r.name or "?")
     end
     if would_floor(npc, amount, bone) then
-        pcall(function() npc:invulnerable(true) end)
+        nemesis_engine.set_invulnerable(npc, true)
         r.bypass_guard = true
         dbg("Nemesis: '%s' blocked a lethal hit that skipped the damage check.", r.name or "?")
         if not in_grace(r) then ask_retreat(npc, r) end
@@ -209,7 +288,7 @@ end
 function lift_bypass_guard(obj, r)
     if not r.bypass_guard or r.retreat_at then return end
     r.bypass_guard = nil
-    pcall(function() obj:invulnerable(false) end)
+    nemesis_engine.set_invulnerable(obj, false)
 end
 
 function on_hunter_hit(npc, amount, dir, who, bone)
@@ -268,6 +347,7 @@ end
 local BOSS_MISS_SPREAD = 10
 
 local function _aims_at_player(obj)
+
     local be = obj:best_enemy()
     return not be or be:id() == 0
 end
@@ -404,6 +484,7 @@ function install_br_wrap()
     end
     if orig ~= field then
         dbg("Nemesis: grok_bo's hit function is wrapped by another script; hooking the original, the wrapper stays out of NPC hits as in stock GAMMA.")
+
         pcall(function() UnregisterScriptCallback("npc_on_before_hit", field) end)
     end
 
@@ -424,6 +505,8 @@ function install_br_wrap()
 
     local function wrapped(npc, shit, bone_id, flags)
         local r = npc and nemesis_state.member(npc:id())
+
+        if r and nemesis_member.hittable(npc) and same_bullet(r, shit, flags) then return end
 
         if r and not nemesis_member.hittable(npc) then return orig(npc, shit, bone_id, flags) end
 
@@ -484,7 +567,49 @@ function install_br_wrap()
     end
     pcall(function() UnregisterScriptCallback("npc_on_before_hit", orig) end)
     gbo.npc_on_before_hit = wrapped
+
     RegisterScriptCallback("npc_on_before_hit", wrapped)
     gbo_wrapped = true
     dbg("Nemesis: GAMMA ballistics hooked (hunter BR and mitigation follow the player).")
+end
+
+---------------------------------------------------------------------------
+-- Settings (round 122, restructure step 7): this script declares the Combat page
+---------------------------------------------------------------------------
+
+function mcm_page()
+    return { id = "combat", sh = true, text = "ui_mcm_nemesis_page_combat", gr = {
+            { id = "title", type = "slide", link = "ui_options_slider_player", text = "ui_mcm_nemesis_title", size = {512, 50}, spacing = 20 },
+            { id = "head_hunters", type = "title", text = "ui_mcm_nemesis_head_hunters", align = "l", clr = nemesis_mcm.HEAD_CLR },
+            { id = "retreat_health", type = "track", val = 2, def = 30, min = 10, max = 60, step = 5, prec = 0, hint = "nemesis_retreat_health" },
+            { id = "accuracy_boost", type = "track", val = 2, def = 10, min = 0, max = 40, step = 1, prec = 0, hint = "nemesis_accuracy_boost" },
+            { id = "regular_dr", type = "track", val = 2, def = 0, min = 0, max = 50, step = 5, prec = 0, hint = "nemesis_regular_dr" },
+            { id = "named_dr", type = "track", val = 2, def = 25, min = 0, max = 80, step = 5, prec = 0, hint = "nemesis_named_dr" },
+            { id = "line_escalation", type = "line" },
+            { id = "head_escalation", type = "title", text = "ui_mcm_nemesis_head_escalation", align = "l", clr = nemesis_mcm.HEAD_CLR },
+            { id = "esc_step", type = "track", val = 2, def = 2, min = 0, max = 5, step = 0.5, prec = 1, hint = "nemesis_esc_step" },
+            { id = "esc_max", type = "track", val = 2, def = 20, min = 0, max = 40, step = 5, prec = 0, hint = "nemesis_esc_max" },
+            { id = "max_damage_reduction", type = "track", val = 2, def = 70, min = 50, max = 95, step = 5, prec = 0, hint = "nemesis_max_damage_reduction" },
+            { id = "reset_on_death", type = "check", val = 1, def = true, hint = "nemesis_reset_on_death" },
+            { id = "line_armour", type = "line" },
+            { id = "head_armour", type = "title", text = "ui_mcm_nemesis_head_armour", align = "l", clr = nemesis_mcm.HEAD_CLR },
+            { id = "br_bonus", type = "track", val = 2, def = 0, min = 0, max = 0.5, step = 0.05, prec = 2, hint = "nemesis_br_bonus" },
+            { id = "pct_bonus", type = "track", val = 2, def = 0, min = 0, max = 50, step = 5, prec = 0, hint = "nemesis_pct_bonus" },
+            { id = "line_bodies", type = "line" },
+            { id = "head_bodies", type = "title", text = "ui_mcm_nemesis_head_bodies", align = "l", clr = nemesis_mcm.HEAD_CLR },
+            { id = "reserve_kills", type = "check", val = 1, def = true, hint = "nemesis_reserve_kills" },
+            { id = "line_exe", type = "line" },
+            { id = "head_exe", type = "title", text = "ui_mcm_nemesis_head_exe", align = "l", clr = nemesis_mcm.HEAD_CLR },
+            { id = "exe_ai", type = "check", val = 1, def = true, hint = "nemesis_exe_ai" },
+            { id = "hunter_attack_pull", type = "track", val = 2, def = 600, min = 0, max = 1800, step = 100, prec = 0, hint = "nemesis_hunter_attack_pull" },
+            { id = "boss_attack_pull", type = "track", val = 2, def = 300, min = 0, max = 1800, step = 100, prec = 0, hint = "nemesis_boss_attack_pull" },
+        } }
+end
+
+function mcm_presets()
+    return {
+        easy = { retreat_health = 35, accuracy_boost = 8, regular_dr = 0, named_dr = 20, esc_step = 1.5, esc_max = 15, max_damage_reduction = 55, br_bonus = 0, pct_bonus = 0 },
+        medium = { retreat_health = 30, accuracy_boost = 10, regular_dr = 0, named_dr = 25, esc_step = 2, esc_max = 20, max_damage_reduction = 70, br_bonus = 0, pct_bonus = 0 },
+        hard = { retreat_health = 25, accuracy_boost = 12, regular_dr = 0, named_dr = 30, esc_step = 2.5, esc_max = 25, max_damage_reduction = 85, br_bonus = 0, pct_bonus = 0 },
+    }
 end

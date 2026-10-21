@@ -19,7 +19,7 @@ function exists()
     pcall(function()
         local se = nemesis_engine.se(g)
         local n = se and se:alive() and se:character_name()
-        alive = n ~= nil and n ~= false and (nemesis_utils.is_boss_name(n) or n == nemesis_emission.boss_name())
+        alive = n ~= nil and n ~= false and (nemesis_utils.is_boss_name(n) or nemesis_events.ask("is_boss_name", n) == true)
     end)
     if alive then return true end
     S.boss_ghost = nil
@@ -80,6 +80,7 @@ function icon(id)
     local ic = nil
     pcall(function()
         local obj = nemesis_engine.obj(id)
+
         ic = obj and obj:character_icon() or nemesis_engine.se(id):character_icon()
     end)
     if type(ic) ~= "string" or ic == "" then return nil end
@@ -129,7 +130,6 @@ function on_killed(id, by_player, name)
     S.boss_id = nil
     S.boss_sneak = nil
     nemesis_fx.forget_boss()
-    nemesis_emission.on_boss_killed(id)
     dbg("Nemesis: the boss '%s' is dead (%s).", tostring(name), by_player and "killed by you" or "not by you")
     if by_player and nemesis_mcm.get_bool("boss_stash", true) then
         S.stash_owed = name or nemesis_utils.get_npc_name()
@@ -149,6 +149,7 @@ local function stash_on_this_map(name)
     end
     local label = name
     pcall(function()
+
         local st = game.translate_string("st_stash_of")
         if type(st) == "string" and st ~= "" and st ~= "st_stash_of" then label = st .. " " .. name end
     end)
@@ -162,20 +163,23 @@ local function stash_on_this_map(name)
 
     local cnt0, last0 = nil, nil
     pcall(function()
+
         cnt0 = load_var(db.actor, "toolkit_reward_count")
         last0 = load_var(db.actor, "toolkit_reward_last")
-        save_var(db.actor, "toolkit_reward_count", 1000000)
+        nemesis_engine.save_var(db.actor, "toolkit_reward_count", 1000000)
     end)
+
     local ok2, got = pcall(tm.set_random_stash, nil, str, nil, id)
     pcall(function()
-        save_var(db.actor, "toolkit_reward_count", cnt0)
-        save_var(db.actor, "toolkit_reward_last", last0)
+        nemesis_engine.save_var(db.actor, "toolkit_reward_count", cnt0)
+        nemesis_engine.save_var(db.actor, "toolkit_reward_last", last0)
     end)
     if not ok2 then return false end
     if got then return true end
 
     local marked = false
     pcall(function()
+
         marked = level.map_has_object_spot(id, "treasure") ~= 0 or level.map_has_object_spot(id, "treasure_searched") ~= 0
     end)
     return marked
@@ -304,6 +308,7 @@ local DEBUG_MARK_TYPE = "red_location"
 local debug_mark_id, debug_mark_at = nil, nil
 
 local function drop_debug_mark()
+
     if debug_mark_id and level.present() then level.map_remove_object_spot(debug_mark_id, DEBUG_MARK_TYPE) end
     debug_mark_id = nil
 end
@@ -311,11 +316,14 @@ end
 function debug_mark_tick(gt)
     if debug_mark_at and gt - debug_mark_at < DEBUG_MARK_MS and gt >= debug_mark_at then return end
     debug_mark_at = gt
+
     if not level.present() then return end
     local want = nemesis_mcm.get_bool("debug_mode", false) and S.boss_id or nil
     if debug_mark_id and debug_mark_id ~= want then drop_debug_mark() end
     if want and not debug_mark_id then
+
         if level.map_has_object_spot(want, DEBUG_MARK_TYPE) ~= 0 then return end
+
         level.map_add_object_spot(want, DEBUG_MARK_TYPE, "Boss (debug): " .. tostring(nemesis_state.name_of(want) or "?"))
         if level.map_has_object_spot(want, DEBUG_MARK_TYPE) ~= 0 then debug_mark_id = want end
     end
@@ -326,3 +334,54 @@ function reset_runtime()
     stash_tried_level = nil
     warned = false
 end
+
+local RELOAD_M = 50
+function on_actor_reload(wpn)
+    if S.phase ~= "hunting" or not S.boss_id or S.reload_said then return end
+    local obj = nemesis_engine.obj(S.boss_id)
+    if not (obj and nemesis_fx.alive_obj(obj) and db.actor) then return end
+    local d = 9999
+
+    pcall(function() d = obj:position():distance_to(db.actor:position()) end)
+    if d > RELOAD_M then return end
+    S.reload_said = true
+    news(nemesis_utils.reload_line())
+    dbg("Nemesis: the boss saw you reload.")
+end
+
+---------------------------------------------------------------------------
+-- Settings (round 122, restructure step 7): this script declares the Boss page
+---------------------------------------------------------------------------
+
+function mcm_page()
+    return { id = "boss", sh = true, text = "ui_mcm_nemesis_page_boss", gr = {
+            { id = "title", type = "slide", link = "ui_options_slider_player", text = "ui_mcm_nemesis_title", size = {512, 50}, spacing = 20 },
+            { id = "head_names", type = "title", text = "ui_mcm_nemesis_head_names", align = "l", clr = nemesis_mcm.HEAD_CLR },
+            { id = "npc_name", type = "input", val = 0, def = "Bogdan Kravets", hint = "nemesis_npc_name" },
+            { id = "isg_boss_name", type = "input", val = 0, def = "Lyutomyr Kat", hint = "nemesis_isg_boss_name" },
+            { id = "line_appearance", type = "line" },
+            { id = "head_appearance", type = "title", text = "ui_mcm_nemesis_head_appearance", align = "l", clr = nemesis_mcm.HEAD_CLR },
+            { id = "boss_chance", type = "track", val = 2, def = 4, min = 0, max = 20, step = 1, prec = 0, hint = "nemesis_boss_chance" },
+            { id = "boss_min_day", type = "track", val = 2, def = 7, min = 1, max = 7, step = 1, prec = 0, hint = "nemesis_boss_min_day" },
+            { id = "boss_escort", type = "track", val = 2, def = 4, min = 0, max = 4, step = 1, prec = 0, hint = "nemesis_boss_escort" },
+            { id = "boss_distortion", type = "track", val = 2, def = 40, min = 0, max = 100, step = 5, prec = 0, hint = "nemesis_boss_distortion" },
+            { id = "line_toughness", type = "line" },
+            { id = "head_toughness", type = "title", text = "ui_mcm_nemesis_head_toughness", align = "l", clr = nemesis_mcm.HEAD_CLR },
+            { id = "boss_dr", type = "track", val = 2, def = 30, min = 0, max = 85, step = 5, prec = 0, hint = "nemesis_boss_dr" },
+            { id = "boss_npc_damage", type = "track", val = 2, def = 200, min = 100, max = 400, step = 25, prec = 0, hint = "nemesis_boss_npc_damage" },
+            { id = "boss_misses", type = "track", val = 2, def = 2, min = 0, max = 4, step = 1, prec = 0, hint = "nemesis_boss_misses" },
+            { id = "line_reward", type = "line" },
+            { id = "head_reward", type = "title", text = "ui_mcm_nemesis_head_reward", align = "l", clr = nemesis_mcm.HEAD_CLR },
+            { id = "boss_stash", type = "check", val = 1, def = true, hint = "nemesis_boss_stash" },
+        } }
+end
+
+function mcm_presets()
+    return {
+        easy = { boss_chance = 3, boss_min_day = 7, boss_escort = 3, boss_dr = 20, boss_npc_damage = 150, boss_misses = 3 },
+        medium = { boss_chance = 4, boss_min_day = 7, boss_escort = 4, boss_dr = 30, boss_npc_damage = 200, boss_misses = 2 },
+        hard = { boss_chance = 5, boss_min_day = 6, boss_escort = 4, boss_dr = 40, boss_npc_damage = 250, boss_misses = 1 },
+    }
+end
+
+function mcm_force_next() return { "boss", "ui_mcm_nemesis_force_next_boss" } end

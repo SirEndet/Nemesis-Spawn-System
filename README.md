@@ -4,66 +4,38 @@ A recurring Monolith hunter for S.T.A.L.K.E.R. Anomaly / G.A.M.M.A.
 
 Every so often, a hunter comes for you. He spawns out of sight, sprints after you and is very hard to kill. Hurt him badly enough and he teleports away in a Monolith burst. He always comes back, and each time he is stronger.
 
-**Status:** Release Candidate 11.
+**Version 1.0.0** · [Download the latest release](https://github.com/SirEndet/Nemesis-Wave-Spawn-System/releases/latest) · [Player guide and every setting](Nemesis/Nemesis_README.md)
 
-## Features
+## Highlights
 
-- **Hunts with a warning.** Radio static (and, if you want it, a strange PDA message), then a Monolith squad spawns 80 to 140 m away and comes straight for you.
-- **Named hunters.** Ranked Monolith hunters (Acolyte, Disciple, Zealot, Sentinel, Templar, Herald) that normal hits can't kill, whoever fires them. When badly hurt they turn invulnerable, flee away from you to cover and teleport out. They always escape. Regular squad members and the boss leave a body to loot when you kill them, also when an NPC lands the last shot within 2 seconds of yours.
-- **Escalation.** Named hunters wear a copy of your armour, and every hunt you beat makes the next one a little tougher, up to a cap. One damage formula with sliders for each kind of hunter keeps it fair. Escaping a hunt eases it one step; dying to a hunter or beating the boss halves it.
-- **No running away.** Change maps any way you like and they follow you, arriving from the side you came in on. They remember where you beat them, and if you hide in a building they wait outside, then storm in.
-- **Squads.** Up to four extra stalkers who flank you. Some can be named hunters too; the regulars are normal stalkers by default (a slider makes them tougher). They keep hunting you after the named hunters are gone.
-- **The boss.** A rare, tougher, always-cloaked hunter with his own look and messages, who teleports in with an escort of named hunters and sneaks up to assassinate you while they keep you busy. He fights anyone in his way, NPCs included, but turns on you the moment you shoot him. He fights to the death; kill him yourself and a rare stash is marked on your PDA (on by default). When he is close, your screen starts to waver.
-- **The emission boss.** When an emission meets a hunt, the hunt is called off and Ilarion Hrech, a Sin (UNISG if you play Monolith, Zombified or Sin), comes instead, once the emission's waves start to hit (each emission also has a small chance of its own to bring him). Ghosts gather outside your shelter, close in on its doors and shove you back inside. Lightning strikes when he teleports in, and a horde of zombies (and snorks, further north) comes in from outside ahead of him while he walks in through the storm. Only his door opens for him.
-- **Atmosphere.** A psy hum that comes from the nearest named hunter, so you can hear where he is, an optional cloak while they stalk you, and PDA taunts that get personal over time. Those killed by others vanish; you never see them fall.
-- **Playing as Monolith, Zombified or Sin?** The hunters are UNISG instead, with military ranks, and their boss is Lyutomyr Kat, UNISG's best fighter.
-- **Fully configurable** in MCM, with an Easy / Medium / Hard difficulty setting that moves every difficulty slider about 20% either way: every setting is listed in [Nemesis/Nemesis_README.md](Nemesis/Nemesis_README.md).
+- **Hunts that find you.** A radio warning, then a Monolith squad comes straight for you, led by named hunters that teleport out when badly hurt and come back stronger.
+- **No running away.** They follow you to other maps, remember where you beat them, and wait outside when you hide in a building.
+- **The boss.** A rare, cloaked hunter with an escort, who sneaks up behind you and fights to the death.
+- **The emission boss.** When an emission meets a hunt, he comes instead: ghosts trap you in your shelter while he walks in through the storm.
+- **Fair, and yours to tune.** Easy, Medium or Hard in one click, and every setting in MCM.
+- **Plays well with others.** Works alongside AlifePlus, AlifeTactics, Wearable Devices and Obrien GAMMA Overhaul. Playing Monolith, Zombified or Sin? UNISG hunts you instead.
 
 ## Requirements
 
-| Requirement | Notes |
-|---|---|
-| [G.A.M.M.A.](https://github.com/Grokitach/Stalker_GAMMA) | Or S.T.A.L.K.E.R. Anomaly 1.5.3 with the [modded exes](https://github.com/themrdemonized/xray-monolith) (2025.9.10 or newer) and MCM. |
-| **[xlibs](https://github.com/damiansirbu-stalker/xlibs) 1.9.1 or newer** | By Damian Sirbu. Not included in GAMMA; install it first. Also on [ModDB](https://www.moddb.com/mods/stalker-anomaly/addons/xlibs-1001). |
+- **[G.A.M.M.A.](https://github.com/Grokitach/Stalker_GAMMA)**, or S.T.A.L.K.E.R. Anomaly 1.5.3 with MCM.
+- **The latest [modded exes](https://github.com/themrdemonized/xray-monolith)** by themrdemonized. GAMMA's installer keeps them up to date.
+- **[xlibs](https://github.com/damiansirbu-stalker/xlibs) 1.9.0 or newer** by Damian Sirbu. GAMMA already includes it as **482- Xlib - damian_sirbu**, switched off: just tick it in Mod Organizer. Otherwise get it from [GitHub](https://github.com/damiansirbu-stalker/xlibs) or [ModDB](https://www.moddb.com/mods/stalker-anomaly/addons/xlibs-1001).
 
-## Compatibility
+## Install (Mod Organizer 2)
 
-Works with:
-- **AlifePlus** and **AlifeTactics**: no setup needed. With *Reserve your kills* on, AlifePlus' own "reserve own kills" setting decides who may loot your Nemesis kills.
-- **Wearable Devices** by sulikz: detected by itself. When a hunt spawns, your device screens flicker; when the boss comes, they go black for 2 seconds (General page: *Wearable Devices mod Malfunction*).
-- **Obrien GAMMA Overhaul**: detected by itself, no setup needed.
+1. Make sure xlibs is installed and ticked (in GAMMA: tick **482- Xlib - damian_sirbu**).
+2. Download `NemesisWaveSpawnSystem_1.0.0.zip` from the [latest release](https://github.com/SirEndet/Nemesis-Wave-Spawn-System/releases/latest).
+3. In Mod Organizer 2, click **Install a new mod from an archive** and pick the zip.
+4. Tick the mod. Load order doesn't matter.
+5. Start the game. Settings are under **MCM → Nemesis Wave Spawn System**.
 
-## Installation (Mod Organizer 2)
+**Updating:** install over the old version and choose *Replace*; your saves and settings carry over. Don't update in the middle of a hunt.
 
-1. Install **[xlibs](https://github.com/damiansirbu-stalker/xlibs)** 1.9.1 or newer first, following its own instructions.
-2. Download the mod from the **[Latest Release](https://github.com/SirEndet/Nemesis-Wave-Spawn-System/releases/latest)**: under *Assets*, click the `NemesisWaveSpawnSystem_*.zip` file. (Older versions are on the [releases page](https://github.com/SirEndet/Nemesis-Wave-Spawn-System/releases).)
-3. In Mod Organizer 2, click **Install a new mod from an archive** (the CD icon) and pick the downloaded zip.
-4. Name the mod `Nemesis Wave Spawn System` and click **OK**. The zip is already laid out for MO2, so there is nothing else to set.
-5. Tick the mod in the left pane to enable it. Load order doesn't matter, as long as xlibs is installed and enabled.
-6. Start the game. Settings are under **MCM → Nemesis Wave Spawn System**.
+**Uninstalling:** tick *Prepare for uninstall* in MCM first, then save. The [player guide](Nemesis/Nemesis_README.md#uninstalling) has the steps.
 
-**Manual install:** unpack the release zip and copy its `gamedata` folder into an empty MO2 mod (right-click the left pane → *Create empty mod*), or into your Anomaly folder.
+## Found a bug?
 
-**Updating:** install the new release over the old one (choose *Replace* when MO2 asks). Your MCM settings are kept.
-
-**Note on saves:** the first hunt comes after an 18-day grace period by default, counted from when the mod is first loaded in a save. You can shorten it in MCM.
-
-## Repository layout
-
-```
-Nemesis/                  the mod (this is what goes into Mod Organizer)
-  gamedata/               scripts, configs, MCM text and the PDA icon
-  Nemesis_README.md       player guide with every setting and its default
-LICENSE                   MIT
-```
-
-## Uninstalling
-
-Load a save made while no hunt was running: a save made during a hunt holds the hunt squad, which only exists with this mod, and will most likely not load without it. The easy way: in MCM → Nemesis Wave Spawn System → Debug, tick **Prepare for uninstall** and apply, wait for the PDA message that it is safe, save, then remove the mod and load that save.
-
-## Reporting a bug
-
-Turn on **Debug logs** in MCM (Debug & tools page), play until the problem happens, and attach your log file (`anomaly/appdata/logs/xray_<name>.log`) to a GitHub issue. Lines starting with `!Nemesis` are errors. If the game crashed, the same log has the crash at the end.
+Turn on **Debug logs** in MCM (Debug & tools), play until it happens, and attach your log (`appdata/logs/xray_<name>.log`) to a [GitHub issue](https://github.com/SirEndet/Nemesis-Wave-Spawn-System/issues). If you ever see a yellow **NEMESIS IMPORTANT ERROR (please report)** line, please send that log.
 
 ## Credits
 
@@ -73,6 +45,7 @@ Turn on **Debug logs** in MCM (Debug & tools page), play until the problem happe
   xlibs by Damian Sirbu  
   https://github.com/damiansirbu-stalker
 
+- **themrdemonized**: the modded exes ([xray-monolith](https://github.com/themrdemonized/xray-monolith)), the engine this mod is written for.
 - **SirEndet**: design, testing and direction.
 
 Built with AI assistance (Claude by Anthropic).

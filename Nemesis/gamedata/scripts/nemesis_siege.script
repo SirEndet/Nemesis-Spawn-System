@@ -58,10 +58,11 @@ function vertex(npc, actor)
         local p = vector()
         p:set(apos.x + math.cos(a) * SIEGE_RING_M, apos.y, apos.z + math.sin(a) * SIEGE_RING_M)
         local v = nil
-        pcall(function() v = level.vertex_id(p) end)
+        pcall(function() v = nemesis_engine.vertex_at(p) end)
         if v and v < NO_VERTEX then
             local inside = true
-            pcall(function() inside = xcombat.is_indoor(level.vertex_position(v)) end)
+
+            pcall(function() inside = xcombat.is_indoor(nemesis_engine.vertex_pos(v)) end)
             if not inside then lv = v; break end
         end
     end

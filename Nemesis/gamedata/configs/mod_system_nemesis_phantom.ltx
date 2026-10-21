@@ -4,4 +4,11 @@
 [nemesis_phantom]:m_phantom
 visuals                 = monsters\phantom\zombi_0, monsters\phantom\krovosos_0, monsters\phantom\snork_0
 contact_hit             = 0
+; Round 130 (owner's play test: one kept drifting after you forever): vanilla's phantom flies at
+; 0.5 m/s and only ends when it touches you (xray-monolith phantom.cpp, CPhantom::OnFlyState: the
+; centres within both radii), so while you move it never arrives. 8 m/s outruns a sprint; turning
+; at 8 rad/s its turning circle has a 1 m radius (speed / angular_speed), inside the touch distance,
+; so it cannot circle you either.
+speed                   = 8
+angular_speed           = 8
 script_binding          = phantom_manager.bind_phantom

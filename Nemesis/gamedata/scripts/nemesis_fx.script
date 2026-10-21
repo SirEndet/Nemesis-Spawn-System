@@ -21,8 +21,7 @@ function play_retreat_fx(pos)
     local parti = nemesis_engine.particle_at("anomaly2\\teleport_out_00", spot)
     if parti then keep_fx(parti) else dbg("Nemesis: retreat particle failed") end
 
-    local snd = nemesis_engine.play_sound_at("anomaly\\teleport_incoming", spot, nemesis_utils.volume_setting("teleport_volume", 40))
-    if snd then keep_fx(snd) end
+    nemesis_sound.teleport(spot)
 end
 
 ---------------------------------------------------------------------------
@@ -47,7 +46,8 @@ end
 function alive_obj(obj) return nemesis_engine.alive(obj) end
 function mesh_exists(path) return nemesis_engine.mesh_exists(path) end
 
-local function _set_visual(obj, vis) obj:set_visual_name(vis) end
+local function _set_visual(obj, vis) if not nemesis_engine.set_visual(obj, vis) then error("refused or failed") end end
+
 local function _get_visual(obj) return obj:get_visual_name() end
 
 function set_visual(obj, vis)
@@ -88,13 +88,7 @@ end
 
 function remove_object(se)
     if not se then return false end
-    return pcall(function()
-        if type(alife_release) == "function" then
-            alife_release(se)
-        else
-            alife():release(se, true)
-        end
-    end)
+    return nemesis_engine.release(se)
 end
 
 function queue_squad_cleanup(id)
@@ -108,6 +102,7 @@ local function process_squad_cleanup(gt)
             local sq = nemesis_engine.se(id)
             local n, is_squad = 1, false
             pcall(function()
+
                 n = sq:npc_count()
                 is_squad = sq:clsid() == clsid.online_offline_group_s
             end)
@@ -124,7 +119,7 @@ local function process_vanish(gt)
             vanish_queue[id] = nil
             local se = nemesis_engine.se(id)
             local is_npc = false
-            pcall(function() is_npc = IsStalker(nil, se:clsid()) end)
+            is_npc = nemesis_engine.is_stalker(se)
             if se and is_npc then
                 local ok, err = remove_object(se)
                 if ok then
@@ -172,7 +167,7 @@ local function wd_hide(on)
     local ok, err = pcall(on and wd_api.hide_screens or wd_api.show_screens)
     c = clock_ms() - c
     wd_cost = wd_cost + c
-    if not ok then wd_dbg("!ERROR: Wearable Devices %s failed: %s", on and "hide_screens" or "show_screens", tostring(err)) end
+    if not ok then wd_dbg("!Nemesis ERROR: Wearable Devices %s failed: %s", on and "hide_screens" or "show_screens", tostring(err)) end
     return c
 end
 
@@ -222,7 +217,9 @@ end
 function wd_on_zoom_in()
     if not wd() then return end
     pcall(function()
+
         local w = db.actor:active_item()
+
         binoc = w ~= nil and ini_sys:r_string_ex(w:section(), "class") == "WP_BINOC"
     end)
     if binoc and wd_start then
@@ -285,7 +282,7 @@ function on_enemy_eval(npc, enemy, flags)
         return
     end
 
-    if nemesis_emission.no_fight(npc:id(), enemy:id()) then
+    if nemesis_events.ask("no_fight", npc:id(), enemy:id()) then
         flags.override = true
         flags.result = false
         return
@@ -307,13 +304,15 @@ end
 local function hostile_bump(obj)
     local found = false
     pcall(function()
+
         level.iterate_nearest(obj:position(), BUMP_M, function(o)
             if found or not o or o:id() == 0 or o:id() == obj:id() then return end
             if nemesis_state.member(o:id()) then return end
 
-            if not (IsMonster(o) or IsStalker(o)) or not alive_obj(o) then return end
-            if IsMonster(o) then found = true
-            elseif IsStalker(o) then
+            if not (nemesis_engine.is_mutant(o) or nemesis_engine.is_stalker(o)) or not alive_obj(o) then return end
+            if nemesis_engine.is_mutant(o) then found = true
+            elseif nemesis_engine.is_stalker(o) then
+
                 local ok, rel = pcall(function() return obj:relation(o) end)
                 local ok2, rel2 = pcall(function() return o:relation(obj) end)
                 if (ok and rel == game_object.enemy) or (ok2 and rel2 == game_object.enemy) then found = true end
@@ -350,7 +349,7 @@ function cloak_update(obj, r, gt, actor)
     local id = r.id
 
     local enabled
-    if id == S.boss_id then enabled = not r.player_struck and not S.emission_hunt
+    if id == S.boss_id then enabled = not r.player_struck and not nemesis_events.ask("boss_no_cloak")
     else enabled = nemesis_mcm.get_bool("hunter_cloak", true) end
     enabled = enabled and invisible_model_exists()
     local hit = r.hit_at and gt - r.hit_at < HIT_REVEAL_MS
@@ -429,16 +428,7 @@ end
 -- Psy hum
 ---------------------------------------------------------------------------
 
-local HUM_FULL_M, HUM_MAX_M = 10, 100
-local HUM_RAMP = 0.25
-local hum = nil
-
-function hum_stop()
-    if not hum then return end
-    pcall(function() hum.snd:stop() end)
-    dbg("Nemesis: psy hum stops.")
-    hum = nil
-end
+function hum_stop(...) return nemesis_sound.hum_stop(...) end
 
 function measure(actor)
     local nearest, boss_d, near_id, hum_d = nil, nil, nil, nil
@@ -450,7 +440,7 @@ function measure(actor)
             local ok, d = pcall(_dist, obj, actor)
             if ok then
                 if not r.retreat_at and (not nearest or d < nearest) then nearest, near_id = d, id end
-                if not r.retreat_at and hum and hum.id == id then hum_d = d end
+                if not r.retreat_at and nemesis_sound.hum_id() == id then hum_d = d end
                 if id == S.boss_id then boss_d = d end
             end
         end
@@ -458,35 +448,7 @@ function measure(actor)
     return nearest, boss_d, near_id, hum_d
 end
 
-function hum_update(nearest, near_id, hum_d)
-    local vol = nemesis_utils.volume_setting("hum_volume", 10)
-
-    local id = (hum and hum_d and hum_d <= HUM_MAX_M and hum.id) or (nearest and nearest <= HUM_MAX_M and near_id) or nil
-    local obj = id and vol > 0.001 and nemesis_engine.obj(id)
-    if not obj then hum_stop() return end
-    if hum and hum.id ~= id then hum_stop() end
-    local p = obj:position()
-    local pos = vector():set(p.x, p.y + 1.5, p.z)
-    if not hum then
-        local path = nemesis_utils.psy_voices()
-        if not path then return end
-        local ok, snd = pcall(function()
-            local s = sound_object(path)
-            s.volume = 0
-            s:play_at_pos(obj, pos, 0, sound_object.s3d + sound_object.looped)
-            s.min_distance, s.max_distance = HUM_FULL_M, HUM_MAX_M
-            return s
-        end)
-        if not (ok and snd) then return end
-        hum = { snd = snd, id = id, vol = 0 }
-        dbg("Nemesis: psy hum starts on %s (3D, full within %s m, gone at %s m).", tostring(nemesis_state.name_of(id) or id), HUM_FULL_M, HUM_MAX_M)
-    end
-    hum.vol = math.min(vol, hum.vol + vol * HUM_RAMP)
-    pcall(function()
-        hum.snd:set_position(pos)
-        hum.snd.volume = hum.vol
-    end)
-end
+function hum_update(...) return nemesis_sound.hum_update(...) end
 
 ---------------------------------------------------------------------------
 -- Boss distortion (MCM "Boss presence distortion", round 76)
@@ -511,6 +473,7 @@ end
 
 function distort_stop()
     if not distort then return end
+
     pcall(function() xpp.release(distort) end)
     distort = nil
 end
@@ -532,6 +495,7 @@ function distort_update(d)
     if not distort then
         if strength <= 0.001 or not distort_file_ok() then return end
         local h = nil
+
         pcall(function() h = xpp.create_effector(DISTORT_PPE, { cyclic = true, smoothing = DISTORT_SPEED }) end)
         if not h then return end
 
@@ -539,6 +503,7 @@ function distort_update(d)
         distort = h
         dbg("Nemesis: boss distortion starts (he is within %s m).", DISTORT_RANGE_M)
     end
+
     pcall(function() xpp.set_target(distort, strength) end)
 end
 
@@ -588,17 +553,28 @@ local function install_reserve_hook()
         dbg("!Nemesis ERROR: xr_corpse_detection.near_actor not found; bodies cannot be reserved.")
         return false
     end
-    local done = false
-    pcall(function()
-        done = xevent and not xevent.is_hooked("xr_corpse_detection", "near_actor")
-            and xevent.register_hook("xr_corpse_detection", "near_actor", near_actor_wrap) and true or false
-    end)
-    if not done then
+
+    local how = nil
+    local have_xevent = type(xevent) == "table" and type(xevent.register_hook) == "function"
+    local taken = false
+    if have_xevent then
+
+        pcall(function() taken = xevent.is_hooked("xr_corpse_detection", "near_actor") == true end)
+        if not taken then
+
+            local ok, done = pcall(xevent.register_hook, "xr_corpse_detection", "near_actor", near_actor_wrap)
+            if ok and done then how = "xlibs xevent hook" end
+        end
+    end
+    if not how then
         local orig = cd.near_actor
         cd.near_actor = function(obj, ...) return near_actor_wrap(orig, obj, ...) end
+        how = (taken and "wrapped on top of another mod's xevent hook")
+            or (have_xevent and "wrapped (xevent refused the hook)")
+            or "wrapped (this xlibs has no xevent)"
     end
     reserve_hooked = true
-    dbg("Nemesis: NPC looting of your Nemesis kills is gated (xr_corpse_detection.near_actor).")
+    dbg("Nemesis: NPC looting of your Nemesis kills is gated (xr_corpse_detection.near_actor: %s).", how)
     return true
 end
 
@@ -612,6 +588,7 @@ function reserve_body(id)
     end
     if not install_reserve_hook() then return end
     local sec = nil
+
     pcall(function() sec = nemesis_engine.se(id):section_name() end)
     S.reserved[id] = { t = nemesis_utils.game_seconds(), sec = sec }
     reserve_away[id] = nil
@@ -630,6 +607,7 @@ function reserve_tick(gt, actor)
         local why = nil
         local se = nemesis_engine.se(id)
         local sec = nil
+
         if se then pcall(function() sec = se:section_name() end) end
         if now - v.t > RESERVE_S or now < v.t then why = "2 in-game hours passed"
         elseif not se then why = "the body is gone"
@@ -637,6 +615,7 @@ function reserve_tick(gt, actor)
         else
             local far = true
             pcall(function()
+
                 if nemesis_utils.same_level(se, alife():actor()) ~= false then
                     far = se.position:distance_to(actor:position()) > RESERVE_AWAY_M
                 end
@@ -660,11 +639,11 @@ function reset_runtime()
     masked = {}
     reserve_away = {}
     neutral, neutral_any = {}, false
-    if hum then pcall(function() hum.snd:stop() end) end
-    hum = nil
+    nemesis_sound.reset_runtime()
     vanish_queue = {}
     squad_cleanup = {}
     if wd_start then wd_dbg("a load dropped the malfunction at step %d/%d (its first update turns the screens on).", wd_step, #wd_plan) end
     wd_api, wd_start, binoc = nil, nil, false
     nemesis_compat.forget_runtime()
+    nemesis_engine.forget_owned()
 end

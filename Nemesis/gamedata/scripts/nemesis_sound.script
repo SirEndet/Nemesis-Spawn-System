@@ -1,0 +1,167 @@
+-- Nemesis Sound (round 126, owner: every sound of the mod in one place)
+
+local function dbg(...) nemesis_utils.log_tag("SOUND", ...) end
+
+---------------------------------------------------------------------------
+-- Files and volumes
+---------------------------------------------------------------------------
+
+local sound_pick = {}
+function pick(key, paths)
+    if sound_pick[key] == nil then
+        sound_pick[key] = false
+        for _, p in ipairs(paths) do
+            if nemesis_engine.sound_exists(p) then sound_pick[key] = p; break end
+        end
+        if sound_pick[key] then dbg("Nemesis: %s sound: %s.", key, sound_pick[key])
+        else dbg("!Nemesis ERROR: no %s sound file found (tried %s); it stays silent.", key, table.concat(paths, ", ")) end
+    end
+    return sound_pick[key] or nil
+end
+
+local PSY_L = { "anomaly\\psy_voices_1_l" }
+local PSY_R = { "anomaly\\psy_voices_1_r" }
+function psy_voices()
+    local l = pick("psy voices (left)", PSY_L)
+    if not l then return nil end
+    return l, pick("psy voices (right)", PSY_R)
+end
+
+function volume(id, default)
+    local v = nemesis_mcm.get_number(id, default) / 100
+    if v < 0 then v = 0 end
+    if v > 1 then v = 1 end
+    return v
+end
+
+---------------------------------------------------------------------------
+-- One-shots
+---------------------------------------------------------------------------
+
+function play(path, vol)
+    if not path or (vol or 1) <= 0 then return false end
+    local ok, done = false, false
+
+    ok = pcall(function() done = xsound.play(path, { volume = vol or 1 }) end)
+    return ok and done == true
+end
+
+function play_at(path, pos, vol)
+    if not (path and pos) or (vol or 1) <= 0 then return false end
+    local ok, done = false, false
+
+    ok = pcall(function() done = xsound.play(path, { position = pos, volume = vol or 1 }) end)
+    return ok and done == true
+end
+
+function teleport(spot)
+    return play_at("anomaly\\teleport_incoming", spot, volume("teleport_volume", 40))
+end
+
+function pda_tip()
+
+    pcall(function() xr_sound.set_sound_play(AC_ID, "pda_tips") end)
+end
+
+local STATIC_SOUNDS = { "radio\\white_noise\\white_noise_heavy_fade_in", "radio\\white_noise\\white_noise_light", "ambient\\radar_1" }
+function warning(boss)
+    local snd = pick("warning static", STATIC_SOUNDS)
+    local vol = volume("warning_volume", 70)
+    if vol <= 0 then return end
+    if snd then play(snd, vol) end
+    if boss then
+        local psy_l, psy_r = psy_voices()
+        if psy_l then play(psy_l, vol) end
+        if psy_r then play(psy_r, vol) end
+    end
+end
+
+---------------------------------------------------------------------------
+-- The psy hum
+---------------------------------------------------------------------------
+
+HUM_FULL_M, HUM_MAX_M = 10, 100
+local HUM_RAMP = 0.25
+local hum = nil
+
+function hum_id() return hum and hum.id or nil end
+
+function hum_stop()
+    if not hum then return end
+
+    pcall(function() hum.snd:stop() end)
+    dbg("Nemesis: psy hum stops.")
+    hum = nil
+end
+
+function hum_update(nearest, near_id, hum_d)
+    local vol = volume("hum_volume", 10)
+
+    local id = (hum and hum_d and hum_d <= HUM_MAX_M and hum.id) or (nearest and nearest <= HUM_MAX_M and near_id) or nil
+    local obj = id and vol > 0.001 and nemesis_engine.obj(id)
+    if not obj then hum_stop() return end
+    if hum and hum.id ~= id then hum_stop() end
+    local p = obj:position()
+    local pos = vector():set(p.x, p.y + 1.5, p.z)
+    if not hum then
+        local path = psy_voices()
+        if not path then return end
+        local ok, snd = pcall(function()
+
+            local s = sound_object(path)
+            s.volume = 0
+
+            s:play_at_pos(obj, pos, 0, sound_object.s3d + sound_object.looped)
+            s.min_distance, s.max_distance = HUM_FULL_M, HUM_MAX_M
+            return s
+        end)
+        if not (ok and snd) then return end
+        hum = { snd = snd, id = id, vol = 0 }
+        dbg("Nemesis: psy hum starts on %s (3D, full within %s m, gone at %s m).", tostring(nemesis_state.name_of(id) or id), HUM_FULL_M, HUM_MAX_M)
+    end
+    hum.vol = math.min(vol, hum.vol + vol * HUM_RAMP)
+    pcall(function()
+
+        hum.snd:set_position(pos)
+        hum.snd.volume = hum.vol
+    end)
+end
+
+local WARM_DELAY_MS = 5000
+local warm_due = nil
+function reset_runtime()
+
+    if hum then pcall(function() hum.snd:stop() end) end
+    hum = nil
+    warm_due = time_global() + WARM_DELAY_MS
+end
+
+function warm_tick(gt)
+    if not warm_due or gt < warm_due then return end
+    warm_due = nil
+    local paths = { pick("warning static", STATIC_SOUNDS), "anomaly\\teleport_incoming" }
+    local l, r = psy_voices()
+    paths[#paths + 1] = l
+    paths[#paths + 1] = r
+    local n = 0
+    for _, p in pairs(paths) do
+
+        if p and pcall(function() local s = sound_object(p) end) then n = n + 1 end
+    end
+    dbg("Nemesis: %s sound files loaded ahead of the first hunt (nothing played).", tostring(n))
+end
+
+---------------------------------------------------------------------------
+-- Settings (round 126): the sound section of the General page
+---------------------------------------------------------------------------
+
+function mcm_sound_section()
+    return {
+        { id = "line_sound", type = "line" },
+        { id = "head_sound", type = "title", text = "ui_mcm_nemesis_head_sound", align = "l", clr = nemesis_mcm.HEAD_CLR },
+        { id = "warning_volume", type = "track", val = 2, def = 70, min = 0, max = 100, step = 5, prec = 0, hint = "nemesis_warning_volume" },
+        { id = "teleport_volume", type = "track", val = 2, def = 40, min = 0, max = 100, step = 5, prec = 0, hint = "nemesis_teleport_volume" },
+        { id = "hum_volume", type = "track", val = 2, def = 10, min = 0, max = 100, step = 5, prec = 0, hint = "nemesis_hum_volume" },
+        { id = "lightning_volume", type = "track", val = 2, def = 0, min = 0, max = 100, step = 5, prec = 0, hint = "nemesis_lightning_volume" },
+    }
+end

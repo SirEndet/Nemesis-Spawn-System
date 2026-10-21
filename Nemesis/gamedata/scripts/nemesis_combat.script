@@ -38,7 +38,9 @@ local function fight_range()
 end
 
 local function _dist(a, b) return a:position():distance_to(b:position()) end
+
 local function _see(a, b) return a:see(b) end
+
 local function _best_enemy(npc) return npc:best_enemy() end
 
 local function sees_player(npc, range)
@@ -54,13 +56,16 @@ local SHOOTER_MS = 20000
 local UNDER_FIRE_MS = 10000
 local function _threat(npc, be, range)
     if be:id() == 0 or not be:alive() then return false end
+
     if npc:relation(be) ~= game_object.enemy then return false end
     local now = time_global()
     local r = nemesis_state.member(npc:id())
     if r and r.hit_from == be:id() and r.hit_at and now - r.hit_at < SHOOTER_MS then return true end
+
     if xcombat.is_under_fire and xcombat.is_under_fire(npc, be, now, UNDER_FIRE_MS) then return true end
     local d = npc:position():distance_to(be:position())
     if d <= CLOSE_THREAT_M then return true end
+
     return d <= range and npc:see(be)
 end
 
@@ -88,6 +93,7 @@ function combat_owns(npc)
 
     if memo.res ~= was and debug_on() then
         local be_name = "none"
+
         pcall(function() local be = npc:best_enemy(); if be then be_name = be:id() == 0 and "you" or (be:character_name() .. " (" .. be:id() .. ")") end end)
         log_msg("Nemesis: %s %s (enemy: %s).", tostring(nemesis_state.name_of(id) or id),
             memo.res and "fights" or "is back on the chase", be_name)
@@ -181,7 +187,7 @@ function combat_owns_now(npc, memo, now)
     if not player_contact and hit and r and not r.hit_by_player and r.hit_from then
         local shooter = nemesis_engine.obj(r.hit_from)
 
-        if shooter and (IsStalker(shooter) or IsMonster(shooter)) and nemesis_fx.alive_obj(shooter) then
+        if shooter and (nemesis_engine.is_stalker(shooter) or nemesis_engine.is_mutant(shooter)) and nemesis_fx.alive_obj(shooter) then
             if now - (memo.shown_at or -1000000) >= SHOW_EVERY_MS then
                 memo.shown_at = now
                 pcall(_show_enemy, npc, shooter)
@@ -255,6 +261,7 @@ function stall_check(npc, gt)
     local owner = "the chase"
     if memo and memo.res then
         local be_name = "none"
+
         pcall(function() local be = npc:best_enemy(); if be then be_name = be:id() == 0 and "you" or (be:character_name() .. " (" .. be:id() .. ")") end end)
         owner = "combat AI (enemy: " .. be_name .. ")"
     elseif memo and memo.holding then

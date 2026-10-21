@@ -69,6 +69,7 @@ function send_news(text, caption, icon_override)
         icon = "ui_nemesis_news_hd"
     end
     if type(icon_override) == "string" and icon_override ~= "" then icon = icon_override end
+
     local ok, err = pcall(function() actor:give_game_news(caption, text, icon, 0, NEWS_SHOW_MS) end)
     if not ok then
         log_msg("!Nemesis ERROR: PDA message failed with icon %s (%s), retrying with a vanilla icon.", icon, tostring(err))
@@ -76,7 +77,7 @@ function send_news(text, caption, icon_override)
         ok, err = pcall(function() actor:give_game_news(caption, text, icon, 0, NEWS_SHOW_MS) end)
     end
     if ok then
-        pcall(function() xr_sound.set_sound_play(AC_ID, "pda_tips") end)
+        nemesis_sound.pda_tip()
         log_msg("Nemesis: PDA message sent [%s] %s (icon %s).", caption, text, icon)
     else
         log_msg("!Nemesis ERROR: PDA message failed twice (%s).", tostring(err))
@@ -84,29 +85,12 @@ function send_news(text, caption, icon_override)
     return ok
 end
 
-local sound_pick = {}
-function pick_sound(key, paths)
-    if sound_pick[key] == nil then
-        sound_pick[key] = false
-        for _, p in ipairs(paths) do
-            if nemesis_engine.sound_exists(p) then sound_pick[key] = p; break end
-        end
-        if sound_pick[key] then log_msg("Nemesis: %s sound: %s.", key, sound_pick[key])
-        else log_msg("!Nemesis ERROR: no %s sound file found (tried %s); it stays silent.", key, table.concat(paths, ", ")) end
-    end
-    return sound_pick[key] or nil
-end
-
-local PSY_L = { "anomaly\\psy_voices_1_l" }
-local PSY_R = { "anomaly\\psy_voices_1_r" }
-function psy_voices()
-    local l = pick_sound("psy voices (left)", PSY_L)
-    if not l then return nil end
-    return l, pick_sound("psy voices (right)", PSY_R)
-end
+function pick_sound(...) return nemesis_sound.pick(...) end
+function psy_voices(...) return nemesis_sound.psy_voices(...) end
 
 local function player_name()
     local name = nil
+
     pcall(function() name = db.actor:character_name() end)
     if type(name) ~= "string" or name == "" then name = "Stalker" end
     return name
@@ -305,8 +289,7 @@ function fill_line(line, boss) return fill(line, boss) end
 
 local function pick(kind, boss)
 
-    local own = (nemesis_state.S.emission_hunt or (kind == "boss_stash" and boss ~= nil and boss == nemesis_emission.boss_name()))
-        and nemesis_emission.line(kind) or nil
+    local own = nemesis_events.ask("own_line", kind, boss)
     if own then return own end
     local set = LINES[hunt_faction()][kind]
     return fill(set[math.random(#set)], boss)

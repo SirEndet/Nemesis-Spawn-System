@@ -2,176 +2,148 @@
 
 HEAD_CLR = { 255, 250, 150, 75 }
 
-local function options()
-    return {
-        id = "nemesis",
-        gr = {
-            { id = "general", sh = true, text = "ui_mcm_nemesis_page_general", gr = {
-                { id = "title", type = "slide", link = "ui_options_slider_player", text = "ui_mcm_nemesis_title", size = {512, 50}, spacing = 20 },
-                { id = "difficulty", type = "list", val = 0, def = "medium", no_str = true, hint = "nemesis_difficulty",
-                  on_selection_functor = { on_difficulty_selected },
-                  content = { { "easy", "ui_mcm_nemesis_difficulty_easy" }, { "medium", "ui_mcm_nemesis_difficulty_medium" },
-                              { "hard", "ui_mcm_nemesis_difficulty_hard" }, { "custom", "ui_mcm_nemesis_difficulty_custom" } } },
-                { id = "line_warnings", type = "line" },
-                { id = "head_warnings", type = "title", text = "ui_mcm_nemesis_head_warnings", align = "l", clr = HEAD_CLR },
-                { id = "warning_audio", type = "check", val = 1, def = true, hint = "nemesis_warning_audio" },
-                { id = "warning_pda", type = "check", val = 1, def = false, hint = "nemesis_warning_pda" },
-                { id = "hd_icon", type = "check", val = 1, def = false, hint = "nemesis_hd_icon" },
-                { id = "line_sound", type = "line" },
-                { id = "head_sound", type = "title", text = "ui_mcm_nemesis_head_sound", align = "l", clr = HEAD_CLR },
-                { id = "warning_volume", type = "track", val = 2, def = 70, min = 0, max = 100, step = 5, prec = 0, hint = "nemesis_warning_volume" },
-                { id = "teleport_volume", type = "track", val = 2, def = 40, min = 0, max = 100, step = 5, prec = 0, hint = "nemesis_teleport_volume" },
-                { id = "hum_volume", type = "track", val = 2, def = 10, min = 0, max = 100, step = 5, prec = 0, hint = "nemesis_hum_volume" },
-                { id = "lightning_volume", type = "track", val = 2, def = 0, min = 0, max = 100, step = 5, prec = 0, hint = "nemesis_lightning_volume" },
-                { id = "line_effects", type = "line" },
-                { id = "head_effects", type = "title", text = "ui_mcm_nemesis_head_effects", align = "l", clr = HEAD_CLR },
-                { id = "wd_malfunction", type = "check", val = 1, def = true, hint = "nemesis_wd_malfunction" },
-            } },
-            { id = "spawning", sh = true, text = "ui_mcm_nemesis_page_gameplay", gr = {
-                { id = "title", type = "slide", link = "ui_options_slider_player", text = "ui_mcm_nemesis_title", size = {512, 50}, spacing = 20 },
-                { id = "line_timing", type = "line" },
-                { id = "head_timing", type = "title", text = "ui_mcm_nemesis_head_timing", align = "l", clr = HEAD_CLR },
-                { id = "grace_period", type = "track", val = 2, def = 18, min = 0, max = 21, step = 1, prec = 0, hint = "nemesis_grace_period" },
-                { id = "retreat_cooldown", type = "track", val = 2, def = 36, min = 0, max = 72, step = 1, prec = 0, hint = "nemesis_retreat_cooldown" },
-                { id = "hunt_duration", type = "track", val = 2, def = 5, min = 4, max = 12, step = 1, prec = 0, hint = "nemesis_hunt_duration" },
-                { id = "line_squad", type = "line" },
-                { id = "head_squad", type = "title", text = "ui_mcm_nemesis_head_squad", align = "l", clr = HEAD_CLR },
-                { id = "spawn_dist_min", type = "track", val = 2, def = 80, min = 40, max = 100, step = 5, prec = 0, hint = "nemesis_spawn_dist_min" },
-                { id = "spawn_dist_max", type = "track", val = 2, def = 140, min = 60, max = 140, step = 5, prec = 0, hint = "nemesis_spawn_dist_max" },
-                { id = "squad_w1", type = "track", val = 2, def = 50, min = 0, max = 100, step = 1, prec = 0, hint = "nemesis_squad_w1" },
-                { id = "squad_w2", type = "track", val = 2, def = 25, min = 0, max = 100, step = 1, prec = 0, hint = "nemesis_squad_w2" },
-                { id = "squad_w3", type = "track", val = 2, def = 14, min = 0, max = 100, step = 1, prec = 0, hint = "nemesis_squad_w3" },
-                { id = "squad_w4", type = "track", val = 2, def = 10, min = 0, max = 100, step = 1, prec = 0, hint = "nemesis_squad_w4" },
-                { id = "squad_w5", type = "track", val = 2, def = 6, min = 0, max = 100, step = 1, prec = 0, hint = "nemesis_squad_w5" },
-                { id = "named_chance", type = "track", val = 2, def = 15, min = 0, max = 100, step = 5, prec = 0, hint = "nemesis_named_chance" },
-                { id = "area_scaling", type = "check", val = 1, def = true, hint = "nemesis_area_scaling" },
-                { id = "line_behaviour", type = "line" },
-                { id = "head_behaviour", type = "title", text = "ui_mcm_nemesis_head_behaviour", align = "l", clr = HEAD_CLR },
-                { id = "last_known_chase", type = "check", val = 1, def = true, hint = "nemesis_last_known_chase" },
-                { id = "squad_tactics", type = "check", val = 1, def = true, hint = "nemesis_squad_tactics" },
-                { id = "retreat_to_cover", type = "check", val = 1, def = true, hint = "nemesis_retreat_to_cover" },
-                { id = "follow_maps", type = "track", val = 2, def = 2, min = 0, max = 5, step = 1, prec = 0, hint = "nemesis_follow_maps" },
-                { id = "hunter_cloak", type = "check", val = 1, def = true, hint = "nemesis_hunter_cloak" },
-                { id = "fight_range", type = "track", val = 2, def = 100, min = 10, max = 150, step = 5, prec = 0, hint = "nemesis_fight_range" },
-            } },
-            { id = "combat", sh = true, text = "ui_mcm_nemesis_page_combat", gr = {
-                { id = "title", type = "slide", link = "ui_options_slider_player", text = "ui_mcm_nemesis_title", size = {512, 50}, spacing = 20 },
-                { id = "head_hunters", type = "title", text = "ui_mcm_nemesis_head_hunters", align = "l", clr = HEAD_CLR },
-                { id = "retreat_health", type = "track", val = 2, def = 30, min = 10, max = 60, step = 5, prec = 0, hint = "nemesis_retreat_health" },
-                { id = "accuracy_boost", type = "track", val = 2, def = 10, min = 0, max = 40, step = 1, prec = 0, hint = "nemesis_accuracy_boost" },
-                { id = "regular_dr", type = "track", val = 2, def = 0, min = 0, max = 50, step = 5, prec = 0, hint = "nemesis_regular_dr" },
-                { id = "named_dr", type = "track", val = 2, def = 25, min = 0, max = 80, step = 5, prec = 0, hint = "nemesis_named_dr" },
-                { id = "line_escalation", type = "line" },
-                { id = "head_escalation", type = "title", text = "ui_mcm_nemesis_head_escalation", align = "l", clr = HEAD_CLR },
-                { id = "esc_step", type = "track", val = 2, def = 2, min = 0, max = 5, step = 0.5, prec = 1, hint = "nemesis_esc_step" },
-                { id = "esc_max", type = "track", val = 2, def = 20, min = 0, max = 40, step = 5, prec = 0, hint = "nemesis_esc_max" },
-                { id = "max_damage_reduction", type = "track", val = 2, def = 70, min = 50, max = 95, step = 5, prec = 0, hint = "nemesis_max_damage_reduction" },
-                { id = "reset_on_death", type = "check", val = 1, def = true, hint = "nemesis_reset_on_death" },
-                { id = "line_armour", type = "line" },
-                { id = "head_armour", type = "title", text = "ui_mcm_nemesis_head_armour", align = "l", clr = HEAD_CLR },
-                { id = "br_bonus", type = "track", val = 2, def = 0, min = 0, max = 0.5, step = 0.05, prec = 2, hint = "nemesis_br_bonus" },
-                { id = "pct_bonus", type = "track", val = 2, def = 0, min = 0, max = 50, step = 5, prec = 0, hint = "nemesis_pct_bonus" },
-                { id = "line_bodies", type = "line" },
-                { id = "head_bodies", type = "title", text = "ui_mcm_nemesis_head_bodies", align = "l", clr = HEAD_CLR },
-                { id = "reserve_kills", type = "check", val = 1, def = true, hint = "nemesis_reserve_kills" },
-                { id = "line_exe", type = "line" },
-                { id = "head_exe", type = "title", text = "ui_mcm_nemesis_head_exe", align = "l", clr = HEAD_CLR },
-                { id = "exe_ai", type = "check", val = 1, def = true, hint = "nemesis_exe_ai" },
-                { id = "hunter_attack_pull", type = "track", val = 2, def = 600, min = 0, max = 1800, step = 100, prec = 0, hint = "nemesis_hunter_attack_pull" },
-                { id = "boss_attack_pull", type = "track", val = 2, def = 300, min = 0, max = 1800, step = 100, prec = 0, hint = "nemesis_boss_attack_pull" },
-            } },
-            { id = "boss", sh = true, text = "ui_mcm_nemesis_page_boss", gr = {
-                { id = "title", type = "slide", link = "ui_options_slider_player", text = "ui_mcm_nemesis_title", size = {512, 50}, spacing = 20 },
-                { id = "head_names", type = "title", text = "ui_mcm_nemesis_head_names", align = "l", clr = HEAD_CLR },
-                { id = "npc_name", type = "input", val = 0, def = "Bogdan Kravets", hint = "nemesis_npc_name" },
-                { id = "isg_boss_name", type = "input", val = 0, def = "Lyutomyr Kat", hint = "nemesis_isg_boss_name" },
-                { id = "line_appearance", type = "line" },
-                { id = "head_appearance", type = "title", text = "ui_mcm_nemesis_head_appearance", align = "l", clr = HEAD_CLR },
-                { id = "boss_chance", type = "track", val = 2, def = 4, min = 0, max = 20, step = 1, prec = 0, hint = "nemesis_boss_chance" },
-                { id = "boss_min_day", type = "track", val = 2, def = 7, min = 1, max = 7, step = 1, prec = 0, hint = "nemesis_boss_min_day" },
-                { id = "boss_escort", type = "track", val = 2, def = 4, min = 0, max = 4, step = 1, prec = 0, hint = "nemesis_boss_escort" },
-                { id = "boss_distortion", type = "track", val = 2, def = 40, min = 0, max = 100, step = 5, prec = 0, hint = "nemesis_boss_distortion" },
-                { id = "line_toughness", type = "line" },
-                { id = "head_toughness", type = "title", text = "ui_mcm_nemesis_head_toughness", align = "l", clr = HEAD_CLR },
-                { id = "boss_dr", type = "track", val = 2, def = 30, min = 0, max = 85, step = 5, prec = 0, hint = "nemesis_boss_dr" },
-                { id = "boss_npc_damage", type = "track", val = 2, def = 200, min = 100, max = 400, step = 25, prec = 0, hint = "nemesis_boss_npc_damage" },
-                { id = "boss_misses", type = "track", val = 2, def = 2, min = 0, max = 4, step = 1, prec = 0, hint = "nemesis_boss_misses" },
-                { id = "line_reward", type = "line" },
-                { id = "head_reward", type = "title", text = "ui_mcm_nemesis_head_reward", align = "l", clr = HEAD_CLR },
-                { id = "boss_stash", type = "check", val = 1, def = true, hint = "nemesis_boss_stash" },
-            } },
-            { id = "emission", sh = true, text = "ui_mcm_nemesis_page_emission", gr = {
-                { id = "title", type = "slide", link = "ui_options_slider_player", text = "ui_mcm_nemesis_title", size = {512, 50}, spacing = 20 },
-                { id = "emission_enabled", type = "check", val = 1, def = true, hint = "nemesis_emission_enabled" },
-                { id = "emission_chance", type = "track", val = 2, def = 100, min = 0, max = 100, step = 5, prec = 0, hint = "nemesis_emission_chance" },
-                { id = "emission_extra", type = "track", val = 2, def = 6, min = 0, max = 100, step = 1, prec = 0, hint = "nemesis_emission_extra" },
-                { id = "emission_name", type = "input", val = 0, def = "Ilarion Hrech", hint = "nemesis_emission_name" },
-                { id = "emission_dr", type = "track", val = 2, def = 30, min = 0, max = 85, step = 5, prec = 0, hint = "nemesis_emission_dr" },
-                { id = "emission_npc_cut", type = "track", val = 2, def = 70, min = 0, max = 95, step = 5, prec = 0, hint = "nemesis_emission_npc_cut" },
-                { id = "emission_horde", type = "track", val = 2, def = 4, min = 0, max = 8, step = 1, prec = 0, hint = "nemesis_emission_horde" },
-                { id = "emission_psy", type = "track", val = 2, def = 4, min = 0, max = 20, step = 1, prec = 0, hint = "nemesis_emission_psy" },
-            } },
-            { id = "debug", sh = true, text = "ui_mcm_nemesis_page_debug", gr = {
-                { id = "title", type = "slide", link = "ui_options_slider_player", text = "ui_mcm_nemesis_title", size = {512, 50}, spacing = 20 },
-                { id = "head_debug", type = "title", text = "ui_mcm_nemesis_head_debug", align = "l", clr = HEAD_CLR },
-                { id = "debug_mode", type = "check", val = 1, def = false, hint = "nemesis_debug_mode" },
-                { id = "debug_logs", type = "check", val = 1, def = false, hint = "nemesis_debug_logs" },
-                { id = "force_next", type = "list", val = 0, def = "none", no_str = true, hint = "nemesis_force_next",
-                  content = { { "none", "ui_mcm_nemesis_force_next_none" }, { "boss", "ui_mcm_nemesis_force_next_boss" }, { "emission", "ui_mcm_nemesis_force_next_emission" } } },
-                { id = "line_tools", type = "line" },
-                { id = "head_tools", type = "title", text = "ui_mcm_nemesis_head_tools", align = "l", clr = HEAD_CLR },
-                { id = "reset_escalation_now", type = "check", val = 1, def = false, hint = "nemesis_reset_escalation_now" },
-                { id = "prepare_uninstall", type = "check", val = 1, def = false, hint = "nemesis_prepare_uninstall" },
-            } },
-        },
-    }
+local provider
+
+local PAGES = { "general", "nemesis_spawn", "nemesis_damage", "nemesis_boss", "nemesis_emission", "debug" }
+
+provider = function(name)
+    local m = rawget(_G, name)
+    if m == nil and nemesis_engine and nemesis_engine.file_exists("$game_scripts$", name .. ".script") then
+        pcall(function() m = _G[name] end)
+    end
+    if type(m) == "table" and type(m.mcm_page) == "function" then return m end
+    return nil
 end
+
+local function force_next_choices()
+    local list = { { "none", "ui_mcm_nemesis_force_next_none" } }
+    for _, name in ipairs(PAGES) do
+        local m = provider(name)
+        if m and type(m.mcm_force_next) == "function" then
+            local ok, c = pcall(m.mcm_force_next)
+            if ok and type(c) == "table" then list[#list + 1] = c end
+        end
+    end
+    return list
+end
+
+local function sound_section()
+    local m = rawget(_G, "nemesis_sound")
+    if m == nil and nemesis_engine and nemesis_engine.file_exists("$game_scripts$", "nemesis_sound.script") then
+        pcall(function() m = _G["nemesis_sound"] end)
+    end
+    if not (type(m) == "table" and type(m.mcm_sound_section) == "function") then return {} end
+    local ok, t = pcall(m.mcm_sound_section)
+    return ok and type(t) == "table" and t or {}
+end
+local function with_sound(items)
+    local out = {}
+    for _, o in ipairs(items) do
+        if o.id == "line_effects" then for _, x in ipairs(sound_section()) do out[#out + 1] = x end end
+        out[#out + 1] = o
+    end
+    return out
+end
+
+local function general_page()
+    return { id = "general", sh = true, text = "ui_mcm_nemesis_page_general", gr = with_sound({
+            { id = "title", type = "slide", link = "ui_options_slider_player", text = "ui_mcm_nemesis_title", size = {512, 50}, spacing = 20 },
+            { id = "difficulty", type = "list", val = 0, def = "medium", no_str = true, hint = "nemesis_difficulty",
+              on_selection_functor = { on_difficulty_selected },
+              content = { { "easy", "ui_mcm_nemesis_difficulty_easy" }, { "medium", "ui_mcm_nemesis_difficulty_medium" },
+                          { "hard", "ui_mcm_nemesis_difficulty_hard" }, { "custom", "ui_mcm_nemesis_difficulty_custom" } } },
+            { id = "load_custom_backup", type = "check", val = 1, def = false, hint = "nemesis_load_custom_backup" },
+            { id = "line_warnings", type = "line" },
+            { id = "head_warnings", type = "title", text = "ui_mcm_nemesis_head_warnings", align = "l", clr = HEAD_CLR },
+            { id = "warning_audio", type = "check", val = 1, def = true, hint = "nemesis_warning_audio" },
+            { id = "warning_pda", type = "check", val = 1, def = false, hint = "nemesis_warning_pda" },
+            { id = "hd_icon", type = "check", val = 1, def = false, hint = "nemesis_hd_icon" },
+            { id = "line_effects", type = "line" },
+            { id = "head_effects", type = "title", text = "ui_mcm_nemesis_head_effects", align = "l", clr = HEAD_CLR },
+            { id = "wd_malfunction", type = "check", val = 1, def = true, hint = "nemesis_wd_malfunction" },
+        }) }
+end
+
+local function debug_page()
+    return { id = "debug", sh = true, text = "ui_mcm_nemesis_page_debug", gr = {
+            { id = "title", type = "slide", link = "ui_options_slider_player", text = "ui_mcm_nemesis_title", size = {512, 50}, spacing = 20 },
+            { id = "head_debug", type = "title", text = "ui_mcm_nemesis_head_debug", align = "l", clr = HEAD_CLR },
+            { id = "debug_mode", type = "check", val = 1, def = false, hint = "nemesis_debug_mode" },
+            { id = "debug_logs", type = "check", val = 1, def = false, hint = "nemesis_debug_logs" },
+            { id = "force_next", type = "list", val = 0, def = "none", no_str = true, hint = "nemesis_force_next",
+              content = force_next_choices() },
+            { id = "line_tools", type = "line" },
+            { id = "head_tools", type = "title", text = "ui_mcm_nemesis_head_tools", align = "l", clr = HEAD_CLR },
+            { id = "reset_escalation_now", type = "check", val = 1, def = false, hint = "nemesis_reset_escalation_now" },
+            { id = "prepare_uninstall", type = "check", val = 1, def = false, hint = "nemesis_prepare_uninstall" },
+        } }
+end
+
+local function pages()
+    local out, missing = {}, false
+    for _, name in ipairs(PAGES) do
+        local page = nil
+        if name == "general" then page = general_page()
+        elseif name == "debug" then page = debug_page()
+        else
+            local m = provider(name)
+            if m then
+                local ok, t = pcall(m.mcm_page)
+                if ok and type(t) == "table" then page = t else missing = true end
+            elseif rawget(_G, name) ~= nil then
+                missing = true
+            end
+        end
+        if page then out[#out + 1] = page end
+    end
+    return out, missing
+end
+
+local function options() return { id = "nemesis", gr = (pages()) } end
 
 function on_mcm_load()
     register_apply_handler()
+    build()
     return options()
 end
 
 local PAGE_OF = {}
-for _, page in ipairs(options().gr) do
-    for _, o in ipairs(page.gr) do
-        if o.val then PAGE_OF[o.id] = page.id end
+local built = false
+function build()
+    if built then return end
+    local list, missing = pages()
+    for _, page in ipairs(list) do
+        for _, o in ipairs(page.gr) do
+            if o.val then PAGE_OF[o.id] = page.id end
+        end
     end
+    for _, name in ipairs(PAGES) do
+        local m = provider(name)
+        if m and type(m.mcm_presets) == "function" then
+            local ok, t = pcall(m.mcm_presets)
+            if ok and type(t) == "table" then
+                for level, vals in pairs(t) do
+                    if DIFFICULTY[level] then for id, v in pairs(vals) do DIFFICULTY[level][id] = v end end
+                end
+            end
+        end
+    end
+    built = not missing
 end
 
 function path(id)
+    build()
     local page = PAGE_OF[id]
     return page and ("nemesis/" .. page .. "/" .. id) or ("nemesis/" .. id)
 end
 
-DIFFICULTY = {
-    easy = {
-        grace_period = 21, retreat_cooldown = 43, hunt_duration = 4, named_chance = 10, follow_maps = 1,
-        squad_w1 = 60, squad_w2 = 30, squad_w3 = 14, squad_w4 = 8, squad_w5 = 4,
-        retreat_health = 35, accuracy_boost = 8, regular_dr = 0, named_dr = 20, esc_step = 1.5, esc_max = 15, max_damage_reduction = 55, br_bonus = 0, pct_bonus = 0,
-        boss_chance = 3, boss_min_day = 7, boss_escort = 3, boss_dr = 20, boss_npc_damage = 150, boss_misses = 3,
-        emission_chance = 80, emission_extra = 4, emission_dr = 20, emission_npc_cut = 55, emission_horde = 3, emission_psy = 3,
-    },
-    medium = {
-        grace_period = 18, retreat_cooldown = 36, hunt_duration = 5, named_chance = 15, follow_maps = 2,
-        squad_w1 = 50, squad_w2 = 25, squad_w3 = 14, squad_w4 = 10, squad_w5 = 6,
-        retreat_health = 30, accuracy_boost = 10, regular_dr = 0, named_dr = 25, esc_step = 2, esc_max = 20, max_damage_reduction = 70, br_bonus = 0, pct_bonus = 0,
-        boss_chance = 4, boss_min_day = 7, boss_escort = 4, boss_dr = 30, boss_npc_damage = 200, boss_misses = 2,
-        emission_chance = 100, emission_extra = 6, emission_dr = 30, emission_npc_cut = 70, emission_horde = 4, emission_psy = 4,
-    },
-    hard = {
-        grace_period = 15, retreat_cooldown = 29, hunt_duration = 6, named_chance = 20, follow_maps = 3,
-        squad_w1 = 40, squad_w2 = 20, squad_w3 = 14, squad_w4 = 12, squad_w5 = 8,
-        retreat_health = 25, accuracy_boost = 12, regular_dr = 0, named_dr = 30, esc_step = 2.5, esc_max = 25, max_damage_reduction = 85, br_bonus = 0, pct_bonus = 0,
-        boss_chance = 5, boss_min_day = 6, boss_escort = 4, boss_dr = 40, boss_npc_damage = 250, boss_misses = 1,
-        emission_chance = 100, emission_extra = 8, emission_dr = 40, emission_npc_cut = 85, emission_horde = 5, emission_psy = 5,
-    },
-}
+DIFFICULTY = { easy = {}, medium = {}, hard = {} }
 
 local APPLIED_SECTION, APPLIED_KEY = "nemesis", "difficulty_applied"
 local applied_mem = nil
 
 local function read_applied()
+
     local ok, v = pcall(function() return axr_main.config:r_value(APPLIED_SECTION, APPLIED_KEY, 0) end)
     if not ok then return applied_mem end
     if type(v) == "string" and v ~= "" then return v end
@@ -181,22 +153,27 @@ end
 local function write_applied(level)
     applied_mem = level
     pcall(function()
+
         axr_main.config:w_value(APPLIED_SECTION, APPLIED_KEY, level)
+
         axr_main.config:save()
     end)
 end
 
 local function set_value(id, v)
+
     pcall(function() ui_mcm.set(path(id), v) end)
 end
 
 local function raw_number(id)
     local v = nil
+
     pcall(function() v = tonumber(ui_mcm.get(path(id))) end)
     return v
 end
 
 local function matches(level)
+    build()
     local preset = DIFFICULTY[level]
     if not preset then return false end
     for id, want in pairs(preset) do
@@ -208,6 +185,7 @@ end
 
 local function current_difficulty()
     local v = nil
+
     pcall(function() v = ui_mcm.get(path("difficulty")) end)
     if v == "easy" or v == "medium" or v == "hard" or v == "custom" then return v end
     return "medium"
@@ -218,12 +196,59 @@ local function log(...)
     elseif printf and get_bool("debug_logs", false) then printf(...) end
 end
 
+local BACKUP_SECTION = "custom_backup"
+
+local function values_are_yours()
+    return not (matches("easy") or matches("medium") or matches("hard"))
+end
+
+local function backup_custom(why)
+    build()
+    if not (nemesis_config and values_are_yours()) then return end
+    local want, n = {}, 0
+    for id in pairs(DIFFICULTY.medium) do
+        local v = raw_number(id)
+        if v ~= nil then nemesis_config.set(BACKUP_SECTION, id, v); want[id] = v; n = n + 1 end
+    end
+    if n == 0 then return end
+    nemesis_config.set(BACKUP_SECTION, "from", why)
+    local res, key = nemesis_config.save_checked(BACKUP_SECTION, want)
+    if res == "failed" then
+        log("!Nemesis ERROR: the automatic backup of your settings did not save (%s).", tostring(key))
+    else
+        log("Nemesis: your own settings (%s) backed up to %s before a difficulty is applied (%s%s).", tostring(n),
+            nemesis_config.FILE, why, res == "unverified" and "; a new file, checked from the next game start" or "")
+    end
+end
+
+function load_custom_backup()
+    build()
+    if not nemesis_config then return 0 end
+    local n = 0
+    for id in pairs(DIFFICULTY.medium) do
+        local v = nemesis_config.get(BACKUP_SECTION, id, 2, nil)
+        if v ~= nil then set_value(id, v); n = n + 1 end
+    end
+    if n == 0 then
+        log("Nemesis: Load settings from Automatic Backup: there is no backup yet (one is made when a difficulty replaces your own settings).")
+        return 0
+    end
+    set_value("difficulty", "custom")
+    write_applied("custom")
+    invalidate()
+    log("Nemesis: %s settings loaded from the automatic backup (%s); the difficulty shows Custom. The backup is kept.",
+        tostring(n), tostring(nemesis_config.get(BACKUP_SECTION, "from", nil, "?")))
+    return n
+end
+
 function sync_difficulty(picked)
+    build()
     if not ui_mcm then return end
     local cur = current_difficulty()
     local last = read_applied()
     local apply = cur ~= "custom" and (picked or (last ~= nil and cur ~= last) or (last == nil and cur ~= "medium"))
     if apply then
+        backup_custom("applied " .. cur)
         for id, v in pairs(DIFFICULTY[cur]) do set_value(id, v) end
         write_applied(cur)
         invalidate()
@@ -270,8 +295,10 @@ local function mcm_window()
 end
 
 function on_difficulty_selected(opt_path, opt, value, v)
+    build()
     local preset = DIFFICULTY[value]
     if not preset then return end
+    backup_custom("picked " .. tostring(value) .. " in the menu")
     local gui = mcm_window()
     if not gui then return end
     for id, val in pairs(preset) do
@@ -279,11 +306,14 @@ function on_difficulty_selected(opt_path, opt, value, v)
         if page then
             pcall(function()
                 local p = "nemesis/" .. page
+
                 gui:CacheValue(p, id, val, ui_mcm.get_opt_table(p .. "/" .. id))
             end)
         end
     end
+
     pcall(function() gui:Reset_opt(gui.last_curr_tree, gui.last_path) end)
+
     pcall(function() gui:UpdatePending() end)
 end
 
@@ -295,11 +325,13 @@ end
 
 function register_apply_handler()
     if not (ui_mcm and ui_mcm.get) then return end
+
     RegisterScriptCallback("mcm_option_change", on_mcm_option_change)
     RegisterScriptCallback("main_menu_on_init", remember_main_menu)
 end
 
 function on_game_start()
+
     RegisterScriptCallback("on_option_change", on_option_change)
     register_apply_handler()
 end
@@ -313,6 +345,7 @@ function get_setting(id, default)
     local v = cache[id]
     if v ~= nil then return v end
     if ui_mcm then
+
         v = ui_mcm.get(path(id))
         if v ~= nil then
             cache[id] = v
