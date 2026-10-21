@@ -165,6 +165,8 @@ Works alongside AlifePlus, AlifeTactics, Wearable Devices and Obrien GAMMA Overh
 
 Install with Mod Organizer like any other mod and tick it. Load order doesn't matter. Settings appear under MCM → Nemesis Wave Spawn System.
 
+The mod is also in Russian: if your game runs in Russian, its menu and every message are in Russian too, and `Nemesis_README_ru.md` is this guide in Russian.
+
 To update, install the new version over the old one and choose *Replace*. Your saves and settings carry over. Don't update in the middle of a hunt, while hunters are following you, or while the emission boss is on his way.
 
 ## Uninstalling

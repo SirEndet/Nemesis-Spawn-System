@@ -4,7 +4,7 @@ A recurring Monolith hunter for S.T.A.L.K.E.R. Anomaly / G.A.M.M.A.
 
 Every so often, a hunter comes for you. He spawns out of sight, sprints after you and is very hard to kill. Hurt him badly enough and he teleports away in a Monolith burst. He always comes back, and each time he is stronger.
 
-**Version 1.0.0** · [Download the latest release](https://github.com/SirEndet/Nemesis-Wave-Spawn-System/releases/latest) · [Player guide and every setting](Nemesis/Nemesis_README.md)
+**Version 1.0.1** · [Download the latest release](https://github.com/SirEndet/Nemesis-Wave-Spawn-System/releases/latest) · [Player guide and every setting](Nemesis/Nemesis_README.md) · [Руководство на русском](Nemesis/Nemesis_README_ru.md)
 
 ## Highlights
 
@@ -13,6 +13,7 @@ Every so often, a hunter comes for you. He spawns out of sight, sprints after yo
 - **The boss.** A rare, cloaked hunter with an escort, who sneaks up behind you and fights to the death.
 - **The emission boss.** When an emission meets a hunt, he comes instead: ghosts trap you in your shelter while he walks in through the storm.
 - **Fair, and yours to tune.** Easy, Medium or Hard in one click, and every setting in MCM.
+- **In English and Russian.** If your game runs in Russian, the menu, the hunters' lines and their names are in Russian too (translated by AI, Claude).
 - **Plays well with others.** Works alongside AlifePlus, AlifeTactics, Wearable Devices and Obrien GAMMA Overhaul. Playing Monolith, Zombified or Sin? UNISG hunts you instead.
 
 ## Requirements
@@ -24,7 +25,7 @@ Every so often, a hunter comes for you. He spawns out of sight, sprints after yo
 ## Install (Mod Organizer 2)
 
 1. Make sure xlibs is installed and ticked (in GAMMA: tick **482- Xlib - damian_sirbu**).
-2. Download `NemesisWaveSpawnSystem_1.0.0.zip` from the [latest release](https://github.com/SirEndet/Nemesis-Wave-Spawn-System/releases/latest).
+2. Download `NemesisWaveSpawnSystem_1.0.1.zip` from the [latest release](https://github.com/SirEndet/Nemesis-Wave-Spawn-System/releases/latest).
 3. In Mod Organizer 2, click **Install a new mod from an archive** and pick the zip.
 4. Tick the mod. Load order doesn't matter.
 5. Start the game. Settings are under **MCM → Nemesis Wave Spawn System**.

@@ -1,6 +1,6 @@
 -- Nemesis Utilities
 
-local DEFAULT_NAME = "Bogdan Kravets"
+local function default_name(kind) return nemesis_lines.text("st_nemesis_boss_name_" .. kind) end
 
 function debug_on() return nemesis_mcm.get_bool("debug_logs", false) end
 
@@ -52,13 +52,17 @@ function same_level(se_a, se_b) return nemesis_engine.same_level(se_a, se_b) end
 -- Settings-derived values
 ---------------------------------------------------------------------------
 
+local UP, LOW = "[%u\192-\223\168]", "[%l\224-\255\184]"
+local SPACE_AT = "(" .. UP .. LOW .. LOW .. "+)(" .. UP .. ")"
 function spaced_name(name)
     if type(name) ~= "string" then return name end
-    return (string.gsub(name, "(%u%l%l+)(%u)", "%1 %2"))
+    return (string.gsub(name, SPACE_AT, "%1 %2"))
 end
 
-function monolith_boss_name() return spaced_name(nemesis_mcm.get_string("npc_name", DEFAULT_NAME)) end
-function isg_boss_name() return spaced_name(nemesis_mcm.get_string("isg_boss_name", "Lyutomyr Kat")) end
+function monolith_boss_name() return spaced_name(nemesis_mcm.get_string("npc_name", default_name("monolith"))) end
+function isg_boss_name() return spaced_name(nemesis_mcm.get_string("isg_boss_name", default_name("isg"))) end
+
+function default_boss_name(kind) return default_name(kind) end
 function get_npc_name()
     if nemesis_state.S.faction == "isg" then return isg_boss_name() end
     return monolith_boss_name()
@@ -279,6 +283,7 @@ function siege_active(...) return nemesis_siege.siege_active(...) end
 function set_known_spot(...) return nemesis_siege.set_known_spot(...) end
 
 function send_news(...) return nemesis_lines.send_news(...) end
+function text(...) return nemesis_lines.text(...) end
 function pick_sound(...) return nemesis_sound.pick(...) end
 function psy_voices(...) return nemesis_sound.psy_voices(...) end
 function next_hunter_name(...) return nemesis_lines.next_hunter_name(...) end

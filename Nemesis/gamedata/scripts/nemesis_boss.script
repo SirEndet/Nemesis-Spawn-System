@@ -198,7 +198,7 @@ function stash_tick()
     elseif got then
         S.stash_owed = nil
         stash_tried_level = nil
-        nemesis_utils.send_news(nemesis_utils.boss_stash_line(name), "Unknown frequency")
+        nemesis_utils.send_news(nemesis_utils.boss_stash_line(name), nemesis_utils.text("st_nemesis_caption_unknown"))
         dbg("Nemesis: the boss stash is marked on %s.", tostring(lname))
     else
         stash_tried_level = lname
@@ -357,8 +357,8 @@ function mcm_page()
     return { id = "boss", sh = true, text = "ui_mcm_nemesis_page_boss", gr = {
             { id = "title", type = "slide", link = "ui_options_slider_player", text = "ui_mcm_nemesis_title", size = {512, 50}, spacing = 20 },
             { id = "head_names", type = "title", text = "ui_mcm_nemesis_head_names", align = "l", clr = nemesis_mcm.HEAD_CLR },
-            { id = "npc_name", type = "input", val = 0, def = "Bogdan Kravets", hint = "nemesis_npc_name" },
-            { id = "isg_boss_name", type = "input", val = 0, def = "Lyutomyr Kat", hint = "nemesis_isg_boss_name" },
+            { id = "npc_name", type = "input", val = 0, def = nemesis_utils.default_boss_name("monolith"), hint = "nemesis_npc_name" },
+            { id = "isg_boss_name", type = "input", val = 0, def = nemesis_utils.default_boss_name("isg"), hint = "nemesis_isg_boss_name" },
             { id = "line_appearance", type = "line" },
             { id = "head_appearance", type = "title", text = "ui_mcm_nemesis_head_appearance", align = "l", clr = nemesis_mcm.HEAD_CLR },
             { id = "boss_chance", type = "track", val = 2, def = 4, min = 0, max = 20, step = 1, prec = 0, hint = "nemesis_boss_chance" },

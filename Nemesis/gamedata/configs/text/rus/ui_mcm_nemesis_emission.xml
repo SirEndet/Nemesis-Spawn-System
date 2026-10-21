@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="windows-1251"?>
+<string_table>
+    <!-- The emission boss module's menu strings (round 124): his page, his settings, his choice in Force the next hunt. -->
+    <string id="ui_mcm_nemesis_page_emission"><text>Босс выброса</text></string>
+    <string id="ui_mcm_nemesis_emission_enabled"><text>Босс выброса</text></string>
+    <string id="ui_mcm_nemesis_emission_enabled_desc"><text>Включено: босс выброса может прийти, когда выброс совпадает с охотой (см. «Шанс босса выброса»). Выключено: он никогда не приходит, охоты во время выбросов обычные, а ожидающий своего прихода отменяется. Флажок отладки всё равно может его вызвать. По умолчанию включено.</text></string>
+    <string id="ui_mcm_nemesis_emission_chance"><text>Шанс босса выброса (%)</text></string>
+    <string id="ui_mcm_nemesis_emission_chance_desc"><text>Шанс, разыгрываемый раз за выброс, что босс выброса придёт, когда выброс совпадает с охотой: охота, идущая в начале выброса, отменяется, или охота, которая вот-вот начнётся во время выброса, переходит к нему. Его призраки стерегут выходы из здания, где вы укрылись, он прибывает с ударом молнии и входит следом за вами. Он приходит в смертельной части выброса, когда бьют его волны, и никогда вне выброса. 0 отключает его. По умолчанию 100.</text></string>
+    <string id="ui_mcm_nemesis_emission_extra"><text>Доп. шанс босса выброса (%)</text></string>
+    <string id="ui_mcm_nemesis_emission_extra_desc"><text>Шанс, разыгрываемый раз за выброс, что босс выброса придёт, даже если ни одна охота не совпала с выбросом, то есть и между охотами. Не во время отсрочки, и не пока вы на базе, в диалоге, спите или под землёй. 0 отключает. По умолчанию 6.</text></string>
+    <string id="ui_mcm_nemesis_emission_name"><text>Имя босса выброса</text></string>
+    <string id="ui_mcm_nemesis_emission_name_desc"><text>Имя босса выброса из «Греха» (из ИИГ, если вы из «Монолита», зомбированных или «Греха»). По умолчанию: Иларион Грех</text></string>
+    <string id="ui_mcm_nemesis_emission_dr"><text>Снижение урона босса выброса (%)</text></string>
+    <string id="ui_mcm_nemesis_emission_dr_desc"><text>Насколько меньше урона босс выброса получает от каждого попадания, сверх его брони и эскалации. Снижение урона от NPC ниже добавляется сверху для попаданий других сталкеров и мутантов. По умолчанию 30.</text></string>
+    <string id="ui_mcm_nemesis_emission_npc_cut"><text>Снижение урона босса выброса от NPC (%)</text></string>
+    <string id="ui_mcm_nemesis_emission_npc_cut_desc"><text>Насколько меньше урона босс выброса получает от других сталкеров и мутантов, чтобы от них было мало помощи против него. Ваши собственные попадания не меняются. Только для него. По умолчанию 70.</text></string>
+    <string id="ui_mcm_nemesis_emission_horde"><text>Размер орды босса выброса</text></string>
+    <string id="ui_mcm_nemesis_emission_horde_desc"><text>Мутанты, которые входят через дверь через 15 секунд после прибытия босса выброса и бросаются за вами: зомбированные сталкеры, со снорком на средних картах и двумя более крепкими снорками на поздних. 0 — никого. По умолчанию 4.</text></string>
+    <string id="ui_mcm_nemesis_emission_psy"><text>Пси-урон призраков (%)</text></string>
+    <string id="ui_mcm_nemesis_emission_psy_desc"><text>Доля всей вашей пси-шкалы, которую вы теряете каждый раз, когда призраки босса выброса отталкивают вас назад (у их кольца или у двери). Пси-защита её не снижает. 0 отключает. По умолчанию 4.</text></string>
+    <string id="ui_mcm_nemesis_force_next_emission"><text>Босс выброса</text></string>
+</string_table>

@@ -92,7 +92,7 @@ local immune = nil
 function force()
     if em or S.emission_hunt or own_follow_now() or force_next then
         nemesis_utils.log_tag("EMISSION", "Nemesis: the emission boss is already on his way; a second one is refused (MCM).")
-        nemesis_utils.send_news("The emission boss is already on his way.", "Nemesis")
+        nemesis_utils.send_news(nemesis_utils.text("st_nemesis_em_msg_on_his_way"), nemesis_utils.text("st_nemesis_caption"))
         return false
     end
     force_next = true
@@ -104,7 +104,9 @@ function own_follow_now() return S.follow ~= nil and S.follow.emission_hunt == t
 ---------------------------------------------------------------------------
 -- Settings
 ---------------------------------------------------------------------------
-function boss_name() return nemesis_utils.spaced_name(nemesis_mcm.get_string("emission_name", "Ilarion Hrech")) end
+
+local function default_name() return nemesis_utils.text("st_nemesis_em_boss_name") end
+function boss_name() return nemesis_utils.spaced_name(nemesis_mcm.get_string("emission_name", default_name())) end
 
 local function enabled() return nemesis_mcm.get_bool("emission_enabled", true) end
 
@@ -128,73 +130,70 @@ local function surge() return nemesis_compat.surge_on() end
 local function deadly() return nemesis_compat.surge_deadly() end
 local function level_name() return nemesis_engine.level_name() end
 
----------------------------------------------------------------------------
--- Lines: his own, per faction. %name% is you, %boss% him.
----------------------------------------------------------------------------
 local LINES = {
     greh = {
         arrival = {
-            "The Zone breathes, %name%. I walk in its breath.",
-            "The sky burns for you. I am what it sends.",
-            "You hide from the Zone's breath. I was born in it.",
-            "The walls will not save you. The Zone has sealed every door.",
-            "Every emission the Zone chooses one. Tonight it chose you, %name%.",
-            "Stay inside, %name%. I am coming in.",
-            "The storm is my road. Your shelter is your grave.",
-            "Pray, if you know how. The Zone is listening, and so am I.",
+            "st_nemesis_em_greh_arrival_1",
+            "st_nemesis_em_greh_arrival_2",
+            "st_nemesis_em_greh_arrival_3",
+            "st_nemesis_em_greh_arrival_4",
+            "st_nemesis_em_greh_arrival_5",
+            "st_nemesis_em_greh_arrival_6",
+            "st_nemesis_em_greh_arrival_7",
+            "st_nemesis_em_greh_arrival_8",
         },
         boss_escape = {
-            "The storm has passed. The Zone will send me again.",
-            "You lasted the night, %name%. There will be other nights.",
+            "st_nemesis_em_greh_boss_escape_1",
+            "st_nemesis_em_greh_boss_escape_2",
         },
         follow = {
-            "You ran from the shelter, %name%. The Zone ran with you.",
-            "Another map, the same sky. I am still walking.",
+            "st_nemesis_em_greh_follow_1",
+            "st_nemesis_em_greh_follow_2",
         },
         boss_stash = {
-            "%boss% is silent. The Zone gives up what he carried: a stash.",
-            "The sinners' channel goes quiet, then a set of coordinates: %boss%'s stash.",
+            "st_nemesis_em_greh_boss_stash_1",
+            "st_nemesis_em_greh_boss_stash_2",
         },
-        reload = { "Reloading, %name%?" },
+        reload = { "st_nemesis_em_greh_reload_1" },
         time_up = {
-            "The storm is over. The Zone will send me again, %name%.",
-            "Dawn after the emission. You lived. For now.",
+            "st_nemesis_em_greh_time_up_1",
+            "st_nemesis_em_greh_time_up_2",
         },
         known_spot = {
-            "This shelter again, %name%? The Zone remembers it too.",
+            "st_nemesis_em_greh_known_spot_1",
         },
     },
     isg = {
         arrival = {
-            "Emission shielding holding. Walking in, %name%.",
-            "You thought the storm would cover you. It covers me.",
-            "Blowout protocol: targets shelter, we collect. You sheltered.",
-            "Your hiding spot is on my thermal, %name%.",
-            "Every exit is covered. Something out here is helping me.",
-            "Command calls this weather. I call it cover.",
-            "The Zone keeps you in. I am coming in.",
-            "No extraction during an emission. For you, none at all.",
+            "st_nemesis_em_isg_arrival_1",
+            "st_nemesis_em_isg_arrival_2",
+            "st_nemesis_em_isg_arrival_3",
+            "st_nemesis_em_isg_arrival_4",
+            "st_nemesis_em_isg_arrival_5",
+            "st_nemesis_em_isg_arrival_6",
+            "st_nemesis_em_isg_arrival_7",
+            "st_nemesis_em_isg_arrival_8",
         },
         boss_escape = {
-            "Storm is over. Operation window closed. Next one, %name%.",
-            "Recalled after the blowout. Your file stays open.",
+            "st_nemesis_em_isg_boss_escape_1",
+            "st_nemesis_em_isg_boss_escape_2",
         },
         follow = {
-            "Left your shelter, %name%? Bad call in this weather.",
-            "Target relocated mid-emission. Still walking.",
+            "st_nemesis_em_isg_follow_1",
+            "st_nemesis_em_isg_follow_2",
         },
         boss_stash = {
-            "Operator %boss% is down. His cache coordinates were on the squad net.",
-            "Military channel: '%boss% KIA.' Then coordinates: his cache.",
+            "st_nemesis_em_isg_boss_stash_1",
+            "st_nemesis_em_isg_boss_stash_2",
         },
-        reload = { "Reloading, %name%?" },
+        reload = { "st_nemesis_em_isg_reload_1" },
     },
 }
 
 function line(kind)
     local set = LINES[S.faction == "isg" and "isg" or "greh"][kind]
     if not set then return nil end
-    return nemesis_utils.fill_line(set[math.random(#set)], boss_name())
+    return nemesis_utils.fill_line(nemesis_utils.text(set[math.random(#set)]), boss_name())
 end
 
 ---------------------------------------------------------------------------
@@ -1438,7 +1437,7 @@ function mcm_page()
             { id = "emission_enabled", type = "check", val = 1, def = true, hint = "nemesis_emission_enabled" },
             { id = "emission_chance", type = "track", val = 2, def = 100, min = 0, max = 100, step = 5, prec = 0, hint = "nemesis_emission_chance" },
             { id = "emission_extra", type = "track", val = 2, def = 6, min = 0, max = 100, step = 1, prec = 0, hint = "nemesis_emission_extra" },
-            { id = "emission_name", type = "input", val = 0, def = "Ilarion Hrech", hint = "nemesis_emission_name" },
+            { id = "emission_name", type = "input", val = 0, def = default_name(), hint = "nemesis_emission_name" },
             { id = "emission_dr", type = "track", val = 2, def = 30, min = 0, max = 85, step = 5, prec = 0, hint = "nemesis_emission_dr" },
             { id = "emission_npc_cut", type = "track", val = 2, def = 70, min = 0, max = 95, step = 5, prec = 0, hint = "nemesis_emission_npc_cut" },
             { id = "emission_horde", type = "track", val = 2, def = 4, min = 0, max = 8, step = 1, prec = 0, hint = "nemesis_emission_horde" },

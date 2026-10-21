@@ -209,9 +209,9 @@ local function give_warning(gt)
     local pda, audio = warning_pda(), warning_audio()
     perf_step("faction and boss roll")
     if boss then
-        if pda then nemesis_utils.send_news(nemesis_utils.boss_warning_line(nemesis_utils.get_npc_name()), "Unknown frequency") end
+        if pda then nemesis_utils.send_news(nemesis_utils.boss_warning_line(nemesis_utils.get_npc_name()), nemesis_utils.text("st_nemesis_caption_unknown")) end
     else
-        if pda then nemesis_utils.send_news(nemesis_utils.warning_line(), "Unknown frequency") end
+        if pda then nemesis_utils.send_news(nemesis_utils.warning_line(), nemesis_utils.text("st_nemesis_caption_unknown")) end
     end
     perf_step("PDA message")
 
@@ -779,7 +779,7 @@ local function try_spawn(gt, follow)
     end
 
     perf_step("extras planned")
-    local leader = nemesis_state.name_of(nemesis_state.leader()) or "A hunter"
+    local leader = nemesis_state.name_of(nemesis_state.leader()) or nemesis_utils.text("st_nemesis_caption_hunter")
     local sname = "navmesh vertex " .. tostring(ring_lv)
     if spawn_smart then pcall(function() sname = spawn_smart:name() end) end
     nemesis_fx.wd_malfunction(S.boss_id ~= nil)

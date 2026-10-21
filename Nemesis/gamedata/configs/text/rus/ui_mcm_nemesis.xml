@@ -1,0 +1,198 @@
+<?xml version="1.0" encoding="windows-1251"?>
+<string_table>
+    <string id="ui_mcm_menu_nemesis"><text>Nemesis Wave Spawn System</text></string>
+    <string id="ui_mcm_nemesis"><text>Nemesis Wave Spawn System</text></string>
+    <string id="ui_mcm_nemesis_title"><text>Nemesis Wave Spawn System</text></string>
+
+    <string id="ui_mcm_nemesis_page_general"><text>Общие</text></string>
+    <string id="ui_mcm_nemesis_page_boss"><text>Босс</text></string>
+    <string id="ui_mcm_nemesis_page_combat"><text>Бой</text></string>
+    <string id="ui_mcm_nemesis_page_gameplay"><text>Охоты</text></string>
+    <string id="ui_mcm_nemesis_head_warnings"><text>Предупреждения</text></string>
+    <string id="ui_mcm_nemesis_head_sound"><text>Звук</text></string>
+    <string id="ui_mcm_nemesis_head_effects"><text>Эффекты</text></string>
+    <string id="ui_mcm_nemesis_head_hunters"><text>Охотники</text></string>
+    <string id="ui_mcm_nemesis_head_names"><text>Имена</text></string>
+    <string id="ui_mcm_nemesis_head_appearance"><text>Появление</text></string>
+    <string id="ui_mcm_nemesis_head_debug"><text>Отладка</text></string>
+    <string id="ui_mcm_nemesis_head_tools"><text>Инструменты</text></string>
+    <string id="ui_mcm_nemesis_head_timing"><text>Время</text></string>
+    <string id="ui_mcm_nemesis_head_squad"><text>Появление отряда</text></string>
+    <string id="ui_mcm_nemesis_head_behaviour"><text>Поведение</text></string>
+    <string id="ui_mcm_nemesis_head_escalation"><text>Эскалация</text></string>
+    <string id="ui_mcm_nemesis_head_armour"><text>Броня</text></string>
+    <string id="ui_mcm_nemesis_head_toughness"><text>Живучесть</text></string>
+    <string id="ui_mcm_nemesis_head_reward"><text>Награда</text></string>
+    <string id="ui_mcm_nemesis_boss_stash"><text>Тайник за босса</text></string>
+    <string id="ui_mcm_nemesis_boss_stash_desc"><text>Убейте босса сами, и на КПК придут координаты редкого (жёлтого) тайника на текущей карте, наполненного собственной системой тайников игры. Если на карте не осталось свободного тайника, координаты придут на следующей карте, где он есть. По умолчанию включено.</text></string>
+    <string id="ui_mcm_nemesis_page_debug"><text>Отладка и инструменты</text></string>
+
+    <string id="ui_mcm_nemesis_difficulty"><text>Сложность</text></string>
+
+    <string id="ui_mcm_nemesis_difficulty_desc"><text>Русский перевод выполнен ИИ (Claude). Задаёт разом все ползунки, которые делают игру легче или сложнее: время охот, размер отряда и именных охотников, сколько карт они преследуют, здоровье для отступления, меткость, снижение урона, эскалацию, босса и босса выброса. Флажки, громкость и эффекты не меняются. Средняя — значения по умолчанию; Лёгкая примерно на 20% легче, Сложная примерно на 20% сложнее. Измените любой из них вручную, и здесь будет «Своя». Повторный выбор сложности перезаписывает их. По умолчанию Средняя.</text></string>
+
+    <string id="ui_mcm_nemesis_difficulty_easy"><text>Лёгкая</text></string>
+
+    <string id="ui_mcm_nemesis_difficulty_medium"><text>Средняя</text></string>
+
+    <string id="ui_mcm_nemesis_difficulty_hard"><text>Сложная</text></string>
+
+    <string id="ui_mcm_nemesis_difficulty_custom"><text>Своя</text></string>
+
+    <string id="ui_mcm_nemesis_teleport_volume"><text>Громкость телепорта (%)</text></string>
+    <string id="ui_mcm_nemesis_teleport_volume_desc"><text>Громкость звука телепорта, когда охотник выходит из боя или исчезает. 0 отключает звук. По умолчанию 40.</text></string>
+
+    <string id="ui_mcm_nemesis_hum_volume"><text>Громкость пси-гула (%)</text></string>
+    <string id="ui_mcm_nemesis_hum_volume_desc"><text>Пси-гул, исходящий от ближайшего именного охотника: по нему можно понять на слух, где он. Эта громкость в пределах 10 м от него, к 100 м звук затихает. Именной охотник — главный враг Nemesis: его трудно убить, раненым он отступает и возвращается сильнее. 0 отключает звук. По умолчанию 10.</text></string>
+
+    <string id="ui_mcm_nemesis_warning_volume"><text>Громкость предупреждения (%)</text></string>
+    <string id="ui_mcm_nemesis_warning_volume_desc"><text>Громкость радиопомех, которые звучат с предупреждением о прибытии. 0 отключает звук. По умолчанию 70.</text></string>
+
+    <string id="ui_mcm_nemesis_warning_audio"><text>Звуковое предупреждение</text></string>
+
+    <string id="ui_mcm_nemesis_warning_audio_desc"><text>Радиопомехи (для босса ещё и пси-голоса) за 30–120 секунд до начала охоты. Если включено это или предупреждение на КПК, охота начинается после предупреждения; если оба выключены, она начинается без него. По умолчанию включено.</text></string>
+
+    <string id="ui_mcm_nemesis_warning_pda"><text>Предупреждение на КПК</text></string>
+
+    <string id="ui_mcm_nemesis_warning_pda_desc"><text>Сообщение на КПК с неизвестной частоты за 30–120 секунд до начала охоты. Если включено это или звуковое предупреждение, охота начинается после предупреждения; если оба выключены, она начинается без него. По умолчанию выключено.</text></string>
+
+    <string id="ui_mcm_nemesis_lightning_volume"><text>Громкость удара молнии (%)</text></string>
+    <string id="ui_mcm_nemesis_lightning_volume_desc"><text>Громкость удара молнии, когда прибывает босс выброса. Выброс и так громкий, поэтому по умолчанию звук выключен; его прибытие отмечает вспышка телепорта (громкость телепорта). 0 отключает звук. По умолчанию 0.</text></string>
+    <string id="ui_mcm_nemesis_npc_name"><text>Имя босса</text></string>
+    <string id="ui_mcm_nemesis_npc_name_desc"><text>Имя босса «Монолита» — редкого и более сильного именного охотника, который сражается до смерти. Остальные охотники всегда получают случайные имена. По умолчанию: Богдан Кравец</text></string>
+    <string id="ui_mcm_nemesis_isg_boss_name"><text>Имя босса ИИГ</text></string>
+    <string id="ui_mcm_nemesis_isg_boss_name_desc"><text>Имя босса ИИГ, их лучшего бойца, который охотится на игроков из «Монолита», зомбированных и «Греха». По умолчанию: Лютомир Кат</text></string>
+
+    <string id="ui_mcm_nemesis_boss_chance"><text>Шанс босса (%)</text></string>
+    <string id="ui_mcm_nemesis_boss_chance_desc"><text>Шанс, что охоту возглавит босс: более сильный охотник в маскировке, со своим обликом, своими сообщениями и эскортом. Шанс растёт на 2 за каждые 4 охоты без него, а 30-я охота без него точно приведёт его. Только один босс за раз, не чаще одного в день. Победа в охоте, где он был, вдвое снижает эскалацию. 0 — босса не будет вовсе. По умолчанию 4.</text></string>
+
+    <string id="ui_mcm_nemesis_boss_dr"><text>Снижение урона босса (%)</text></string>
+    <string id="ui_mcm_nemesis_boss_dr_desc"><text>Насколько меньше урона босс («Монолита» или ИИГ) получает от каждого попадания, сверх его брони и эскалации. Он никогда не отступает: сражается, пока не погибнет он или вы. 0 — как любой сталкер в его броне. По умолчанию 30.</text></string>
+
+    <string id="ui_mcm_nemesis_boss_npc_damage"><text>Урон босса по NPC (%)</text></string>
+    <string id="ui_mcm_nemesis_boss_misses"><text>Гарантированные промахи босса</text></string>
+    <string id="ui_mcm_nemesis_boss_misses_desc"><text>Сколько первых выстрелов босса по вам за охоту всегда уходят мимо: мгновение, чтобы среагировать. Для обоих боссов. 0 отключает. По умолчанию 2.</text></string>
+    <string id="ui_mcm_nemesis_boss_npc_damage_desc"><text>Насколько сильно босс бьёт других сталкеров и мутантов, в процентах от обычного попадания. Он сражается с любым, кто нападает на него, но всегда предпочитает вас; эта настройка делает его убийцей против них. Урон, который он наносит вам, не меняется. По умолчанию 200.</text></string>
+    <string id="ui_mcm_nemesis_boss_escort"><text>Размер эскорта босса</text></string>
+    <string id="ui_mcm_nemesis_boss_escort_desc"><text>Сколько именных охотников приходит с боссом. Они охотятся на вас, как любые именные охотники, — настоящая угроза и отвлечение, пока он подкрадывается, чтобы добить вас. Охота с боссом не учитывает веса отрядов от 1 до 5 и шанс, что член отряда — именной охотник. 0 — он приходит один. По умолчанию 4.</text></string>
+    <string id="ui_mcm_nemesis_boss_distortion"><text>Искажение рядом с боссом (%)</text></string>
+    <string id="ui_mcm_nemesis_boss_distortion_desc"><text>Лёгкая рябь по экрану, пока босс рядом: она мягко начинается с 60 м и достигает этой силы на 5 м. Действует и тогда, когда он в маскировке, и пропадает, когда он погибает. 0 отключает. По умолчанию 40.</text></string>
+    <string id="ui_mcm_nemesis_boss_min_day"><text>Дней до босса после отсрочки</text></string>
+    <string id="ui_mcm_nemesis_boss_min_day_desc"><text>Сколько игровых дней после отсрочки должно пройти, прежде чем может появиться босс. По умолчанию 7.</text></string>
+
+    <string id="ui_mcm_nemesis_hd_icon"><text>HD-иконка</text></string>
+    <string id="ui_mcm_nemesis_hd_icon_desc"><text>Портрет высокой чёткости в сообщениях на КПК. Если выключено, используется исходная иконка низкой чёткости.</text></string>
+
+    <string id="ui_mcm_nemesis_debug_mode"><text>Режим отладки</text></string>
+    <string id="ui_mcm_nemesis_debug_mode_desc"><text>Для проверки: охоты начинаются раньше (без отсрочки, 120 секунд между охотами, 15 секунд от предупреждения до охоты) и могут появиться где угодно, даже рядом с торговцами и базами. За боссом следует красная метка на карте. Для обычной игры выключите.</text></string>
+
+
+    <string id="ui_mcm_nemesis_prepare_uninstall"><text>Подготовка к удалению</text></string>
+    <string id="ui_mcm_nemesis_prepare_uninstall_desc"><text>Отметьте и примените перед удалением мода: идущая охота отменяется, все отряды Nemesis убираются из мира, и пока флажок стоит, новые охоты не начинаются. Сообщение на КПК скажет, когда можно сохраниться. Затем сохраните игру, удалите мод и загрузите это сохранение. Снимите флажок, чтобы охоты вернулись.</text></string>
+    <string id="ui_mcm_nemesis_wd_malfunction"><text>Сбой мода Wearable Devices</text></string>
+    <string id="ui_mcm_nemesis_wd_malfunction_desc"><text>Только если установлен мод Wearable Devices: когда появляется охота, экраны ваших устройств около 2,5 секунды мерцают вразнобой. Когда появляется босс, после этого они ещё и гаснут на 2 секунды. Без этого мода ничего не делает. По умолчанию включено.</text></string>
+
+    <string id="ui_mcm_nemesis_debug_logs"><text>Журнал отладки</text></string>
+    <string id="ui_mcm_nemesis_debug_logs_desc"><text>Писать в консоль диагностические строки и ошибки Nemesis. Не включайте, если не ищете проблему. Строки, начинающиеся с восклицательного знака, — ошибки.</text></string>
+
+    <string id="ui_mcm_nemesis_grace_period"><text>Отсрочка (дни)</text></string>
+    <string id="ui_mcm_nemesis_grace_period_desc"><text>Сколько игровых дней пройдёт до первой охоты в новой игре (или после установки мода). По умолчанию 18.</text></string>
+
+    <string id="ui_mcm_nemesis_retreat_cooldown"><text>Время между охотами (часы)</text></string>
+    <string id="ui_mcm_nemesis_retreat_cooldown_desc"><text>Сколько игровых часов после конца охоты должно пройти, прежде чем начнётся следующая. 0 — как можно скорее. По умолчанию 36.</text></string>
+
+    <string id="ui_mcm_nemesis_hunt_duration"><text>Лимит времени охоты (часы)</text></string>
+    <string id="ui_mcm_nemesis_hunt_duration_desc"><text>Если вы продержитесь столько игровых часов, охотники сдаются и телепортируются прочь, а следующая охота не станет сильнее. По умолчанию 5.</text></string>
+
+    <string id="ui_mcm_nemesis_retreat_health"><text>Здоровье для отступления (%)</text></string>
+    <string id="ui_mcm_nemesis_retreat_health_desc"><text>Именной охотник выходит из боя и телепортируется прочь, когда его здоровье падает до этого уровня. Одинаково в каждом цикле. Боссы никогда не отступают. По умолчанию 30.</text></string>
+    <string id="ui_mcm_nemesis_esc_step"><text>Эскалация за цикл (%)</text></string>
+    <string id="ui_mcm_nemesis_esc_step_desc"><text>Каждая выигранная вами охота делает следующую сильнее. Этот шаг называется циклом. Каждый цикл после первого добавляет столько снижения урона именным охотникам и боссам, вплоть до максимальной эскалации. 0 — без роста. По умолчанию 2.</text></string>
+    <string id="ui_mcm_nemesis_esc_max"><text>Максимальная эскалация (%)</text></string>
+    <string id="ui_mcm_nemesis_esc_max_desc"><text>Наибольшее снижение урона, которое могут добавить циклы, сколько бы охот вы ни выиграли. При значениях по умолчанию оно достигается на 11-м цикле. По умолчанию 20.</text></string>
+
+
+
+    <string id="ui_mcm_nemesis_accuracy_boost"><text>Бонус меткости (%)</text></string>
+
+    <string id="ui_mcm_nemesis_accuracy_boost_desc"><text>Насколько больше их выстрелов попадает в вас на дистанции, чем у обычного сталкера с тем же оружием, в процентах. Именные охотники получают это значение, обычные члены отряда — половину, а босс — это значение плюс 15. 0 отключает. По умолчанию 10.</text></string>
+    <string id="ui_mcm_nemesis_regular_dr"><text>Снижение урона обычных сталкеров (%)</text></string>
+    <string id="ui_mcm_nemesis_regular_dr_desc"><text>Насколько меньше урона получают обычные члены отряда от каждого попадания, включая смертельное: вашего, других NPC и мутантов. Их собственная броня остаётся при них. Не растёт с циклом. 0 делает их обычными сталкерами, которых убивает выстрел в голову. По умолчанию 0.</text></string>
+    <string id="ui_mcm_nemesis_named_dr"><text>Снижение урона именных охотников (%)</text></string>
+    <string id="ui_mcm_nemesis_named_dr_desc"><text>Насколько меньше урона именные охотники получают от каждого попадания, сверх их брони (копии вашей) и эскалации. По умолчанию 25.</text></string>
+
+    <string id="ui_mcm_nemesis_reset_on_death"><text>Делить эскалацию пополам, если вас убил охотник</text></string>
+    <string id="ui_mcm_nemesis_reset_on_death_desc"><text>Если вас убивает охотник, эскалация делится пополам (цикл 8 становится 4, но не ниже 1), даже если вы загрузите сохранение. По умолчанию включено.</text></string>
+
+    <string id="ui_mcm_nemesis_load_custom_backup"><text>Загрузить настройки из автоматической копии</text></string>
+    <string id="ui_mcm_nemesis_load_custom_backup_desc"><text>Загружает ваши последние сохранённые собственные настройки. Они сохраняются автоматически, когда применяется уровень сложности. Копия остаётся, а флажок снимается сам.</text></string>
+    <string id="ui_mcm_nemesis_reset_escalation_now"><text>Сбросить эскалацию сейчас</text></string>
+    <string id="ui_mcm_nemesis_reset_escalation_now_desc"><text>Отметьте и примените, чтобы прямо сейчас вернуть охотам начальную силу (цикл 1). Флажок снимается сам.</text></string>
+
+
+    <string id="ui_mcm_nemesis_max_damage_reduction"><text>Максимальное снижение урона (%)</text></string>
+    <string id="ui_mcm_nemesis_max_damage_reduction_desc"><text>Наибольшая доля урона от попадания (вашего или NPC), которую член охоты может поглотить, как бы ни складывались защита BR, снижение урона и эскалация. При 70 они всегда получают не меньше 30% урона, так что долгая игра никогда не становится непроходимой. Сам класс брони работает через баллистику GAMMA на ваших пулях и действует сверх этого. По умолчанию 70.</text></string>
+    <string id="ui_mcm_nemesis_br_bonus"><text>Бонус к классу брони охотников</text></string>
+    <string id="ui_mcm_nemesis_br_bonus_desc"><text>Именные охотники и боссы носят копию вашего класса брони (BR). К нему добавляется это значение, а также к собственной броне обычных членов отряда, начиная со второго попадания в часть тела (баллистика GAMMA загружает его при первом). Одинаково в каждом цикле. Нужна баллистика GAMMA. По умолчанию 0.</text></string>
+    <string id="ui_mcm_nemesis_pct_bonus"><text>Бонус к защите BR охотников (%)</text></string>
+    <string id="ui_mcm_nemesis_pct_bonus_desc"><text>Именные охотники и боссы копируют защиту вашей брони (BR%). К ней добавляется это значение, а также к защите обычных членов отряда. Они никогда не блокируют больше 90 процентов. Одинаково в каждом цикле. По умолчанию 0.</text></string>
+
+    <string id="ui_mcm_nemesis_head_bodies"><text>Тела</text></string>
+    <string id="ui_mcm_nemesis_reserve_kills"><text>Сохранять ваши трофеи</text></string>
+    <string id="ui_mcm_nemesis_reserve_kills_desc"><text>Убитых вами сталкеров Nemesis не обыскивают NPC. Если установлен AlifePlus, решает его собственная настройка «reserve own kills» (с её дальностью и временем), и пока она выключена, ничего не сохраняется. Без AlifePlus тело остаётся вашим 2 игровых часа или пока вы не пробудете дальше 150 м от него 3 минуты. По умолчанию включено.</text></string>
+    <string id="ui_mcm_nemesis_head_exe"><text>Новейшие exe</text></string>
+    <string id="ui_mcm_nemesis_force_next"><text>Вызвать следующую охоту</text></string>
+    <string id="ui_mcm_nemesis_force_next_desc"><text>Для проверки. Выберите и примените: «Босс» приводит босса в следующей охоте, без учёта шанса, ограничения по дням и правила «раз в день». «Босс выброса» приводит его сейчас, даже без выброса (идущая охота отменяется ради него; зайдите в здание, чтобы увидеть призраков у выходов). Срабатывает один раз и возвращается к «Нет». По умолчанию Нет.</text></string>
+    <string id="ui_mcm_nemesis_force_next_none"><text>Нет</text></string>
+    <string id="ui_mcm_nemesis_force_next_boss"><text>Босс</text></string>
+    <string id="ui_mcm_nemesis_exe_ai"><text>ИИ новейших exe</text></string>
+    <string id="ui_mcm_nemesis_exe_ai_desc"><text>На новейших exe от demonized охотники используют новые возможности движка там, где это помогает: именные охотники и босс выбирают целью вас и разворачиваются к тому, кто в них стреляет, а отступающего охотника движок удерживает на месте для телепорта. На старых exe или если выключено используется собственный способ мода. По умолчанию включено.</text></string>
+    <string id="ui_mcm_nemesis_hunter_attack_pull"><text>Ответ охотника на атаку</text></string>
+    <string id="ui_mcm_nemesis_hunter_attack_pull_desc"><text>Насколько сильно именной охотник разворачивается к тому, кто только что в него выстрелил, в пределах 60 м. По шкале самого движка тяга к игроку, когда игрок его видит, равна 900, а для охотников вы считаетесь вдвойне. Больше — они охотнее отвечают нападающим NPC. 0 оставляет это движку. Нужны «ИИ новейших exe» и новейшие exe от demonized. По умолчанию 600.</text></string>
+    <string id="ui_mcm_nemesis_boss_attack_pull"><text>Ответ босса на атаку</text></string>
+    <string id="ui_mcm_nemesis_boss_attack_pull_desc"><text>То же для босса. Значение низкое, чтобы он отвечал, но не отвлекался от вас; 5 секунд после того, как вы его раните, он и так не обращает внимания на других NPC. 0 оставляет это движку. По умолчанию 300.</text></string>
+
+    <string id="ui_mcm_nemesis_last_known_chase"><text>Искать вас по последней позиции</text></string>
+    <string id="ui_mcm_nemesis_last_known_chase_desc"><text>Включено: потеряв вас из виду, охотник ищет там, где в последний раз видел или слышал вас, и находит вас снова через 60 секунд. Выключено: охотники всегда идут туда, где вы находитесь, пока не увидят вас; тогда они вступают в бой. По умолчанию включено.</text></string>
+
+    <string id="ui_mcm_nemesis_squad_tactics"><text>Тактика отряда</text></string>
+    <string id="ui_mcm_nemesis_squad_tactics_desc"><text>Дополнительные члены отряда заходят с флангов по свободным путям, а не бегут прямо на вас, а снайперы останавливаются заранее и занимают огневую позицию. Именные охотники по-прежнему идут прямо на вас. По умолчанию включено.</text></string>
+
+    <string id="ui_mcm_nemesis_retreat_to_cover"><text>Сначала отступать в укрытие</text></string>
+    <string id="ui_mcm_nemesis_follow_maps"><text>Сколько карт они преследуют</text></string>
+    <string id="ui_mcm_nemesis_follow_maps_desc"><text>Сколько раз охота следует за вами на другую карту. После этого следующая смена карты сбрасывает их с хвоста. 0: они никогда не преследуют, и смена карты завершает охоту побегом. По умолчанию 2.</text></string>
+    <string id="ui_mcm_nemesis_retreat_to_cover_desc"><text>Перед тем как телепортироваться, раненый охотник сначала убегает от вас в укрытие (или, если укрытия нет, по свободному пути) на срок до 4 секунд. Пока он бежит, его нельзя ранить. По умолчанию включено.</text></string>
+
+    <string id="ui_mcm_nemesis_hunter_cloak"><text>Маскировка охотников (экспериментально)</text></string>
+    <string id="ui_mcm_nemesis_hunter_cloak_desc"><text>Именные охотники становятся невидимыми, пока выслеживают вас дальше чем с 30 м, и появляются снова, когда вступают в бой, подходят ближе 15 м или получают попадание с уроном. Не чаще раза в 20 секунд. Пока они в маскировке, другие сталкеры их не замечают. Используется та же невидимая модель, что и при телепорте. Экспериментально: оружие в руках может остаться видимым. По умолчанию включено.</text></string>
+
+    <string id="ui_mcm_nemesis_fight_range"><text>Дальность боя (м)</text></string>
+    <string id="ui_mcm_nemesis_fight_range_desc"><text>Охотники прекращают погоню и вступают в бой, когда видят вас или любого другого врага на таком расстоянии. По умолчанию 100.</text></string>
+
+    <string id="ui_mcm_nemesis_spawn_dist_min"><text>Дистанция появления, мин. (м)</text></string>
+    <string id="ui_mcm_nemesis_spawn_dist_min_desc"><text>Охотники (и босс выброса) никогда не появляются ближе к вам. По умолчанию 80.</text></string>
+
+    <string id="ui_mcm_nemesis_spawn_dist_max"><text>Дистанция появления, макс. (м)</text></string>
+    <string id="ui_mcm_nemesis_spawn_dist_max_desc"><text>Самое дальнее от вас место, где может появиться охота (и босс выброса). По умолчанию 140.</text></string>
+
+    <string id="ui_mcm_nemesis_squad_w1"><text>Отряд из 1, вес</text></string>
+    <string id="ui_mcm_nemesis_squad_w1_desc"><text>Относительный шанс, что охота — это только охотник. Эти пять ползунков — веса, а не проценты, так что в сумме они не обязаны давать 100. По умолчанию 50.</text></string>
+
+    <string id="ui_mcm_nemesis_squad_w2"><text>Отряд из 2, вес</text></string>
+    <string id="ui_mcm_nemesis_squad_w2_desc"><text>Относительный шанс, что он приведёт одного обычного сталкера. Его можно убить. По умолчанию 25.</text></string>
+
+    <string id="ui_mcm_nemesis_squad_w3"><text>Отряд из 3, вес</text></string>
+    <string id="ui_mcm_nemesis_squad_w3_desc"><text>Относительный шанс двух спутников. По умолчанию 14.</text></string>
+
+    <string id="ui_mcm_nemesis_squad_w4"><text>Отряд из 4, вес</text></string>
+    <string id="ui_mcm_nemesis_squad_w4_desc"><text>Относительный шанс трёх спутников. По умолчанию 10.</text></string>
+
+    <string id="ui_mcm_nemesis_squad_w5"><text>Отряд из 5, вес</text></string>
+    <string id="ui_mcm_nemesis_squad_w5_desc"><text>Относительный шанс четырёх спутников. По умолчанию 6. Поставьте вес 0, чтобы отключить такой размер отряда.</text></string>
+
+    <string id="ui_mcm_nemesis_named_chance"><text>Член отряда — именной охотник (%)</text></string>
+    <string id="ui_mcm_nemesis_named_chance_desc"><text>Шанс, что каждый дополнительный член отряда — ещё один именной охотник, а не обычный сталкер. У именных охотников в имени есть звание, их трудно убить, и раненые они отступают. 0 — именной только командир, 100 — весь отряд. По умолчанию 15.</text></string>
+    <string id="ui_mcm_nemesis_area_scaling"><text>Охоты по районам</text></string>
+    <string id="ui_mcm_nemesis_area_scaling_desc"><text>Включено: в районах для новичков охоты меньше (Кордон и Болота: не больше 2 охотников; Свалка, Тёмная долина и похожие: не больше 3), а в поздних районах спутники чаще оказываются именными охотниками (+10 в Рыжем лесу, на Радаре и похожих; +20 в Припяти, на Юпитере, Затоне и ЧАЭС). На охоты с боссом не влияет. По умолчанию включено.</text></string>
+
+</string_table>

@@ -122,13 +122,13 @@ end
 local function check_boxes()
     if box("load_custom_backup") then
         local n = nemesis_mcm.load_custom_backup()
-        nemesis_utils.send_news(n > 0 and "Your custom settings are loaded from the automatic backup." or "There is no automatic backup yet.", "Nemesis")
+        nemesis_utils.send_news(nemesis_utils.text(n > 0 and "st_nemesis_msg_backup_loaded" or "st_nemesis_msg_backup_none"), nemesis_utils.text("st_nemesis_caption"))
     end
     if box("reset_escalation_now") then
         dbg("Nemesis: escalation reset from cycle %s to 1 (MCM).", tostring(S.cycle))
         S.cycle = 1
         nemesis_damage.unseed_br()
-        nemesis_utils.send_news("Escalation reset. The next hunt starts at cycle 1.", "Nemesis")
+        nemesis_utils.send_news(nemesis_utils.text("st_nemesis_msg_escalation_reset"), nemesis_utils.text("st_nemesis_caption"))
     end
 
     local f = nemesis_mcm.get_string("force_next", "none")

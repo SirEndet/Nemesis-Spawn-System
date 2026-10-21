@@ -2,6 +2,13 @@
 
 local function log_msg(...) return nemesis_utils.log_msg(...) end
 
+function text(id)
+    local t = nil
+
+    pcall(function() t = game.translate_string(id) end)
+    return (type(t) == "string" and t ~= "") and t or id
+end
+
 local function hunt_faction() return nemesis_state.S.faction == "isg" and "isg" or "monolith" end
 
 ---------------------------------------------------------------------------
@@ -9,32 +16,35 @@ local function hunt_faction() return nemesis_state.S.faction == "isg" and "isg" 
 ---------------------------------------------------------------------------
 
 local FIRST_NAMES = {
-    "Dmitri", "Sergei", "Ivan", "Mykola", "Andrei", "Alexei", "Viktor", "Pavel",
-    "Igor", "Oleg", "Boris", "Mikhail", "Yuri", "Roman", "Taras",
-    "Vasyl", "Petro", "Stepan", "Yaroslav", "Volodymyr", "Leonid", "Maksym", "Vadim",
-    "Artem", "Konstantin", "Gennadiy", "Arkadiy", "Ostap", "Fedir", "Anatoliy",
+    "st_nemesis_fname_1", "st_nemesis_fname_2", "st_nemesis_fname_3", "st_nemesis_fname_4", "st_nemesis_fname_5",
+    "st_nemesis_fname_6", "st_nemesis_fname_7", "st_nemesis_fname_8", "st_nemesis_fname_9", "st_nemesis_fname_10",
+    "st_nemesis_fname_11", "st_nemesis_fname_12", "st_nemesis_fname_13", "st_nemesis_fname_14", "st_nemesis_fname_15",
+    "st_nemesis_fname_16", "st_nemesis_fname_17", "st_nemesis_fname_18", "st_nemesis_fname_19", "st_nemesis_fname_20",
+    "st_nemesis_fname_21", "st_nemesis_fname_22", "st_nemesis_fname_23", "st_nemesis_fname_24", "st_nemesis_fname_25",
+    "st_nemesis_fname_26", "st_nemesis_fname_27", "st_nemesis_fname_28", "st_nemesis_fname_29", "st_nemesis_fname_30",
 }
 
 local LAST_NAMES = {
-    "Shevchenko", "Kravchenko", "Petrenko", "Kovalenko", "Bondarenko", "Savchenko",
-    "Tkachenko", "Marchenko", "Rudenko", "Lysenko", "Boyko", "Melnyk",
-    "Kovalchuk", "Shevchuk", "Bondarchuk", "Polishchuk", "Kravchuk", "Tarasyuk",
-    "Sotkinov", "Volkov", "Sokolov", "Morozov", "Lebedev", "Novikov",
-    "Kozlov", "Orlov", "Fedorov", "Smirnov", "Popov", "Belov",
+    "st_nemesis_lname_1", "st_nemesis_lname_2", "st_nemesis_lname_3", "st_nemesis_lname_4", "st_nemesis_lname_5",
+    "st_nemesis_lname_6", "st_nemesis_lname_7", "st_nemesis_lname_8", "st_nemesis_lname_9", "st_nemesis_lname_10",
+    "st_nemesis_lname_11", "st_nemesis_lname_12", "st_nemesis_lname_13", "st_nemesis_lname_14", "st_nemesis_lname_15",
+    "st_nemesis_lname_16", "st_nemesis_lname_17", "st_nemesis_lname_18", "st_nemesis_lname_19", "st_nemesis_lname_20",
+    "st_nemesis_lname_21", "st_nemesis_lname_22", "st_nemesis_lname_23", "st_nemesis_lname_24", "st_nemesis_lname_25",
+    "st_nemesis_lname_26", "st_nemesis_lname_27", "st_nemesis_lname_28", "st_nemesis_lname_29", "st_nemesis_lname_30",
 }
 
 local function compose_name()
-    return FIRST_NAMES[math.random(#FIRST_NAMES)] .. " " .. LAST_NAMES[math.random(#LAST_NAMES)]
+    return text(FIRST_NAMES[math.random(#FIRST_NAMES)]) .. " " .. text(LAST_NAMES[math.random(#LAST_NAMES)])
 end
 
 local RANKS = {
-    monolith = { "Acolyte", "Disciple", "Zealot", "Sentinel", "Templar", "Herald" },
-    isg = { "Sergeant", "Lieutenant", "Captain", "Major", "Specialist", "Operative" },
+    monolith = { "st_nemesis_rank_monolith_1", "st_nemesis_rank_monolith_2", "st_nemesis_rank_monolith_3", "st_nemesis_rank_monolith_4", "st_nemesis_rank_monolith_5", "st_nemesis_rank_monolith_6" },
+    isg = { "st_nemesis_rank_isg_1", "st_nemesis_rank_isg_2", "st_nemesis_rank_isg_3", "st_nemesis_rank_isg_4", "st_nemesis_rank_isg_5", "st_nemesis_rank_isg_6" },
 }
 
 local function rank()
     local list = RANKS[nemesis_state.S.faction] or RANKS.monolith
-    return list[math.random(#list)]
+    return text(list[math.random(#list)])
 end
 
 function next_hunter_name(used, named)
@@ -45,7 +55,7 @@ function next_hunter_name(used, named)
         if named then name = rank() .. " " .. name end
         if not used[name] and not nemesis_utils.is_boss_name(name) then break end
     end
-    if nemesis_utils.is_boss_name(name) then name = (named and rank() .. " " or "") .. "Taras Kravchuk" end
+    if nemesis_utils.is_boss_name(name) then name = (named and rank() .. " " or "") .. text("st_nemesis_name_fallback") end
     used[name] = true
     return name
 end
@@ -63,7 +73,7 @@ function send_news(text, caption, icon_override)
         log_msg("!Nemesis: PDA message skipped, no actor yet: %s", tostring(text))
         return false
     end
-    if type(caption) ~= "string" or caption == "" then caption = "Nemesis" end
+    if type(caption) ~= "string" or caption == "" then caption = text("st_nemesis_caption") end
     local icon = "ui_nemesis_news"
     if nemesis_mcm.get_bool("hd_icon", false) then
         icon = "ui_nemesis_news_hd"
@@ -92,189 +102,186 @@ local function player_name()
     local name = nil
 
     pcall(function() name = db.actor:character_name() end)
-    if type(name) ~= "string" or name == "" then name = "Stalker" end
+    if type(name) ~= "string" or name == "" then name = text("st_nemesis_player_fallback") end
     return name
 end
 
----------------------------------------------------------------------------
--- Lines, per hunt faction. %name% is the player's name, %boss% the boss's.
----------------------------------------------------------------------------
 local LINES = {
     monolith = {
         warning = {
-            "You feel watched.",
-            "Static on every channel. Something is coming.",
-            "Your PDA picks up a broken Monolith prayer. It is getting closer.",
-            "A voice under the static whispers your name.",
-            "The Zone has noticed you, %name%.",
+            "st_nemesis_mono_warning_1",
+            "st_nemesis_mono_warning_2",
+            "st_nemesis_mono_warning_3",
+            "st_nemesis_mono_warning_4",
+            "st_nemesis_mono_warning_5",
         },
         taunt = {
             { max = 1, lines = {
-                "I can smell your fear, Stalker. Run while you still can.",
-                "The Zone is a small place. There is nowhere left to hide.",
-                "Did you think you were the predator here?",
-                "Your footsteps are like a beacon in the dark. I am coming.",
+                "st_nemesis_mono_taunt_t1_1",
+                "st_nemesis_mono_taunt_t1_2",
+                "st_nemesis_mono_taunt_t1_3",
+                "st_nemesis_mono_taunt_t1_4",
             } },
             { max = 3, lines = {
-                "You were lucky last time. Luck runs out in the Zone.",
-                "I remember how you fight, %name%. I have learned.",
-                "Again, Stalker. The Monolith does not forget.",
+                "st_nemesis_mono_taunt_t2_1",
+                "st_nemesis_mono_taunt_t2_2",
+                "st_nemesis_mono_taunt_t2_3",
             } },
             { max = 6, lines = {
-                "How many times must I come for you, %name%?",
-                "Every wound you gave me made me stronger. Count them.",
-                "You are running out of places, %name%. I am not running out of patience.",
+                "st_nemesis_mono_taunt_t3_1",
+                "st_nemesis_mono_taunt_t3_2",
+                "st_nemesis_mono_taunt_t3_3",
             } },
             { max = math.huge, lines = {
-                "%name%. The Monolith has whispered your name to me so many times.",
-                "There is no hunt left. Only the ending.",
-                "I have died for you a hundred times, %name%. Tonight it is your turn.",
+                "st_nemesis_mono_taunt_t4_1",
+                "st_nemesis_mono_taunt_t4_2",
+                "st_nemesis_mono_taunt_t4_3",
             } },
         },
         retreat = {
-            "Enjoy this while it lasts. We are not finished.",
-            "Not today. But I will find you again.",
-            "You got lucky, Stalker. Remember my face.",
+            "st_nemesis_mono_retreat_1",
+            "st_nemesis_mono_retreat_2",
+            "st_nemesis_mono_retreat_3",
         },
         time_up = {
-            "The Monolith calls me back. This is not over.",
-            "You ran well. Next time you will not run far enough.",
-            "Your time is borrowed, Stalker. I will collect it.",
+            "st_nemesis_mono_time_up_1",
+            "st_nemesis_mono_time_up_2",
+            "st_nemesis_mono_time_up_3",
         },
         boss = {
-            "Glory to the Monolith. Your road ends here, %name%.",
-            "The Monolith spoke your name. I came to answer.",
-            "You cannot hide from what lives in the static.",
-            "Kneel before the Monolith. It will be quick.",
-            "Every step you took led you here. The Zone is closing in.",
-            "Za Monolith! The Zone will drink your blood.",
-            "I walked through the Brain Scorcher to reach you. You will not outrun me.",
-            "The Monolith does not forgive. Neither do I.",
+            "st_nemesis_mono_boss_1",
+            "st_nemesis_mono_boss_2",
+            "st_nemesis_mono_boss_3",
+            "st_nemesis_mono_boss_4",
+            "st_nemesis_mono_boss_5",
+            "st_nemesis_mono_boss_6",
+            "st_nemesis_mono_boss_7",
+            "st_nemesis_mono_boss_8",
         },
         boss_warning = {
-            "The static is screaming. Something old is coming for you.",
-            "Every channel at once: a man's voice, praying to the Monolith.",
-            "Your PDA flickers a name you have never seen: %boss%. The signal is getting closer.",
-            "The Zone goes quiet. Even the anomalies are listening for him.",
+            "st_nemesis_mono_boss_warning_1",
+            "st_nemesis_mono_boss_warning_2",
+            "st_nemesis_mono_boss_warning_3",
+            "st_nemesis_mono_boss_warning_4",
         },
         boss_stash = {
-            "%boss% has fallen. His last coordinates come through on the Monolith channel: a stash.",
-            "The prayers on the channel stop. Someone sends coordinates instead: %boss%'s stash.",
+            "st_nemesis_mono_boss_stash_1",
+            "st_nemesis_mono_boss_stash_2",
         },
         boss_escape = {
-            "You slipped away this time. The Monolith keeps count.",
-            "Hide, then. I will be waiting in the static.",
-            "The Monolith calls me home. Do not mistake that for mercy.",
+            "st_nemesis_mono_boss_escape_1",
+            "st_nemesis_mono_boss_escape_2",
+            "st_nemesis_mono_boss_escape_3",
         },
         dread = {
-            "I can hear your heartbeat.",
-            "You are walking the way I want you to.",
-            "Look around. You will not see me.",
-            "The static is me. It has always been me.",
-            "Closer than you think, %name%.",
-            "Your breath is so loud in the quiet.",
+            "st_nemesis_mono_dread_1",
+            "st_nemesis_mono_dread_2",
+            "st_nemesis_mono_dread_3",
+            "st_nemesis_mono_dread_4",
+            "st_nemesis_mono_dread_5",
+            "st_nemesis_mono_dread_6",
         },
-        sneak = { "%name%, you don't see me because I'm behind you right now." },
-        rush = { "Run, %name%. Every step brings you closer to me." },
-        close = { "%name%. Close enough to hear you breathe." },
+        sneak = { "st_nemesis_mono_sneak_1" },
+        rush = { "st_nemesis_mono_rush_1" },
+        close = { "st_nemesis_mono_close_1" },
         follow = {
-            "You cannot outrun the Monolith, %name%.",
-            "New ground. Same prey.",
-            "The Monolith walks every road you walk, %name%.",
+            "st_nemesis_mono_follow_1",
+            "st_nemesis_mono_follow_2",
+            "st_nemesis_mono_follow_3",
         },
-        reload = { "Reloading, %name%?" },
+        reload = { "st_nemesis_mono_reload_1" },
         known_spot = {
-            "Same place as last time, %name%. The Monolith remembers.",
-            "You fought us here before, %name%. We know this ground now.",
+            "st_nemesis_mono_known_spot_1",
+            "st_nemesis_mono_known_spot_2",
         },
     },
     isg = {
         warning = {
-            "Encrypted military traffic on your frequency. Your callsign is in it.",
-            "Your PDA pings a UNISG tracker. Someone is triangulating you.",
-            "Rotor noise far off, then silence. They are coming on foot.",
-            "Intercepted: 'Target is %faction%. Liquidate on sight.'",
-            "The Zone has noticed you, %name%. So has UNISG.",
+            "st_nemesis_isg_warning_1",
+            "st_nemesis_isg_warning_2",
+            "st_nemesis_isg_warning_3",
+            "st_nemesis_isg_warning_4",
+            "st_nemesis_isg_warning_5",
         },
         taunt = {
             { max = 1, lines = {
-                "Target acquired. One of %faction%, alone. Moving in.",
-                "This is a cleanup operation. You are the mess.",
-                "Whatever is in your head will not stop a bullet.",
+                "st_nemesis_isg_taunt_t1_1",
+                "st_nemesis_isg_taunt_t1_2",
+                "st_nemesis_isg_taunt_t1_3",
             } },
             { max = 3, lines = {
-                "You walked away last time. The file on you got thicker, %name%.",
-                "Second contact. We adjusted the approach.",
+                "st_nemesis_isg_taunt_t2_1",
+                "st_nemesis_isg_taunt_t2_2",
             } },
             { max = 6, lines = {
-                "%name%. Every report ends with your name. Today we close the file.",
-                "Command wants you gone. I want it personal.",
+                "st_nemesis_isg_taunt_t3_1",
+                "st_nemesis_isg_taunt_t3_2",
             } },
             { max = math.huge, lines = {
-                "%name%. Priority one. No withdrawal authorised.",
-                "This ends with you bagged and tagged.",
+                "st_nemesis_isg_taunt_t4_1",
+                "st_nemesis_isg_taunt_t4_2",
             } },
         },
         retreat = {
-            "Pulling out. This is not over.",
-            "Extraction. Mark this place, we will be back.",
-            "Fall back. We will finish this, %name%.",
+            "st_nemesis_isg_retreat_1",
+            "st_nemesis_isg_retreat_2",
+            "st_nemesis_isg_retreat_3",
         },
         time_up = {
-            "Operation window closed. You got lucky.",
-            "Recall order received. Next time, %name%.",
-            "We are pulled out. Your file stays open.",
+            "st_nemesis_isg_time_up_1",
+            "st_nemesis_isg_time_up_2",
+            "st_nemesis_isg_time_up_3",
         },
         boss = {
-            "UNISG Command authorised your removal, %name%.",
-            "I have hunted things in the Zone that would eat %faction% whole.",
-            "No prayers on this channel. Only the countdown.",
-            "So, %faction%. I was trained to break things like you.",
-            "Rules of engagement: none.",
-            "The rest of %faction% is next. You are first.",
-            "Hold still. This will be clean.",
-            "I never miss twice, %name%.",
+            "st_nemesis_isg_boss_1",
+            "st_nemesis_isg_boss_2",
+            "st_nemesis_isg_boss_3",
+            "st_nemesis_isg_boss_4",
+            "st_nemesis_isg_boss_5",
+            "st_nemesis_isg_boss_6",
+            "st_nemesis_isg_boss_7",
+            "st_nemesis_isg_boss_8",
         },
         boss_warning = {
-            "Military channel: 'Specialist deployed, codename %boss%.' The signal is getting closer.",
-            "Your PDA locks up for a second. Someone very good has your position.",
-            "Every UNISG channel goes silent at once.",
+            "st_nemesis_isg_boss_warning_1",
+            "st_nemesis_isg_boss_warning_2",
+            "st_nemesis_isg_boss_warning_3",
         },
         boss_stash = {
-            "Operator %boss% KIA. His cache coordinates were on the squad net.",
-            "Military channel: '%boss% is down.' Then a set of coordinates: his cache.",
+            "st_nemesis_isg_boss_stash_1",
+            "st_nemesis_isg_boss_stash_2",
         },
         boss_escape = {
-            "Operation window closed. The file stays open.",
-            "Recalled. Do not get comfortable.",
-            "Command pulls me out. Next time there is no recall.",
+            "st_nemesis_isg_boss_escape_1",
+            "st_nemesis_isg_boss_escape_2",
+            "st_nemesis_isg_boss_escape_3",
         },
         dread = {
-            "Thermals have you. Keep walking.",
-            "I can hear your heartbeat on the mic.",
-            "You will not see me. Nobody ever does.",
-            "Closer than you think, %name%.",
-            "Checking your six yet, %name%?",
+            "st_nemesis_isg_dread_1",
+            "st_nemesis_isg_dread_2",
+            "st_nemesis_isg_dread_3",
+            "st_nemesis_isg_dread_4",
+            "st_nemesis_isg_dread_5",
         },
-        sneak = { "%name%. Don't turn around. I'm right behind you." },
-        rush = { "Keep running, %name%. You're only making this easier." },
-        close = { "Close enough, %name%. Lights out." },
+        sneak = { "st_nemesis_isg_sneak_1" },
+        rush = { "st_nemesis_isg_rush_1" },
+        close = { "st_nemesis_isg_close_1" },
         follow = {
-            "Changing maps won't save you, %name%.",
-            "Target relocated. Pursuit continues.",
-            "You moved. So did we, %name%.",
+            "st_nemesis_isg_follow_1",
+            "st_nemesis_isg_follow_2",
+            "st_nemesis_isg_follow_3",
         },
-        reload = { "Reloading, %name%?" },
+        reload = { "st_nemesis_isg_reload_1" },
         known_spot = {
-            "Same position as last time, %name%? Sloppy.",
-            "We mapped this spot last time, %name%. Predictable.",
+            "st_nemesis_isg_known_spot_1",
+            "st_nemesis_isg_known_spot_2",
         },
     },
 }
 
-local FACTION_NAMES = { monolith = "Monolith", zombied = "the Zombified", greh = "Sin" }
+local FACTION_NAMES = { monolith = "st_nemesis_faction_monolith", zombied = "st_nemesis_faction_zombied", greh = "st_nemesis_faction_greh" }
 local function player_faction_name()
-    return FACTION_NAMES[nemesis_utils.player_community() or ""] or "Monolith"
+    return text(FACTION_NAMES[nemesis_utils.player_community() or ""] or FACTION_NAMES.monolith)
 end
 
 local function fill(line, boss)
@@ -292,7 +299,7 @@ local function pick(kind, boss)
     local own = nemesis_events.ask("own_line", kind, boss)
     if own then return own end
     local set = LINES[hunt_faction()][kind]
-    return fill(set[math.random(#set)], boss)
+    return fill(text(set[math.random(#set)]), boss)
 end
 
 function warning_line() return pick("warning") end
@@ -313,7 +320,7 @@ function reload_line() return pick("reload") end
 function taunt(cycle)
     cycle = cycle or 1
     for _, tier in ipairs(LINES[hunt_faction()].taunt) do
-        if cycle <= tier.max then return fill(tier.lines[math.random(#tier.lines)]) end
+        if cycle <= tier.max then return fill(text(tier.lines[math.random(#tier.lines)])) end
     end
-    return "I am coming."
+    return text("st_nemesis_taunt_fallback")
 end

@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="windows-1251"?>
+<string_table>
+    <!-- Nemesis Wave Spawn System: the emission boss's own lines and name (round 134) -->
+    <string id="st_nemesis_em_greh_arrival_1"><text>The Zone breathes, %name%. I walk in its breath.</text></string>
+    <string id="st_nemesis_em_greh_arrival_2"><text>The sky burns for you. I am what it sends.</text></string>
+    <string id="st_nemesis_em_greh_arrival_3"><text>You hide from the Zone's breath. I was born in it.</text></string>
+    <string id="st_nemesis_em_greh_arrival_4"><text>The walls will not save you. The Zone has sealed every door.</text></string>
+    <string id="st_nemesis_em_greh_arrival_5"><text>Every emission the Zone chooses one. Tonight it chose you, %name%.</text></string>
+    <string id="st_nemesis_em_greh_arrival_6"><text>Stay inside, %name%. I am coming in.</text></string>
+    <string id="st_nemesis_em_greh_arrival_7"><text>The storm is my road. Your shelter is your grave.</text></string>
+    <string id="st_nemesis_em_greh_arrival_8"><text>Pray, if you know how. The Zone is listening, and so am I.</text></string>
+    <string id="st_nemesis_em_greh_boss_escape_1"><text>The storm has passed. The Zone will send me again.</text></string>
+    <string id="st_nemesis_em_greh_boss_escape_2"><text>You lasted the night, %name%. There will be other nights.</text></string>
+    <string id="st_nemesis_em_greh_follow_1"><text>You ran from the shelter, %name%. The Zone ran with you.</text></string>
+    <string id="st_nemesis_em_greh_follow_2"><text>Another map, the same sky. I am still walking.</text></string>
+    <string id="st_nemesis_em_greh_boss_stash_1"><text>%boss% is silent. The Zone gives up what he carried: a stash.</text></string>
+    <string id="st_nemesis_em_greh_boss_stash_2"><text>The sinners' channel goes quiet, then a set of coordinates: %boss%'s stash.</text></string>
+    <string id="st_nemesis_em_greh_reload_1"><text>Reloading, %name%?</text></string>
+    <string id="st_nemesis_em_greh_time_up_1"><text>The storm is over. The Zone will send me again, %name%.</text></string>
+    <string id="st_nemesis_em_greh_time_up_2"><text>Dawn after the emission. You lived. For now.</text></string>
+    <string id="st_nemesis_em_greh_known_spot_1"><text>This shelter again, %name%? The Zone remembers it too.</text></string>
+    <string id="st_nemesis_em_isg_arrival_1"><text>Emission shielding holding. Walking in, %name%.</text></string>
+    <string id="st_nemesis_em_isg_arrival_2"><text>You thought the storm would cover you. It covers me.</text></string>
+    <string id="st_nemesis_em_isg_arrival_3"><text>Blowout protocol: targets shelter, we collect. You sheltered.</text></string>
+    <string id="st_nemesis_em_isg_arrival_4"><text>Your hiding spot is on my thermal, %name%.</text></string>
+    <string id="st_nemesis_em_isg_arrival_5"><text>Every exit is covered. Something out here is helping me.</text></string>
+    <string id="st_nemesis_em_isg_arrival_6"><text>Command calls this weather. I call it cover.</text></string>
+    <string id="st_nemesis_em_isg_arrival_7"><text>The Zone keeps you in. I am coming in.</text></string>
+    <string id="st_nemesis_em_isg_arrival_8"><text>No extraction during an emission. For you, none at all.</text></string>
+    <string id="st_nemesis_em_isg_boss_escape_1"><text>Storm is over. Operation window closed. Next one, %name%.</text></string>
+    <string id="st_nemesis_em_isg_boss_escape_2"><text>Recalled after the blowout. Your file stays open.</text></string>
+    <string id="st_nemesis_em_isg_follow_1"><text>Left your shelter, %name%? Bad call in this weather.</text></string>
+    <string id="st_nemesis_em_isg_follow_2"><text>Target relocated mid-emission. Still walking.</text></string>
+    <string id="st_nemesis_em_isg_boss_stash_1"><text>Operator %boss% is down. His cache coordinates were on the squad net.</text></string>
+    <string id="st_nemesis_em_isg_boss_stash_2"><text>Military channel: '%boss% KIA.' Then coordinates: his cache.</text></string>
+    <string id="st_nemesis_em_isg_reload_1"><text>Reloading, %name%?</text></string>
+    <string id="st_nemesis_em_boss_name"><text>Ilarion Hrech</text></string>
+    <string id="st_nemesis_em_msg_on_his_way"><text>The emission boss is already on his way.</text></string>
+
+</string_table>
