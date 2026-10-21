@@ -1,0 +1,165 @@
+-- Nemesis Engine (round 109, restructure step 3: the engine wrappers)
+
+---------------------------------------------------------------------------
+-- Level vertices and places
+---------------------------------------------------------------------------
+NO_VERTEX = 4294967295
+
+function valid_vertex(v) return v ~= nil and v < NO_VERTEX end
+
+function vertex_pos(lv)
+    local p = nil
+    pcall(function() p = level.vertex_position(lv) end)
+    if not p then return nil end
+    return vector():set(p.x, p.y, p.z)
+end
+
+function vertex_at(pos)
+    local v = nil
+    pcall(function() v = level.vertex_id(pos) end)
+    return valid_vertex(v) and v or nil
+end
+
+function vertex_toward(lv, dir, dist)
+    local v = nil
+    pcall(function() v = level.vertex_in_direction(lv, dir, dist) end)
+    return valid_vertex(v) and v or nil
+end
+
+function is_indoor(pos)
+    local yes = false
+    pcall(function() yes = xcombat.is_indoor(pos) == true end)
+    return yes
+end
+
+function level_name()
+    local n = nil
+    pcall(function() n = level.name() end)
+    return n
+end
+
+function on_underground_map()
+    local under = false
+    pcall(function() under = xcombat.INDOOR_LEVELS[level.name()] == true end)
+    if under then return true end
+    pcall(function() under = GetEvent("underground") and true or false end)
+    return under
+end
+
+function same_level(se_a, se_b)
+    if not se_a or not se_b then return nil end
+    local ok, a, b = pcall(function()
+        return xlevel.get_level_id(se_a), xlevel.get_level_id(se_b)
+    end)
+    if not ok or not a or not b then return nil end
+    return a == b
+end
+
+function flat_dist(a, b) return math.sqrt((a.x - b.x) ^ 2 + (a.z - b.z) ^ 2) end
+
+---------------------------------------------------------------------------
+-- Files and ini sections
+---------------------------------------------------------------------------
+
+function file_exists(root, path)
+    local ok, res = pcall(function() return getFS():exist(root, path) end)
+    return ok and res and true or false
+end
+
+function sound_exists(path) return file_exists("$game_sounds$", path .. ".ogg") end
+
+function mesh_exists(path) return file_exists("$game_meshes$", path .. ".ogf") end
+
+function section_exists(sec)
+    local ok = false
+    pcall(function() ok = ini_sys:section_exist(sec) end)
+    return ok
+end
+
+---------------------------------------------------------------------------
+-- Objects
+---------------------------------------------------------------------------
+
+function obj(id)
+    if id == nil then return nil end
+    local o = nil
+    pcall(function() o = level.object_by_id(id) end)
+    return o
+end
+
+function se(id)
+    if id == nil then return nil end
+    local s = nil
+    pcall(function() s = alife():object(id) end)
+    return s
+end
+
+local function _alive(o) return o:alive() end
+function alive(o)
+    if not o then return false end
+    local ok, yes = pcall(_alive, o)
+    return ok and yes == true
+end
+
+local function _dist(a, b) return a:position():distance_to(b:position()) end
+function dist(a, b)
+    if not (a and b) then return nil end
+    local ok, d = pcall(_dist, a, b)
+    return ok and d or nil
+end
+
+function set_health(o, v)
+    if not o or not v then return false end
+    if v < 0 then v = 0 end
+    if v > 1 then v = 1 end
+    return pcall(function() o:set_health_ex(v) end)
+end
+
+function set_relation(a, rel, b)
+    if not (a and b) then return false end
+    return pcall(function() a:set_relation(rel, b) end)
+end
+
+---------------------------------------------------------------------------
+-- Time
+---------------------------------------------------------------------------
+
+local epoch = nil
+function game_seconds()
+    if not epoch then
+        epoch = game.CTime()
+        epoch:set(2000, 1, 1, 0, 0, 0, 0)
+    end
+    return game.get_game_time():diffSec(epoch)
+end
+
+function clock_ms()
+    local ok, c = pcall(os.clock)
+    return ok and type(c) == "number" and c * 1000 or 0
+end
+
+---------------------------------------------------------------------------
+-- One-shot sounds and particle effects
+---------------------------------------------------------------------------
+
+function play_sound_at(path, pos, volume)
+    if not (path and pos and db.actor) then return nil end
+    local snd = nil
+    local ok = pcall(function()
+        snd = sound_object(path)
+        snd.volume = volume or 1
+        snd:play_at_pos(db.actor, pos)
+        snd.volume = volume or 1
+    end)
+    return ok and snd or nil
+end
+
+function particle_at(name, pos)
+    if not (name and pos) then return nil end
+    local p = nil
+    local ok = pcall(function()
+        p = particles_object(name)
+        p:play_at_pos(pos)
+    end)
+    return ok and p or nil
+end

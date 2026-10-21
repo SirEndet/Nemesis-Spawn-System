@@ -2,7 +2,7 @@
 
 local S = nemesis_state.S
 
-local function dbg(...) nemesis_utils.log_msg(...) end
+local function dbg(...) nemesis_utils.log_tag("BOSS", ...) end
 
 local force_next = false
 local warned = false
@@ -17,7 +17,7 @@ function exists()
     if not g then return false end
     local alive = false
     pcall(function()
-        local se = alife():object(g)
+        local se = nemesis_engine.se(g)
         local n = se and se:alive() and se:character_name()
         alive = n ~= nil and n ~= false and (nemesis_utils.is_boss_name(n) or n == nemesis_emission.boss_name())
     end)
@@ -31,7 +31,7 @@ local BOSS_RAMP_HUNTS = 4
 local BOSS_GUARANTEE_HUNT = 30
 
 function chance_now()
-    local base = nemesis_mcm.get_number("boss_chance", 2)
+    local base = nemesis_mcm.get_number("boss_chance", 4)
     if base <= 0 then return 0 end
     local n = S.hunts_since_boss or 0
     if n + 1 >= BOSS_GUARANTEE_HUNT then return 100 end
@@ -51,7 +51,7 @@ function roll()
     end
     if S.last_boss_day == boss_day() then return false end
 
-    local grace = nemesis_mcm.get_number("grace_period", 12)
+    local grace = nemesis_mcm.get_number("grace_period", 18)
     if grace < 0 then grace = 0 end
     local min_days = nemesis_mcm.get_number("boss_min_day", 7)
     if min_days < 1 then min_days = 1 end
@@ -79,8 +79,8 @@ end
 function icon(id)
     local ic = nil
     pcall(function()
-        local obj = level.object_by_id(id)
-        ic = obj and obj:character_icon() or alife():object(id):character_icon()
+        local obj = nemesis_engine.obj(id)
+        ic = obj and obj:character_icon() or nemesis_engine.se(id):character_icon()
     end)
     if type(ic) ~= "string" or ic == "" then return nil end
     return ic
@@ -131,7 +131,7 @@ function on_killed(id, by_player, name)
     nemesis_fx.forget_boss()
     nemesis_emission.on_boss_killed(id)
     dbg("Nemesis: the boss '%s' is dead (%s).", tostring(name), by_player and "killed by you" or "not by you")
-    if by_player and nemesis_mcm.get_bool("boss_stash", false) then
+    if by_player and nemesis_mcm.get_bool("boss_stash", true) then
         S.stash_owed = name or nemesis_utils.get_npc_name()
         stash_tried_level = nil
     end
@@ -185,7 +185,7 @@ function stash_tick()
     local name = S.stash_owed
     if not name then return end
     local lname = nil
-    pcall(function() lname = level.name() end)
+    pcall(function() lname = nemesis_engine.level_name() end)
     if stash_tried_level and stash_tried_level == lname then return end
     local got = stash_on_this_map(name)
     if got == nil then

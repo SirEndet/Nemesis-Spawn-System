@@ -2,7 +2,7 @@
 
 local S = nemesis_state.S
 
-local function dbg(...) nemesis_utils.log_msg(...) end
+local function dbg(...) nemesis_utils.log_tag("GUARD", ...) end
 
 ---------------------------------------------------------------------------
 -- Release guard
@@ -24,7 +24,7 @@ local function log_refusal(what, se_obj)
 end
 
 local function restore_member(se_obj)
-    local sq = S.sim_squad_id and alife():object(S.sim_squad_id)
+    local sq = S.sim_squad_id and nemesis_engine.se(S.sim_squad_id)
     if not sq or not sq.register_member then return end
     for _, mid in ipairs(nemesis_spawn.member_ids(sq)) do
         if mid == se_obj.id then return end
@@ -74,7 +74,7 @@ local function install_south_exemption()
         local sid = orig(obj_id, ...)
         if sid ~= nil then return sid end
         if obj_id and S.phase ~= "idle" and nemesis_state.is_member(obj_id) then
-            local obj = level.object_by_id(obj_id)
+            local obj = nemesis_engine.obj(obj_id)
             if obj and nemesis_fx.alive_obj(obj) then return "nemesis_hunter" end
         end
         return sid

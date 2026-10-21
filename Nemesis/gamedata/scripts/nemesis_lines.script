@@ -1,0 +1,336 @@
+-- Nemesis Lines (round 112, restructure step 5: split out of nemesis_utils)
+
+local function log_msg(...) return nemesis_utils.log_msg(...) end
+
+local function hunt_faction() return nemesis_state.S.faction == "isg" and "isg" or "monolith" end
+
+---------------------------------------------------------------------------
+-- Hunter names
+---------------------------------------------------------------------------
+
+local FIRST_NAMES = {
+    "Dmitri", "Sergei", "Ivan", "Mykola", "Andrei", "Alexei", "Viktor", "Pavel",
+    "Igor", "Oleg", "Boris", "Mikhail", "Yuri", "Roman", "Taras",
+    "Vasyl", "Petro", "Stepan", "Yaroslav", "Volodymyr", "Leonid", "Maksym", "Vadim",
+    "Artem", "Konstantin", "Gennadiy", "Arkadiy", "Ostap", "Fedir", "Anatoliy",
+}
+
+local LAST_NAMES = {
+    "Shevchenko", "Kravchenko", "Petrenko", "Kovalenko", "Bondarenko", "Savchenko",
+    "Tkachenko", "Marchenko", "Rudenko", "Lysenko", "Boyko", "Melnyk",
+    "Kovalchuk", "Shevchuk", "Bondarchuk", "Polishchuk", "Kravchuk", "Tarasyuk",
+    "Sotkinov", "Volkov", "Sokolov", "Morozov", "Lebedev", "Novikov",
+    "Kozlov", "Orlov", "Fedorov", "Smirnov", "Popov", "Belov",
+}
+
+local function compose_name()
+    return FIRST_NAMES[math.random(#FIRST_NAMES)] .. " " .. LAST_NAMES[math.random(#LAST_NAMES)]
+end
+
+local RANKS = {
+    monolith = { "Acolyte", "Disciple", "Zealot", "Sentinel", "Templar", "Herald" },
+    isg = { "Sergeant", "Lieutenant", "Captain", "Major", "Specialist", "Operative" },
+}
+
+local function rank()
+    local list = RANKS[nemesis_state.S.faction] or RANKS.monolith
+    return list[math.random(#list)]
+end
+
+function next_hunter_name(used, named)
+    used = used or {}
+    local name = nil
+    for _ = 1, 24 do
+        name = compose_name()
+        if named then name = rank() .. " " .. name end
+        if not used[name] and not nemesis_utils.is_boss_name(name) then break end
+    end
+    if nemesis_utils.is_boss_name(name) then name = (named and rank() .. " " or "") .. "Taras Kravchuk" end
+    used[name] = true
+    return name
+end
+
+---------------------------------------------------------------------------
+-- PDA messages and sounds
+---------------------------------------------------------------------------
+
+local FALLBACK_ICON = "ui_inGame2_PD_storonnik_ravnovesiya"
+local NEWS_SHOW_MS = 7000
+
+function send_news(text, caption, icon_override)
+    local actor = db.actor
+    if not actor then
+        log_msg("!Nemesis: PDA message skipped, no actor yet: %s", tostring(text))
+        return false
+    end
+    if type(caption) ~= "string" or caption == "" then caption = "Nemesis" end
+    local icon = "ui_nemesis_news"
+    if nemesis_mcm.get_bool("hd_icon", false) then
+        icon = "ui_nemesis_news_hd"
+    end
+    if type(icon_override) == "string" and icon_override ~= "" then icon = icon_override end
+    local ok, err = pcall(function() actor:give_game_news(caption, text, icon, 0, NEWS_SHOW_MS) end)
+    if not ok then
+        log_msg("!Nemesis ERROR: PDA message failed with icon %s (%s), retrying with a vanilla icon.", icon, tostring(err))
+        icon = FALLBACK_ICON
+        ok, err = pcall(function() actor:give_game_news(caption, text, icon, 0, NEWS_SHOW_MS) end)
+    end
+    if ok then
+        pcall(function() xr_sound.set_sound_play(AC_ID, "pda_tips") end)
+        log_msg("Nemesis: PDA message sent [%s] %s (icon %s).", caption, text, icon)
+    else
+        log_msg("!Nemesis ERROR: PDA message failed twice (%s).", tostring(err))
+    end
+    return ok
+end
+
+local sound_pick = {}
+function pick_sound(key, paths)
+    if sound_pick[key] == nil then
+        sound_pick[key] = false
+        for _, p in ipairs(paths) do
+            if nemesis_engine.sound_exists(p) then sound_pick[key] = p; break end
+        end
+        if sound_pick[key] then log_msg("Nemesis: %s sound: %s.", key, sound_pick[key])
+        else log_msg("!Nemesis ERROR: no %s sound file found (tried %s); it stays silent.", key, table.concat(paths, ", ")) end
+    end
+    return sound_pick[key] or nil
+end
+
+local PSY_L = { "anomaly\\psy_voices_1_l" }
+local PSY_R = { "anomaly\\psy_voices_1_r" }
+function psy_voices()
+    local l = pick_sound("psy voices (left)", PSY_L)
+    if not l then return nil end
+    return l, pick_sound("psy voices (right)", PSY_R)
+end
+
+local function player_name()
+    local name = nil
+    pcall(function() name = db.actor:character_name() end)
+    if type(name) ~= "string" or name == "" then name = "Stalker" end
+    return name
+end
+
+---------------------------------------------------------------------------
+-- Lines, per hunt faction. %name% is the player's name, %boss% the boss's.
+---------------------------------------------------------------------------
+local LINES = {
+    monolith = {
+        warning = {
+            "You feel watched.",
+            "Static on every channel. Something is coming.",
+            "Your PDA picks up a broken Monolith prayer. It is getting closer.",
+            "A voice under the static whispers your name.",
+            "The Zone has noticed you, %name%.",
+        },
+        taunt = {
+            { max = 1, lines = {
+                "I can smell your fear, Stalker. Run while you still can.",
+                "The Zone is a small place. There is nowhere left to hide.",
+                "Did you think you were the predator here?",
+                "Your footsteps are like a beacon in the dark. I am coming.",
+            } },
+            { max = 3, lines = {
+                "You were lucky last time. Luck runs out in the Zone.",
+                "I remember how you fight, %name%. I have learned.",
+                "Again, Stalker. The Monolith does not forget.",
+            } },
+            { max = 6, lines = {
+                "How many times must I come for you, %name%?",
+                "Every wound you gave me made me stronger. Count them.",
+                "You are running out of places, %name%. I am not running out of patience.",
+            } },
+            { max = math.huge, lines = {
+                "%name%. The Monolith has whispered your name to me so many times.",
+                "There is no hunt left. Only the ending.",
+                "I have died for you a hundred times, %name%. Tonight it is your turn.",
+            } },
+        },
+        retreat = {
+            "Enjoy this while it lasts. We are not finished.",
+            "Not today. But I will find you again.",
+            "You got lucky, Stalker. Remember my face.",
+        },
+        time_up = {
+            "The Monolith calls me back. This is not over.",
+            "You ran well. Next time you will not run far enough.",
+            "Your time is borrowed, Stalker. I will collect it.",
+        },
+        boss = {
+            "Glory to the Monolith. Your road ends here, %name%.",
+            "The Monolith spoke your name. I came to answer.",
+            "You cannot hide from what lives in the static.",
+            "Kneel before the Monolith. It will be quick.",
+            "Every step you took led you here. The Zone is closing in.",
+            "Za Monolith! The Zone will drink your blood.",
+            "I walked through the Brain Scorcher to reach you. You will not outrun me.",
+            "The Monolith does not forgive. Neither do I.",
+        },
+        boss_warning = {
+            "The static is screaming. Something old is coming for you.",
+            "Every channel at once: a man's voice, praying to the Monolith.",
+            "Your PDA flickers a name you have never seen: %boss%. The signal is getting closer.",
+            "The Zone goes quiet. Even the anomalies are listening for him.",
+        },
+        boss_stash = {
+            "%boss% has fallen. His last coordinates come through on the Monolith channel: a stash.",
+            "The prayers on the channel stop. Someone sends coordinates instead: %boss%'s stash.",
+        },
+        boss_escape = {
+            "You slipped away this time. The Monolith keeps count.",
+            "Hide, then. I will be waiting in the static.",
+            "The Monolith calls me home. Do not mistake that for mercy.",
+        },
+        dread = {
+            "I can hear your heartbeat.",
+            "You are walking the way I want you to.",
+            "Look around. You will not see me.",
+            "The static is me. It has always been me.",
+            "Closer than you think, %name%.",
+            "Your breath is so loud in the quiet.",
+        },
+        sneak = { "%name%, you don't see me because I'm behind you right now." },
+        rush = { "Run, %name%. Every step brings you closer to me." },
+        close = { "%name%. Close enough to hear you breathe." },
+        follow = {
+            "You cannot outrun the Monolith, %name%.",
+            "New ground. Same prey.",
+            "The Monolith walks every road you walk, %name%.",
+        },
+        reload = { "Reloading, %name%?" },
+        known_spot = {
+            "Same place as last time, %name%. The Monolith remembers.",
+            "You fought us here before, %name%. We know this ground now.",
+        },
+    },
+    isg = {
+        warning = {
+            "Encrypted military traffic on your frequency. Your callsign is in it.",
+            "Your PDA pings a UNISG tracker. Someone is triangulating you.",
+            "Rotor noise far off, then silence. They are coming on foot.",
+            "Intercepted: 'Target is %faction%. Liquidate on sight.'",
+            "The Zone has noticed you, %name%. So has UNISG.",
+        },
+        taunt = {
+            { max = 1, lines = {
+                "Target acquired. One of %faction%, alone. Moving in.",
+                "This is a cleanup operation. You are the mess.",
+                "Whatever is in your head will not stop a bullet.",
+            } },
+            { max = 3, lines = {
+                "You walked away last time. The file on you got thicker, %name%.",
+                "Second contact. We adjusted the approach.",
+            } },
+            { max = 6, lines = {
+                "%name%. Every report ends with your name. Today we close the file.",
+                "Command wants you gone. I want it personal.",
+            } },
+            { max = math.huge, lines = {
+                "%name%. Priority one. No withdrawal authorised.",
+                "This ends with you bagged and tagged.",
+            } },
+        },
+        retreat = {
+            "Pulling out. This is not over.",
+            "Extraction. Mark this place, we will be back.",
+            "Fall back. We will finish this, %name%.",
+        },
+        time_up = {
+            "Operation window closed. You got lucky.",
+            "Recall order received. Next time, %name%.",
+            "We are pulled out. Your file stays open.",
+        },
+        boss = {
+            "UNISG Command authorised your removal, %name%.",
+            "I have hunted things in the Zone that would eat %faction% whole.",
+            "No prayers on this channel. Only the countdown.",
+            "So, %faction%. I was trained to break things like you.",
+            "Rules of engagement: none.",
+            "The rest of %faction% is next. You are first.",
+            "Hold still. This will be clean.",
+            "I never miss twice, %name%.",
+        },
+        boss_warning = {
+            "Military channel: 'Specialist deployed, codename %boss%.' The signal is getting closer.",
+            "Your PDA locks up for a second. Someone very good has your position.",
+            "Every UNISG channel goes silent at once.",
+        },
+        boss_stash = {
+            "Operator %boss% KIA. His cache coordinates were on the squad net.",
+            "Military channel: '%boss% is down.' Then a set of coordinates: his cache.",
+        },
+        boss_escape = {
+            "Operation window closed. The file stays open.",
+            "Recalled. Do not get comfortable.",
+            "Command pulls me out. Next time there is no recall.",
+        },
+        dread = {
+            "Thermals have you. Keep walking.",
+            "I can hear your heartbeat on the mic.",
+            "You will not see me. Nobody ever does.",
+            "Closer than you think, %name%.",
+            "Checking your six yet, %name%?",
+        },
+        sneak = { "%name%. Don't turn around. I'm right behind you." },
+        rush = { "Keep running, %name%. You're only making this easier." },
+        close = { "Close enough, %name%. Lights out." },
+        follow = {
+            "Changing maps won't save you, %name%.",
+            "Target relocated. Pursuit continues.",
+            "You moved. So did we, %name%.",
+        },
+        reload = { "Reloading, %name%?" },
+        known_spot = {
+            "Same position as last time, %name%? Sloppy.",
+            "We mapped this spot last time, %name%. Predictable.",
+        },
+    },
+}
+
+local FACTION_NAMES = { monolith = "Monolith", zombied = "the Zombified", greh = "Sin" }
+local function player_faction_name()
+    return FACTION_NAMES[nemesis_utils.player_community() or ""] or "Monolith"
+end
+
+local function fill(line, boss)
+    local you = player_name()
+    line = string.gsub(line, "%%name%%", function() return you end)
+    line = string.gsub(line, "%%faction%%", function() return player_faction_name() end)
+    line = string.gsub(line, "%%boss%%", function() return tostring(boss or nemesis_utils.get_npc_name()) end)
+    return line
+end
+
+function fill_line(line, boss) return fill(line, boss) end
+
+local function pick(kind, boss)
+
+    local own = (nemesis_state.S.emission_hunt or (kind == "boss_stash" and boss ~= nil and boss == nemesis_emission.boss_name()))
+        and nemesis_emission.line(kind) or nil
+    if own then return own end
+    local set = LINES[hunt_faction()][kind]
+    return fill(set[math.random(#set)], boss)
+end
+
+function warning_line() return pick("warning") end
+function retreat_line() return pick("retreat") end
+function time_up_line() return pick("time_up") end
+function boss_line() return pick("boss") end
+function boss_warning_line(boss) return pick("boss_warning", boss) end
+function boss_stash_line(boss) return pick("boss_stash", boss) end
+function boss_escape_line() return pick("boss_escape") end
+function dread_line() return pick("dread") end
+function sneak_line() return pick("sneak") end
+function rush_line() return pick("rush") end
+function close_line() return pick("close") end
+function known_spot_line() return pick("known_spot") end
+function follow_line() return pick("follow") end
+function reload_line() return pick("reload") end
+
+function taunt(cycle)
+    cycle = cycle or 1
+    for _, tier in ipairs(LINES[hunt_faction()].taunt) do
+        if cycle <= tier.max then return fill(tier.lines[math.random(#tier.lines)]) end
+    end
+    return "I am coming."
+end

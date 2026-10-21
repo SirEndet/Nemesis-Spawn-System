@@ -4,20 +4,20 @@ A recurring Monolith hunter for S.T.A.L.K.E.R. Anomaly / G.A.M.M.A.
 
 Every so often, a hunter comes for you. He spawns out of sight, sprints after you and is very hard to kill. Hurt him badly enough and he teleports away in a Monolith burst. He always comes back, and each time he is stronger.
 
-**Status:** Release Candidate 10.
+**Status:** Release Candidate 11.
 
 ## Features
 
-- **Hunts with a warning.** Radio static (and, if you want it, a strange PDA message), then a Monolith squad spawns 70 to 140 m away and comes straight for you.
-- **Named hunters.** Ranked Monolith hunters (Acolyte, Disciple, Zealot, Sentinel, Templar, Herald) that normal hits can't kill, whoever fires them. When badly hurt they turn invulnerable, flee away from you to cover and teleport out. They always escape. Regular squad members and the boss leave a body to loot when you kill them.
-- **Escalation.** Every hunt you beat makes the next one tougher: less damage taken, later retreats, and armour that catches up with yours. Escaping a hunt eases it one step; dying to a hunter or beating the boss halves it.
+- **Hunts with a warning.** Radio static (and, if you want it, a strange PDA message), then a Monolith squad spawns 80 to 140 m away and comes straight for you.
+- **Named hunters.** Ranked Monolith hunters (Acolyte, Disciple, Zealot, Sentinel, Templar, Herald) that normal hits can't kill, whoever fires them. When badly hurt they turn invulnerable, flee away from you to cover and teleport out. They always escape. Regular squad members and the boss leave a body to loot when you kill them, also when an NPC lands the last shot within 2 seconds of yours.
+- **Escalation.** Named hunters wear a copy of your armour, and every hunt you beat makes the next one a little tougher, up to a cap. One damage formula with sliders for each kind of hunter keeps it fair. Escaping a hunt eases it one step; dying to a hunter or beating the boss halves it.
 - **No running away.** Change maps any way you like and they follow you, arriving from the side you came in on. They remember where you beat them, and if you hide in a building they wait outside, then storm in.
-- **Squads.** Up to four extra stalkers who flank you, with snipers keeping their distance. Some can be named hunters too, and the regulars are a little tougher than normal stalkers. They keep hunting you after the named hunters are gone.
-- **The boss.** A rare, tougher, always-cloaked hunter with his own look and messages, who teleports in with an escort of named hunters and sneaks up to assassinate you while they keep you busy. He fights anyone in his way, NPCs included, but turns on you the moment you shoot him. He fights to the death; kill him yourself and an optional stash reward is marked on your PDA. When he is close, your screen starts to waver.
-- **The emission boss.** When an emission meets a hunt, the hunt is called off and Ilarion Hrech, a Sin (UNISG if you play Monolith, Zombified or Sin), comes instead, once the emission's waves start to hit (each emission also has a small chance of its own to bring him). Ghosts hold the doors of your shelter and shove you back inside, lightning strikes when he arrives, and a horde of zombies (and snorks, further north) comes through the door ahead of him while he walks in through the storm.
-- **Atmosphere.** A psy hum when a named hunter is near, an optional cloak while they stalk you, and PDA taunts that get personal over time. Those killed by others vanish; you never see them fall.
+- **Squads.** Up to four extra stalkers who flank you. Some can be named hunters too; the regulars are normal stalkers by default (a slider makes them tougher). They keep hunting you after the named hunters are gone.
+- **The boss.** A rare, tougher, always-cloaked hunter with his own look and messages, who teleports in with an escort of named hunters and sneaks up to assassinate you while they keep you busy. He fights anyone in his way, NPCs included, but turns on you the moment you shoot him. He fights to the death; kill him yourself and a rare stash is marked on your PDA (on by default). When he is close, your screen starts to waver.
+- **The emission boss.** When an emission meets a hunt, the hunt is called off and Ilarion Hrech, a Sin (UNISG if you play Monolith, Zombified or Sin), comes instead, once the emission's waves start to hit (each emission also has a small chance of its own to bring him). Ghosts gather outside your shelter, close in on its doors and shove you back inside. Lightning strikes when he teleports in, and a horde of zombies (and snorks, further north) comes in from outside ahead of him while he walks in through the storm. Only his door opens for him.
+- **Atmosphere.** A psy hum that comes from the nearest named hunter, so you can hear where he is, an optional cloak while they stalk you, and PDA taunts that get personal over time. Those killed by others vanish; you never see them fall.
 - **Playing as Monolith, Zombified or Sin?** The hunters are UNISG instead, with military ranks, and their boss is Lyutomyr Kat, UNISG's best fighter.
-- **Fully configurable** in MCM, with an Easy / Medium / Hard difficulty setting: every setting is listed in [Nemesis/Nemesis_README.md](Nemesis/Nemesis_README.md).
+- **Fully configurable** in MCM, with an Easy / Medium / Hard difficulty setting that moves every difficulty slider about 20% either way: every setting is listed in [Nemesis/Nemesis_README.md](Nemesis/Nemesis_README.md).
 
 ## Requirements
 
@@ -46,7 +46,7 @@ Works with:
 
 **Updating:** install the new release over the old one (choose *Replace* when MO2 asks). Your MCM settings are kept.
 
-**Note on saves:** the first hunt comes after a 12-day grace period by default, counted from when the mod is first loaded in a save. You can shorten it in MCM.
+**Note on saves:** the first hunt comes after an 18-day grace period by default, counted from when the mod is first loaded in a save. You can shorten it in MCM.
 
 ## Repository layout
 

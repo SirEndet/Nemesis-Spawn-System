@@ -1,0 +1,224 @@
+-- Nemesis Compat (round 109, restructure step 3: the other mods' doorway)
+
+local function dbg(...) nemesis_utils.log_tag("COMPAT", ...) end
+
+---------------------------------------------------------------------------
+-- GAMMA ballistics (grok_bo)
+---------------------------------------------------------------------------
+
+function grok_bo()
+    local gbo = nil
+    pcall(function() gbo = _G["grok_bo"] end)
+    if type(gbo) ~= "table" or type(gbo.npc_on_before_hit) ~= "function" or type(gbo.custom_bone_value) ~= "table" then return nil end
+    return gbo
+end
+
+---------------------------------------------------------------------------
+-- GAMMA psy rework (arszi_psy)
+---------------------------------------------------------------------------
+
+function psy_rework()
+    local lib = nil
+    pcall(function() lib = _G["arszi_psy"] end)
+    if type(lib) ~= "table" or type(lib.change_psy_health) ~= "function"
+        or type(lib.get_psy_health) ~= "function" then return nil end
+    local ok, v = pcall(lib.get_psy_health)
+    if not ok or type(v) ~= "number" then return nil end
+    return lib
+end
+
+---------------------------------------------------------------------------
+-- Wearable Devices (sulikz)
+---------------------------------------------------------------------------
+
+local wd_api, wd_api_file = nil, nil
+function wearable()
+    if wd_api == nil then
+        wd_api = false
+        local file = nemesis_engine.file_exists("$game_scripts$", "wd_attach.script")
+        if file then
+            pcall(function() wd_api = wd_attach and wd_attach.hide_screens and wd_attach.show_screens and wd_attach or false end)
+        end
+        wd_api_file = file
+    end
+    return wd_api
+end
+
+function wearable_file() return wd_api_file == true end
+
+---------------------------------------------------------------------------
+-- AlifePlus
+---------------------------------------------------------------------------
+
+local ap_found, ap_next_try = nil, 0
+function alifeplus()
+    if ap_found then return ap_found end
+    local now = time_global()
+    if now < ap_next_try then return nil end
+    ap_next_try = now + 60000
+    local t = nil
+    pcall(function() t = ap_api end)
+    if type(t) == "table" then ap_found = t end
+    return ap_found
+end
+
+---------------------------------------------------------------------------
+-- Obrien GAMMA Overhaul
+---------------------------------------------------------------------------
+
+function obrien_item_stats(sec, cond)
+    local br = ini_sys:r_float_ex(sec, "br_class") or 0
+    local pct = ini_sys:r_float_ex(sec, "hit_fraction_actor") or 0
+    return br * cond, pct * cond
+end
+
+local obrien_found = false
+local obrien_checked = {}
+local OBRIEN_PROBES = { "novice_outfit", "stalker_outfit", "helm_respirator" }
+local function obrien_check(sec)
+    if obrien_found or not sec or obrien_checked[sec] then return end
+    obrien_checked[sec] = true
+    local has = false
+    pcall(function() has = ini_sys:line_exist(sec, "br_class") == true end)
+    if has then
+        obrien_found = true
+        dbg("Nemesis: Obrien GAMMA Overhaul detected (%s has br_class); hunters copy its armour.", tostring(sec))
+    end
+end
+
+function reset_obrien() obrien_found, obrien_checked = false, {} end
+
+function obrien_on(outfit_sec, helmet_sec)
+    for _, sec in ipairs(OBRIEN_PROBES) do obrien_check(sec) end
+    obrien_check(outfit_sec)
+    obrien_check(helmet_sec)
+    return obrien_found
+end
+
+---------------------------------------------------------------------------
+-- Emissions: surge_manager and its ignore list
+---------------------------------------------------------------------------
+
+function surge_on()
+    local on = false
+    pcall(function() on = xlevel.is_surge() == true end)
+    return on
+end
+
+function surge_deadly()
+    local ok, on = pcall(function()
+        local m = _G["surge_manager"]
+        if type(m) ~= "table" or not (m.is_started and m.is_started()) then return true end
+        local sm = m.get_surge_manager()
+        return sm.effector_set == true or (sm.stages ~= nil and sm.stages["1stwavesnd"] == true)
+    end)
+    return not ok or on == true
+end
+
+function surge_ignore_list()
+    local t = nil
+    pcall(function() t = surge_manager_ignore_npc.ignore_npc end)
+    return type(t) == "table" and t or nil
+end
+
+---------------------------------------------------------------------------
+-- Phantoms (vanilla phantom_manager)
+---------------------------------------------------------------------------
+
+function phantom_count(sec)
+    local live = 0
+    pcall(function() live = phantom_manager.dynamic_phantom_count(sec) or 0 end)
+    return live
+end
+
+---------------------------------------------------------------------------
+-- The downed state (xr_wounded; GAMMA's is Modular Tweaks')
+---------------------------------------------------------------------------
+
+function no_downed(id)
+    local st = db.storage[id]
+    local w = st and st.wounded
+    if not (w and w.wounded_set) then return end
+    w.wounded_set = false
+    if w.wound_manager then w.wound_manager.state, w.wound_manager.sound = "nil", "nil" end
+    local o = nemesis_engine.obj(id)
+    if o then
+        pcall(function()
+            save_var(o, "wounded_state", "nil")
+            save_var(o, "wounded_sound", "nil")
+            save_var(o, "wounded_fight", "true")
+            save_var(o, "wounded_victim", "nil")
+        end)
+    end
+end
+
+local function log_msg(...) return nemesis_utils.log_msg(...) end
+
+function exe_ai_on() return nemesis_mcm.get_bool("exe_ai", true) end
+
+function register_post(name, fn)
+    if type(RegisterScriptCallbackPost) == "function" then
+        if pcall(RegisterScriptCallbackPost, name, fn) then return true end
+    end
+    RegisterScriptCallback(name, fn)
+    return false
+end
+
+local held = {}
+local hold_logged = false
+function hold_still(obj)
+    if not obj or not exe_ai_on() then return false end
+    local ok, done = pcall(xcombat.set_movement_hold, obj, true)
+    if not (ok and done) then return false end
+    held[obj:id()] = true
+    if not hold_logged then
+        hold_logged = true
+        log_msg("Nemesis: engine movement hold in use (latest exes).")
+    end
+    return true
+end
+function is_held(id) return id ~= nil and held[id] == true end
+
+local BIAS_ACTOR = 1800
+local REDIRECT_FALLOFF_M = 60
+
+local function attack_pull(boss)
+    local v = boss and nemesis_mcm.get_number("boss_attack_pull", 300) or nemesis_mcm.get_number("hunter_attack_pull", 600)
+    if v < 0 then v = 0 end
+    if v > 1800 then v = 1800 end
+    return v > 0 and v or -1
+end
+local AI_REFRESH_MS = 2000
+local ai_logged = false
+function apply_ai(obj, r, gt)
+    if not (obj and r and r.named) then return end
+    if exe_ai_on() then
+        if r.ai_at and gt - r.ai_at < AI_REFRESH_MS then return end
+        r.ai_at = gt
+        local boss = r.id == nemesis_state.S.boss_id
+        local ok1, b = pcall(xcombat.set_visible_enemy_bias, obj, BIAS_ACTOR, -1)
+        local ok2, h = pcall(xcombat.set_hit_redirect, obj, attack_pull(boss), REDIRECT_FALLOFF_M)
+        r.ai_set = ((ok1 and b) or (ok2 and h)) and true or nil
+        if r.ai_set and not ai_logged then
+            ai_logged = true
+            log_msg("Nemesis: engine target bias and hit redirect in use (latest exes).")
+        end
+    elseif r.ai_set then
+        r.ai_set, r.ai_at = nil, nil
+        pcall(xcombat.set_visible_enemy_bias, obj, -1, -1)
+        pcall(xcombat.set_hit_redirect, obj, -1, 0)
+    end
+end
+function release_hold(id, obj)
+    if not (id and held[id]) then return end
+    held[id] = nil
+    if obj then pcall(xcombat.set_movement_hold, obj, false) end
+end
+
+---------------------------------------------------------------------------
+-- Runtime
+---------------------------------------------------------------------------
+
+function forget_runtime()
+    wd_api, wd_api_file = nil, nil
+end

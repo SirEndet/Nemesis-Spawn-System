@@ -25,12 +25,12 @@
     <string id="ui_mcm_nemesis_head_toughness"><text>Toughness</text></string>
     <string id="ui_mcm_nemesis_head_reward"><text>Reward</text></string>
     <string id="ui_mcm_nemesis_boss_stash"><text>Boss stash reward</text></string>
-    <string id="ui_mcm_nemesis_boss_stash_desc"><text>Kill the boss yourself and the coordinates of a rare (yellow) stash on the current map come through on your PDA, filled by the game's own stash system. If the map has no free stash left, they come on the next map that has one. Default off.</text></string>
+    <string id="ui_mcm_nemesis_boss_stash_desc"><text>Kill the boss yourself and the coordinates of a rare (yellow) stash on the current map come through on your PDA, filled by the game's own stash system. If the map has no free stash left, they come on the next map that has one. Default on.</text></string>
     <string id="ui_mcm_nemesis_page_debug"><text>Debug &amp; tools</text></string>
 
     <string id="ui_mcm_nemesis_difficulty"><text>Difficulty</text></string>
 
-    <string id="ui_mcm_nemesis_difficulty_desc"><text>Sets the hunt settings at once: grace period, time between hunts, hunt time limit, escalation, retreat health, BR mitigation, accuracy, boss chance, boss days after grace and squad size. Change any of those by hand and this shows Custom. Picking a difficulty again overwrites them. Default Medium.</text></string>
+    <string id="ui_mcm_nemesis_difficulty_desc"><text>Sets every slider that makes the game easier or harder at once: hunt timing, squad size and named hunters, how many maps they follow, retreat health, accuracy, damage reduction, escalation, the boss and the emission boss. Check boxes, volumes and effects are not touched. Medium is the defaults; Easy is about 20% easier, Hard about 20% harder. Change any of those by hand and this shows Custom. Picking a difficulty again overwrites them. Default Medium.</text></string>
 
     <string id="ui_mcm_nemesis_difficulty_easy"><text>Easy</text></string>
 
@@ -44,7 +44,7 @@
     <string id="ui_mcm_nemesis_teleport_volume_desc"><text>Loudness of the teleport sound when a hunter breaks off or vanishes. 0 mutes it. Default 40.</text></string>
 
     <string id="ui_mcm_nemesis_hum_volume"><text>Psy hum volume (%)</text></string>
-    <string id="ui_mcm_nemesis_hum_volume_desc"><text>A psy hum in your head while a named hunter is within 60 m: half this volume at 60 m, full volume within 10 m. A named hunter is the main Nemesis enemy: hard to kill, he retreats when hurt and comes back stronger. 0 mutes it. Default 20.</text></string>
+    <string id="ui_mcm_nemesis_hum_volume_desc"><text>A psy hum coming from the nearest named hunter, a sound you can place by ear: this volume within 10 m of him, fading out by 100 m. A named hunter is the main Nemesis enemy: hard to kill, he retreats when hurt and comes back stronger. 0 mutes it. Default 10.</text></string>
 
     <string id="ui_mcm_nemesis_warning_volume"><text>Arrival warning volume (%)</text></string>
     <string id="ui_mcm_nemesis_warning_volume_desc"><text>Loudness of the radio static that comes with the arrival warning. 0 mutes it. Default 70.</text></string>
@@ -62,36 +62,38 @@
     <string id="ui_mcm_nemesis_emission_chance"><text>Emission boss chance (%)</text></string>
     <string id="ui_mcm_nemesis_emission_chance_desc"><text>Chance, rolled once per emission, that the emission boss comes when an emission meets a hunt: a hunt running when the emission starts is called off, or a hunt about to start during one is taken over. He haunts the exits of the building you shelter in, arrives with a lightning strike and walks in after you. He comes in the deadly part of the emission, when its waves hit, and never outside one. 0 turns him off. Default 100.</text></string>
     <string id="ui_mcm_nemesis_emission_extra"><text>Emission boss extra chance (%)</text></string>
-    <string id="ui_mcm_nemesis_emission_extra_desc"><text>Chance, rolled once per emission, that the emission boss comes even when no hunt meets the emission, so between hunts too. Not in the grace period, and not while you are in a base, in a dialogue, asleep or underground. 0 turns it off. Default 4.</text></string>
+    <string id="ui_mcm_nemesis_emission_extra_desc"><text>Chance, rolled once per emission, that the emission boss comes even when no hunt meets the emission, so between hunts too. Not in the grace period, and not while you are in a base, in a dialogue, asleep or underground. 0 turns it off. Default 6.</text></string>
     <string id="ui_mcm_nemesis_emission_name"><text>Emission boss name</text></string>
     <string id="ui_mcm_nemesis_emission_name_desc"><text>Name of the emission boss, a Sin (UNISG when you are Monolith, Zombified or Sin). Default: Ilarion Hrech</text></string>
+    <string id="ui_mcm_nemesis_emission_dr"><text>Emission boss damage reduction (%)</text></string>
+    <string id="ui_mcm_nemesis_emission_dr_desc"><text>How much less damage the emission boss takes from every hit, on top of his armour and the escalation. NPC damage reduction below comes on top for hits from other stalkers and mutants. Default 30.</text></string>
     <string id="ui_mcm_nemesis_emission_npc_cut"><text>Emission boss NPC damage reduction (%)</text></string>
     <string id="ui_mcm_nemesis_emission_npc_cut_desc"><text>How much less damage the emission boss takes from other stalkers and mutants, so they are little help against him. Your own hits are not affected. Him only. Default 70.</text></string>
     <string id="ui_mcm_nemesis_emission_horde"><text>Emission boss horde size</text></string>
     <string id="ui_mcm_nemesis_emission_horde_desc"><text>Mutants that come through the door 15 seconds after the emission boss arrives and rush in after you: zombified stalkers, with a snork on mid maps and two tougher snorks on late maps. 0 sends none. Default 4.</text></string>
     <string id="ui_mcm_nemesis_emission_psy"><text>Ghost psy damage (%)</text></string>
     <string id="ui_mcm_nemesis_emission_psy_desc"><text>The share of your whole psy bar you lose each time the ghosts at the exits shove you back inside before the emission boss arrives. Psy protection does not lower it. 0 turns it off. Default 4.</text></string>
-    <string id="ui_mcm_nemesis_emission_volume"><text>Lightning strike volume (%)</text></string>
-    <string id="ui_mcm_nemesis_emission_volume_desc"><text>Loudness of the lightning strike when the emission boss arrives. 0 mutes it. Default 80.</text></string>
+    <string id="ui_mcm_nemesis_lightning_volume"><text>Lightning strike volume (%)</text></string>
+    <string id="ui_mcm_nemesis_lightning_volume_desc"><text>Loudness of the lightning strike sound when the emission boss arrives. The emission is already loud, so it is off by default; his teleport burst (Teleport volume) marks his arrival. 0 mutes it. Default 0.</text></string>
     <string id="ui_mcm_nemesis_npc_name"><text>Boss name</text></string>
     <string id="ui_mcm_nemesis_npc_name_desc"><text>Name of the Monolith boss, a rare and stronger named hunter who fights to the death. Other hunters always get random names. Default: Bogdan Kravets</text></string>
     <string id="ui_mcm_nemesis_isg_boss_name"><text>UNISG boss name</text></string>
     <string id="ui_mcm_nemesis_isg_boss_name_desc"><text>Name of the UNISG boss, their best fighter, who hunts Monolith, Zombified and Sin players. Default: Lyutomyr Kat</text></string>
 
     <string id="ui_mcm_nemesis_boss_chance"><text>Boss chance (%)</text></string>
-    <string id="ui_mcm_nemesis_boss_chance_desc"><text>Chance that a hunt brings the boss: a tougher, cloaked hunter with his own look and messages and an escort. It climbs by 2 every 4 hunts without him, and the 30th hunt without him brings him for sure. Only one boss at a time, at most one a day. Beating a hunt he was in halves the escalation. 0 = no boss at all. Default 2.</text></string>
+    <string id="ui_mcm_nemesis_boss_chance_desc"><text>Chance that a hunt brings the boss: a tougher, cloaked hunter with his own look and messages and an escort. It climbs by 2 every 4 hunts without him, and the 30th hunt without him brings him for sure. Only one boss at a time, at most one a day. Beating a hunt he was in halves the escalation. 0 = no boss at all. Default 4.</text></string>
 
-    <string id="ui_mcm_nemesis_boss_toughness"><text>Boss toughness (%)</text></string>
-    <string id="ui_mcm_nemesis_boss_toughness_desc"><text>How much tougher the boss is than a normal named hunter. He never retreats: he fights until he or you are dead. 0 = no tougher. Default 30.</text></string>
+    <string id="ui_mcm_nemesis_boss_dr"><text>Boss damage reduction (%)</text></string>
+    <string id="ui_mcm_nemesis_boss_dr_desc"><text>How much less damage the boss (Monolith or UNISG) takes from every hit, on top of his armour and the escalation. He never retreats: he fights until he or you are dead. 0 = like any stalker in his armour. Default 30.</text></string>
 
-    <string id="ui_mcm_nemesis_boss_br_add"><text>Boss extra BR</text></string>
-    <string id="ui_mcm_nemesis_boss_br_add_desc"><text>A flat amount of ballistic rating (armour class, the same scale as Extra BR cap) added to the boss's body and head armour, on top of what every named hunter gets. Not BR mitigation percent. Needs GAMMA ballistics. 0 = no extra. Default 0.</text></string>
     <string id="ui_mcm_nemesis_boss_npc_damage"><text>Boss damage against NPCs (%)</text></string>
+    <string id="ui_mcm_nemesis_boss_misses"><text>Boss guaranteed misses</text></string>
+    <string id="ui_mcm_nemesis_boss_misses_desc"><text>How many of the boss's first shots at you in a hunt always miss, a moment to react. Both bosses. 0 turns it off. Default 2.</text></string>
     <string id="ui_mcm_nemesis_boss_npc_damage_desc"><text>How hard the boss hits other stalkers and mutants, in percent of a normal hit. He fights anyone who fights him, but always prefers you; this makes him a killer against them. Your own damage from him is not affected. Default 200.</text></string>
     <string id="ui_mcm_nemesis_boss_escort"><text>Boss escort size</text></string>
     <string id="ui_mcm_nemesis_boss_escort_desc"><text>How many named hunters come with the boss. They hunt you like any named hunter, the real threat and distraction, while he sneaks up to finish you. A boss hunt ignores Squad of 1 to 5 and Extra is a named hunter. 0 = he comes alone. Default 4.</text></string>
     <string id="ui_mcm_nemesis_boss_distortion"><text>Boss presence distortion (%)</text></string>
-    <string id="ui_mcm_nemesis_boss_distortion_desc"><text>A gentle wave over your screen while the boss is near: it starts softly at 60 m and grows to this strength at 5 m. It works while he is cloaked too, and fades out when he dies. 0 turns it off. Default 50.</text></string>
+    <string id="ui_mcm_nemesis_boss_distortion_desc"><text>A gentle wave over your screen while the boss is near: it starts softly at 60 m and grows to this strength at 5 m. It works while he is cloaked too, and fades out when he dies. 0 turns it off. Default 40.</text></string>
     <string id="ui_mcm_nemesis_boss_min_day"><text>Boss days after grace</text></string>
     <string id="ui_mcm_nemesis_boss_min_day_desc"><text>In-game days after the grace period before a boss can appear. Default 7.</text></string>
 
@@ -111,28 +113,30 @@
     <string id="ui_mcm_nemesis_debug_logs_desc"><text>Write Nemesis diagnostic and error lines to the console. Leave this off unless you are tracking a problem. Lines that start with an exclamation mark are errors.</text></string>
 
     <string id="ui_mcm_nemesis_grace_period"><text>Grace period (days)</text></string>
-    <string id="ui_mcm_nemesis_grace_period_desc"><text>In-game days before the first hunt of a new game (or after installing the mod). Default 12.</text></string>
+    <string id="ui_mcm_nemesis_grace_period_desc"><text>In-game days before the first hunt of a new game (or after installing the mod). Default 18.</text></string>
 
     <string id="ui_mcm_nemesis_retreat_cooldown"><text>Time between hunts (hours)</text></string>
-    <string id="ui_mcm_nemesis_retreat_cooldown_desc"><text>In-game hours after a hunt ends before the next one can start. 0 = as soon as possible. Default 24.</text></string>
+    <string id="ui_mcm_nemesis_retreat_cooldown_desc"><text>In-game hours after a hunt ends before the next one can start. 0 = as soon as possible. Default 36.</text></string>
 
     <string id="ui_mcm_nemesis_hunt_duration"><text>Hunt time limit (hours)</text></string>
-    <string id="ui_mcm_nemesis_hunt_duration_desc"><text>If you survive this many in-game hours, the hunters give up and teleport away, and the next hunt is not stronger. Default 6.</text></string>
+    <string id="ui_mcm_nemesis_hunt_duration_desc"><text>If you survive this many in-game hours, the hunters give up and teleport away, and the next hunt is not stronger. Default 5.</text></string>
 
     <string id="ui_mcm_nemesis_retreat_health"><text>Retreat health (%)</text></string>
-    <string id="ui_mcm_nemesis_retreat_health_desc"><text>A named hunter breaks off and teleports away when his health drops this low. It gets lower each cycle, so he fights longer every time. The boss never retreats. Default 25.</text></string>
+    <string id="ui_mcm_nemesis_retreat_health_desc"><text>A named hunter breaks off and teleports away when his health drops this low. It is the same in every cycle. The bosses never retreat. Default 30.</text></string>
+    <string id="ui_mcm_nemesis_esc_step"><text>Escalation per cycle (%)</text></string>
+    <string id="ui_mcm_nemesis_esc_step_desc"><text>Each hunt you beat makes the next one stronger. That step is called a cycle. Each cycle after the first adds this much damage reduction to named hunters and bosses, up to Max escalation. 0 = no growth. Default 2.</text></string>
+    <string id="ui_mcm_nemesis_esc_max"><text>Max escalation (%)</text></string>
+    <string id="ui_mcm_nemesis_esc_max_desc"><text>The most damage reduction the cycles can ever add, however many hunts you beat. At the defaults it is reached at cycle 11. Default 20.</text></string>
 
-    <string id="ui_mcm_nemesis_escalation_speed"><text>Escalation per cycle</text></string>
-    <string id="ui_mcm_nemesis_escalation_speed_desc"><text>Each hunt you beat makes the next one stronger. That step is called a cycle. This sets how much stronger each cycle is: higher means he takes less damage and retreats later. 1.0 = no growth. Default 1.1.</text></string>
 
-    <string id="ui_mcm_nemesis_max_escalation"><text>Max escalation</text></string>
-    <string id="ui_mcm_nemesis_max_escalation_desc"><text>The most the hunters can ever scale up, however many hunts you beat. Higher = tougher late hunts. Default 3.</text></string>
 
     <string id="ui_mcm_nemesis_accuracy_boost"><text>Accuracy boost (%)</text></string>
 
-    <string id="ui_mcm_nemesis_accuracy_boost_desc"><text>How many more of their shots hit you at range than a normal stalker with the same weapon, in percent. Named hunters get this value, regular squad members half of it, and the boss this value plus 15. 0 turns it off. Default 20.</text></string>
-    <string id="ui_mcm_nemesis_regular_toughness"><text>Regular stalker toughness (%)</text></string>
-    <string id="ui_mcm_nemesis_regular_toughness_desc"><text>How much less damage the regular squad members take, from every hit: yours, other NPCs' and mutants'. Named hunters and the boss have their own protection (escalation and armour) and are not affected. It does not grow with the cycle. 0 makes them normal stalkers. Default 10.</text></string>
+    <string id="ui_mcm_nemesis_accuracy_boost_desc"><text>How many more of their shots hit you at range than a normal stalker with the same weapon, in percent. Named hunters get this value, regular squad members half of it, and the boss this value plus 15. 0 turns it off. Default 10.</text></string>
+    <string id="ui_mcm_nemesis_regular_dr"><text>Regular stalker damage reduction (%)</text></string>
+    <string id="ui_mcm_nemesis_regular_dr_desc"><text>How much less damage the regular squad members take, from every hit, the killing one too: yours, other NPCs' and mutants'. They keep their own armour. It does not grow with the cycle. 0 makes them normal stalkers, who die to a headshot. Default 0.</text></string>
+    <string id="ui_mcm_nemesis_named_dr"><text>Named hunter damage reduction (%)</text></string>
+    <string id="ui_mcm_nemesis_named_dr_desc"><text>How much less damage named hunters take from every hit, on top of their armour (a copy of yours) and the escalation. Default 25.</text></string>
 
     <string id="ui_mcm_nemesis_reset_on_death"><text>Halve escalation when a hunter kills you</text></string>
     <string id="ui_mcm_nemesis_reset_on_death_desc"><text>If a hunter kills you, the escalation is halved (cycle 8 becomes 4, never below 1), even when you reload a save. Default on.</text></string>
@@ -140,19 +144,17 @@
     <string id="ui_mcm_nemesis_reset_escalation_now"><text>Reset escalation now</text></string>
     <string id="ui_mcm_nemesis_reset_escalation_now_desc"><text>Tick and apply to set the hunts back to their starting strength (cycle 1) right now. The box unticks itself.</text></string>
 
-    <string id="ui_mcm_nemesis_br_escalation"><text>Armour growth speed</text></string>
-    <string id="ui_mcm_nemesis_br_escalation_desc"><text>How fast named hunters' armour catches up with yours. 0 = normal (full after about 10 hunts). Higher = faster, lower = slower. Regular squad members are not affected. Default 0.</text></string>
-    <string id="ui_mcm_nemesis_br_class_cap"><text>Extra BR cap</text></string>
-    <string id="ui_mcm_nemesis_br_class_cap_desc"><text>How much higher than yours a named hunter's ballistic rating (BR) can get. Default 0.20. 1.0 = almost bulletproof.</text></string>
 
     <string id="ui_mcm_nemesis_max_damage_reduction"><text>Max damage reduction (%)</text></string>
-    <string id="ui_mcm_nemesis_max_damage_reduction_desc"><text>The most of a hit's damage (yours or an NPC's) a named hunter or the boss can ever shrug off, however escalation, BR mitigation and boss toughness stack. At 80 they always take at least a fifth of it, so a long run never becomes unwinnable. Default 80.</text></string>
-    <string id="ui_mcm_nemesis_br_pct_cap"><text>BR mitigation cap (%)</text></string>
-    <string id="ui_mcm_nemesis_br_pct_cap_desc"><text>How much more damage, in percent, a named hunter's armour can block than yours. Default 25. He never blocks more than 90 percent.</text></string>
+    <string id="ui_mcm_nemesis_max_damage_reduction_desc"><text>The most of a hit's damage (yours or an NPC's) a hunt member can ever shrug off, however BR mitigation, damage reduction and escalation stack. At 70 they always take at least 30% of it, so a long run never becomes unwinnable. The armour class itself works through GAMMA ballistics on your bullets and comes on top. Default 70.</text></string>
+    <string id="ui_mcm_nemesis_br_bonus"><text>Hunter armour class bonus</text></string>
+    <string id="ui_mcm_nemesis_br_bonus_desc"><text>Named hunters and bosses wear a copy of your armour class (BR). This much is added to it, and to the regular squad members' own armour, from their second hit on a body part (GAMMA ballistics loads it on the first). The same in every cycle. Needs GAMMA ballistics. Default 0.</text></string>
+    <string id="ui_mcm_nemesis_pct_bonus"><text>Hunter BR mitigation bonus (%)</text></string>
+    <string id="ui_mcm_nemesis_pct_bonus_desc"><text>Named hunters and bosses copy your armour's mitigation (BR%). This much is added to it, and to the regular squad members'. They never block more than 90 percent. The same in every cycle. Default 0.</text></string>
 
     <string id="ui_mcm_nemesis_head_bodies"><text>Bodies</text></string>
     <string id="ui_mcm_nemesis_reserve_kills"><text>Reserve your kills</text></string>
-    <string id="ui_mcm_nemesis_reserve_kills_desc"><text>Nemesis stalkers you kill are not looted by NPCs. With AlifePlus installed, its own "reserve own kills" option decides (its range and time apply), and nothing is reserved while that option is off. Without AlifePlus a body stays yours for 2 in-game hours, or until you have been more than 150 m away from it for 3 minutes. Off by default: NPCs may loot them.</text></string>
+    <string id="ui_mcm_nemesis_reserve_kills_desc"><text>Nemesis stalkers you kill are not looted by NPCs. With AlifePlus installed, its own "reserve own kills" option decides (its range and time apply), and nothing is reserved while that option is off. Without AlifePlus a body stays yours for 2 in-game hours, or until you have been more than 150 m away from it for 3 minutes. On by default.</text></string>
     <string id="ui_mcm_nemesis_head_exe"><text>Latest exes</text></string>
     <string id="ui_mcm_nemesis_force_next"><text>Force the next hunt</text></string>
     <string id="ui_mcm_nemesis_force_next_desc"><text>For testing. Pick one and apply: Boss brings the boss in the next hunt, ignoring the chance, the day limit and the once-a-day rule. Emission boss brings him now, even without an emission (a running hunt is called off for him; get indoors to see the haunted exits). It acts once and goes back to None. Default None.</text></string>
@@ -162,27 +164,29 @@
     <string id="ui_mcm_nemesis_exe_ai"><text>Latest exe AI features</text></string>
     <string id="ui_mcm_nemesis_exe_ai_desc"><text>On the newest demonized exes, hunters use new engine features where they help: named hunters and the boss prefer you as their target and turn on whoever shoots them, and a retreating hunter is held in place by the engine for his teleport. On older exes, or with this off, the mod's own way is used. Default on.</text></string>
     <string id="ui_mcm_nemesis_hunter_attack_pull"><text>Hunter attack pull</text></string>
-    <string id="ui_mcm_nemesis_hunter_attack_pull_desc"><text>How strongly a named hunter turns on whoever just shot him, within 60 m. On the engine's own scale, the pull toward the player when the player sees him is 900, and you count double for hunters. Higher: they turn on NPC attackers more readily. 0 leaves it to the engine. Needs Latest exe AI features and the newest demonized exes. Default 900.</text></string>
+    <string id="ui_mcm_nemesis_hunter_attack_pull_desc"><text>How strongly a named hunter turns on whoever just shot him, within 60 m. On the engine's own scale, the pull toward the player when the player sees him is 900, and you count double for hunters. Higher: they turn on NPC attackers more readily. 0 leaves it to the engine. Needs Latest exe AI features and the newest demonized exes. Default 600.</text></string>
     <string id="ui_mcm_nemesis_boss_attack_pull"><text>Boss attack pull</text></string>
     <string id="ui_mcm_nemesis_boss_attack_pull_desc"><text>The same for the boss. Kept low so he fights back but stays on you; for 5 seconds after you hurt him he ignores other NPCs anyway. 0 leaves it to the engine. Default 300.</text></string>
 
     <string id="ui_mcm_nemesis_last_known_chase"><text>Hunt your last known position</text></string>
-    <string id="ui_mcm_nemesis_last_known_chase_desc"><text>On: when a hunter loses track of you, he searches where he last saw or heard you, and finds you again after 60 seconds. Off: he always knows where you are. Default on.</text></string>
+    <string id="ui_mcm_nemesis_last_known_chase_desc"><text>On: when a hunter loses track of you, he searches where he last saw or heard you, and finds you again after 60 seconds. Off: hunters always head for where you are until they see you; then they fight. Default on.</text></string>
 
     <string id="ui_mcm_nemesis_squad_tactics"><text>Squad tactics</text></string>
     <string id="ui_mcm_nemesis_squad_tactics_desc"><text>Extra squad members approach from the sides on clear lanes instead of running straight at you, and those carrying sniper rifles stop short and take a firing position. Named hunters still come straight for you. Default on.</text></string>
 
     <string id="ui_mcm_nemesis_retreat_to_cover"><text>Retreat to cover first</text></string>
+    <string id="ui_mcm_nemesis_follow_maps"><text>Maps they follow you</text></string>
+    <string id="ui_mcm_nemesis_follow_maps_desc"><text>How many times a hunt follows you to another map. After that, the next change of map shakes them off. 0: they never follow, and a change of map ends the hunt as an escape. Default 2.</text></string>
     <string id="ui_mcm_nemesis_retreat_to_cover_desc"><text>Before teleporting away, a hurt hunter first flees away from you to cover (or, without cover, along a clear lane) for up to 4 seconds. He cannot be hurt while he runs. Default on.</text></string>
 
     <string id="ui_mcm_nemesis_hunter_cloak"><text>Hunter cloak (experimental)</text></string>
     <string id="ui_mcm_nemesis_hunter_cloak_desc"><text>Named hunters turn invisible while they stalk you from more than 30 m, and reappear when they fight, get within 15 m or take a hit that does damage. At most once every 20 seconds. While cloaked, other stalkers ignore them. Uses the same invisible model as the teleport. Experimental: a held weapon may stay visible. Default on.</text></string>
 
     <string id="ui_mcm_nemesis_fight_range"><text>Fight range (m)</text></string>
-    <string id="ui_mcm_nemesis_fight_range_desc"><text>Hunters stop chasing and start fighting when they see you, or any other enemy, this close. Default 70.</text></string>
+    <string id="ui_mcm_nemesis_fight_range_desc"><text>Hunters stop chasing and start fighting when they see you, or any other enemy, this close. Default 100.</text></string>
 
     <string id="ui_mcm_nemesis_spawn_dist_min"><text>Spawn distance, min (m)</text></string>
-    <string id="ui_mcm_nemesis_spawn_dist_min_desc"><text>Hunters (the emission boss too) never spawn closer to you than this. Default 70.</text></string>
+    <string id="ui_mcm_nemesis_spawn_dist_min_desc"><text>Hunters (the emission boss too) never spawn closer to you than this. Default 80.</text></string>
 
     <string id="ui_mcm_nemesis_spawn_dist_max"><text>Spawn distance, max (m)</text></string>
     <string id="ui_mcm_nemesis_spawn_dist_max_desc"><text>The farthest from you a hunt (the emission boss too) can spawn. Default 140.</text></string>
@@ -203,7 +207,7 @@
     <string id="ui_mcm_nemesis_squad_w5_desc"><text>Relative chance of four extras with him. Default 6. Set a weight to 0 to stop that squad size.</text></string>
 
     <string id="ui_mcm_nemesis_named_chance"><text>Extra is a named hunter (%)</text></string>
-    <string id="ui_mcm_nemesis_named_chance_desc"><text>Chance that each extra squad member is another named hunter instead of a normal stalker. Named hunters carry a rank in their name, are hard to kill and retreat when hurt. 0 = only the leader is named, 100 = the whole squad. Default 25.</text></string>
+    <string id="ui_mcm_nemesis_named_chance_desc"><text>Chance that each extra squad member is another named hunter instead of a normal stalker. Named hunters carry a rank in their name, are hard to kill and retreat when hurt. 0 = only the leader is named, 100 = the whole squad. Default 15.</text></string>
     <string id="ui_mcm_nemesis_area_scaling"><text>Scale hunts by area</text></string>
     <string id="ui_mcm_nemesis_area_scaling_desc"><text>On: hunts in rookie areas are smaller (Cordon and Swamps: at most 2 hunters; Garbage, Dark Valley and similar: at most 3), and in late areas extras are more often named hunters (+10 in Red Forest, Radar and similar; +20 in Pripyat, Jupiter, Zaton and the CNPP). Boss hunts are not affected. Default on.</text></string>
 

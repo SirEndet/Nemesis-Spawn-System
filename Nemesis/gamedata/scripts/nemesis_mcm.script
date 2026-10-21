@@ -21,8 +21,8 @@ local function options()
                 { id = "head_sound", type = "title", text = "ui_mcm_nemesis_head_sound", align = "l", clr = HEAD_CLR },
                 { id = "warning_volume", type = "track", val = 2, def = 70, min = 0, max = 100, step = 5, prec = 0, hint = "nemesis_warning_volume" },
                 { id = "teleport_volume", type = "track", val = 2, def = 40, min = 0, max = 100, step = 5, prec = 0, hint = "nemesis_teleport_volume" },
-                { id = "hum_volume", type = "track", val = 2, def = 20, min = 0, max = 100, step = 5, prec = 0, hint = "nemesis_hum_volume" },
-                { id = "emission_volume", type = "track", val = 2, def = 80, min = 0, max = 100, step = 5, prec = 0, hint = "nemesis_emission_volume" },
+                { id = "hum_volume", type = "track", val = 2, def = 10, min = 0, max = 100, step = 5, prec = 0, hint = "nemesis_hum_volume" },
+                { id = "lightning_volume", type = "track", val = 2, def = 0, min = 0, max = 100, step = 5, prec = 0, hint = "nemesis_lightning_volume" },
                 { id = "line_effects", type = "line" },
                 { id = "head_effects", type = "title", text = "ui_mcm_nemesis_head_effects", align = "l", clr = HEAD_CLR },
                 { id = "wd_malfunction", type = "check", val = 1, def = true, hint = "nemesis_wd_malfunction" },
@@ -31,52 +31,53 @@ local function options()
                 { id = "title", type = "slide", link = "ui_options_slider_player", text = "ui_mcm_nemesis_title", size = {512, 50}, spacing = 20 },
                 { id = "line_timing", type = "line" },
                 { id = "head_timing", type = "title", text = "ui_mcm_nemesis_head_timing", align = "l", clr = HEAD_CLR },
-                { id = "grace_period", type = "track", val = 2, def = 12, min = 0, max = 21, step = 1, prec = 0, hint = "nemesis_grace_period" },
-                { id = "retreat_cooldown", type = "track", val = 2, def = 24, min = 0, max = 72, step = 1, prec = 0, hint = "nemesis_retreat_cooldown" },
-                { id = "hunt_duration", type = "track", val = 2, def = 6, min = 4, max = 12, step = 1, prec = 0, hint = "nemesis_hunt_duration" },
+                { id = "grace_period", type = "track", val = 2, def = 18, min = 0, max = 21, step = 1, prec = 0, hint = "nemesis_grace_period" },
+                { id = "retreat_cooldown", type = "track", val = 2, def = 36, min = 0, max = 72, step = 1, prec = 0, hint = "nemesis_retreat_cooldown" },
+                { id = "hunt_duration", type = "track", val = 2, def = 5, min = 4, max = 12, step = 1, prec = 0, hint = "nemesis_hunt_duration" },
                 { id = "line_squad", type = "line" },
                 { id = "head_squad", type = "title", text = "ui_mcm_nemesis_head_squad", align = "l", clr = HEAD_CLR },
-                { id = "spawn_dist_min", type = "track", val = 2, def = 70, min = 40, max = 100, step = 5, prec = 0, hint = "nemesis_spawn_dist_min" },
+                { id = "spawn_dist_min", type = "track", val = 2, def = 80, min = 40, max = 100, step = 5, prec = 0, hint = "nemesis_spawn_dist_min" },
                 { id = "spawn_dist_max", type = "track", val = 2, def = 140, min = 60, max = 140, step = 5, prec = 0, hint = "nemesis_spawn_dist_max" },
                 { id = "squad_w1", type = "track", val = 2, def = 50, min = 0, max = 100, step = 1, prec = 0, hint = "nemesis_squad_w1" },
                 { id = "squad_w2", type = "track", val = 2, def = 25, min = 0, max = 100, step = 1, prec = 0, hint = "nemesis_squad_w2" },
                 { id = "squad_w3", type = "track", val = 2, def = 14, min = 0, max = 100, step = 1, prec = 0, hint = "nemesis_squad_w3" },
                 { id = "squad_w4", type = "track", val = 2, def = 10, min = 0, max = 100, step = 1, prec = 0, hint = "nemesis_squad_w4" },
                 { id = "squad_w5", type = "track", val = 2, def = 6, min = 0, max = 100, step = 1, prec = 0, hint = "nemesis_squad_w5" },
-                { id = "named_chance", type = "track", val = 2, def = 25, min = 0, max = 100, step = 5, prec = 0, hint = "nemesis_named_chance" },
+                { id = "named_chance", type = "track", val = 2, def = 15, min = 0, max = 100, step = 5, prec = 0, hint = "nemesis_named_chance" },
                 { id = "area_scaling", type = "check", val = 1, def = true, hint = "nemesis_area_scaling" },
                 { id = "line_behaviour", type = "line" },
                 { id = "head_behaviour", type = "title", text = "ui_mcm_nemesis_head_behaviour", align = "l", clr = HEAD_CLR },
                 { id = "last_known_chase", type = "check", val = 1, def = true, hint = "nemesis_last_known_chase" },
                 { id = "squad_tactics", type = "check", val = 1, def = true, hint = "nemesis_squad_tactics" },
                 { id = "retreat_to_cover", type = "check", val = 1, def = true, hint = "nemesis_retreat_to_cover" },
+                { id = "follow_maps", type = "track", val = 2, def = 2, min = 0, max = 5, step = 1, prec = 0, hint = "nemesis_follow_maps" },
                 { id = "hunter_cloak", type = "check", val = 1, def = true, hint = "nemesis_hunter_cloak" },
-                { id = "fight_range", type = "track", val = 2, def = 70, min = 10, max = 150, step = 5, prec = 0, hint = "nemesis_fight_range" },
+                { id = "fight_range", type = "track", val = 2, def = 100, min = 10, max = 150, step = 5, prec = 0, hint = "nemesis_fight_range" },
             } },
             { id = "combat", sh = true, text = "ui_mcm_nemesis_page_combat", gr = {
                 { id = "title", type = "slide", link = "ui_options_slider_player", text = "ui_mcm_nemesis_title", size = {512, 50}, spacing = 20 },
                 { id = "head_hunters", type = "title", text = "ui_mcm_nemesis_head_hunters", align = "l", clr = HEAD_CLR },
-                { id = "retreat_health", type = "track", val = 2, def = 25, min = 5, max = 60, step = 5, prec = 0, hint = "nemesis_retreat_health" },
-                { id = "accuracy_boost", type = "track", val = 2, def = 20, min = 0, max = 40, step = 1, prec = 0, hint = "nemesis_accuracy_boost" },
-                { id = "regular_toughness", type = "track", val = 2, def = 10, min = 0, max = 75, step = 5, prec = 0, hint = "nemesis_regular_toughness" },
+                { id = "retreat_health", type = "track", val = 2, def = 30, min = 10, max = 60, step = 5, prec = 0, hint = "nemesis_retreat_health" },
+                { id = "accuracy_boost", type = "track", val = 2, def = 10, min = 0, max = 40, step = 1, prec = 0, hint = "nemesis_accuracy_boost" },
+                { id = "regular_dr", type = "track", val = 2, def = 0, min = 0, max = 50, step = 5, prec = 0, hint = "nemesis_regular_dr" },
+                { id = "named_dr", type = "track", val = 2, def = 25, min = 0, max = 80, step = 5, prec = 0, hint = "nemesis_named_dr" },
                 { id = "line_escalation", type = "line" },
                 { id = "head_escalation", type = "title", text = "ui_mcm_nemesis_head_escalation", align = "l", clr = HEAD_CLR },
-                { id = "escalation_speed", type = "track", val = 2, def = 1.1, min = 1.0, max = 2.0, step = 0.05, prec = 2, hint = "nemesis_escalation_speed" },
-                { id = "max_escalation", type = "track", val = 2, def = 3, min = 1, max = 10, step = 0.5, prec = 1, hint = "nemesis_max_escalation" },
-                { id = "max_damage_reduction", type = "track", val = 2, def = 80, min = 50, max = 95, step = 5, prec = 0, hint = "nemesis_max_damage_reduction" },
+                { id = "esc_step", type = "track", val = 2, def = 2, min = 0, max = 5, step = 0.5, prec = 1, hint = "nemesis_esc_step" },
+                { id = "esc_max", type = "track", val = 2, def = 20, min = 0, max = 40, step = 5, prec = 0, hint = "nemesis_esc_max" },
+                { id = "max_damage_reduction", type = "track", val = 2, def = 70, min = 50, max = 95, step = 5, prec = 0, hint = "nemesis_max_damage_reduction" },
                 { id = "reset_on_death", type = "check", val = 1, def = true, hint = "nemesis_reset_on_death" },
                 { id = "line_armour", type = "line" },
                 { id = "head_armour", type = "title", text = "ui_mcm_nemesis_head_armour", align = "l", clr = HEAD_CLR },
-                { id = "br_escalation", type = "track", val = 2, def = 0, min = -5, max = 5, step = 1, prec = 0, hint = "nemesis_br_escalation" },
-                { id = "br_class_cap", type = "track", val = 2, def = 0.2, min = 0, max = 1, step = 0.05, prec = 2, hint = "nemesis_br_class_cap" },
-                { id = "br_pct_cap", type = "track", val = 2, def = 25, min = 5, max = 50, step = 1, prec = 0, hint = "nemesis_br_pct_cap" },
+                { id = "br_bonus", type = "track", val = 2, def = 0, min = 0, max = 0.5, step = 0.05, prec = 2, hint = "nemesis_br_bonus" },
+                { id = "pct_bonus", type = "track", val = 2, def = 0, min = 0, max = 50, step = 5, prec = 0, hint = "nemesis_pct_bonus" },
                 { id = "line_bodies", type = "line" },
                 { id = "head_bodies", type = "title", text = "ui_mcm_nemesis_head_bodies", align = "l", clr = HEAD_CLR },
-                { id = "reserve_kills", type = "check", val = 1, def = false, hint = "nemesis_reserve_kills" },
+                { id = "reserve_kills", type = "check", val = 1, def = true, hint = "nemesis_reserve_kills" },
                 { id = "line_exe", type = "line" },
                 { id = "head_exe", type = "title", text = "ui_mcm_nemesis_head_exe", align = "l", clr = HEAD_CLR },
                 { id = "exe_ai", type = "check", val = 1, def = true, hint = "nemesis_exe_ai" },
-                { id = "hunter_attack_pull", type = "track", val = 2, def = 900, min = 0, max = 1800, step = 100, prec = 0, hint = "nemesis_hunter_attack_pull" },
+                { id = "hunter_attack_pull", type = "track", val = 2, def = 600, min = 0, max = 1800, step = 100, prec = 0, hint = "nemesis_hunter_attack_pull" },
                 { id = "boss_attack_pull", type = "track", val = 2, def = 300, min = 0, max = 1800, step = 100, prec = 0, hint = "nemesis_boss_attack_pull" },
             } },
             { id = "boss", sh = true, text = "ui_mcm_nemesis_page_boss", gr = {
@@ -86,25 +87,26 @@ local function options()
                 { id = "isg_boss_name", type = "input", val = 0, def = "Lyutomyr Kat", hint = "nemesis_isg_boss_name" },
                 { id = "line_appearance", type = "line" },
                 { id = "head_appearance", type = "title", text = "ui_mcm_nemesis_head_appearance", align = "l", clr = HEAD_CLR },
-                { id = "boss_chance", type = "track", val = 2, def = 2, min = 0, max = 20, step = 1, prec = 0, hint = "nemesis_boss_chance" },
+                { id = "boss_chance", type = "track", val = 2, def = 4, min = 0, max = 20, step = 1, prec = 0, hint = "nemesis_boss_chance" },
                 { id = "boss_min_day", type = "track", val = 2, def = 7, min = 1, max = 7, step = 1, prec = 0, hint = "nemesis_boss_min_day" },
                 { id = "boss_escort", type = "track", val = 2, def = 4, min = 0, max = 4, step = 1, prec = 0, hint = "nemesis_boss_escort" },
-                { id = "boss_distortion", type = "track", val = 2, def = 50, min = 0, max = 100, step = 5, prec = 0, hint = "nemesis_boss_distortion" },
+                { id = "boss_distortion", type = "track", val = 2, def = 40, min = 0, max = 100, step = 5, prec = 0, hint = "nemesis_boss_distortion" },
                 { id = "line_toughness", type = "line" },
                 { id = "head_toughness", type = "title", text = "ui_mcm_nemesis_head_toughness", align = "l", clr = HEAD_CLR },
-                { id = "boss_toughness", type = "track", val = 2, def = 30, min = 0, max = 100, step = 5, prec = 0, hint = "nemesis_boss_toughness" },
-                { id = "boss_br_add", type = "track", val = 2, def = 0, min = 0, max = 1, step = 0.05, prec = 2, hint = "nemesis_boss_br_add" },
+                { id = "boss_dr", type = "track", val = 2, def = 30, min = 0, max = 85, step = 5, prec = 0, hint = "nemesis_boss_dr" },
                 { id = "boss_npc_damage", type = "track", val = 2, def = 200, min = 100, max = 400, step = 25, prec = 0, hint = "nemesis_boss_npc_damage" },
+                { id = "boss_misses", type = "track", val = 2, def = 2, min = 0, max = 4, step = 1, prec = 0, hint = "nemesis_boss_misses" },
                 { id = "line_reward", type = "line" },
                 { id = "head_reward", type = "title", text = "ui_mcm_nemesis_head_reward", align = "l", clr = HEAD_CLR },
-                { id = "boss_stash", type = "check", val = 1, def = false, hint = "nemesis_boss_stash" },
+                { id = "boss_stash", type = "check", val = 1, def = true, hint = "nemesis_boss_stash" },
             } },
             { id = "emission", sh = true, text = "ui_mcm_nemesis_page_emission", gr = {
                 { id = "title", type = "slide", link = "ui_options_slider_player", text = "ui_mcm_nemesis_title", size = {512, 50}, spacing = 20 },
                 { id = "emission_enabled", type = "check", val = 1, def = true, hint = "nemesis_emission_enabled" },
                 { id = "emission_chance", type = "track", val = 2, def = 100, min = 0, max = 100, step = 5, prec = 0, hint = "nemesis_emission_chance" },
-                { id = "emission_extra", type = "track", val = 2, def = 4, min = 0, max = 100, step = 1, prec = 0, hint = "nemesis_emission_extra" },
+                { id = "emission_extra", type = "track", val = 2, def = 6, min = 0, max = 100, step = 1, prec = 0, hint = "nemesis_emission_extra" },
                 { id = "emission_name", type = "input", val = 0, def = "Ilarion Hrech", hint = "nemesis_emission_name" },
+                { id = "emission_dr", type = "track", val = 2, def = 30, min = 0, max = 85, step = 5, prec = 0, hint = "nemesis_emission_dr" },
                 { id = "emission_npc_cut", type = "track", val = 2, def = 70, min = 0, max = 95, step = 5, prec = 0, hint = "nemesis_emission_npc_cut" },
                 { id = "emission_horde", type = "track", val = 2, def = 4, min = 0, max = 8, step = 1, prec = 0, hint = "nemesis_emission_horde" },
                 { id = "emission_psy", type = "track", val = 2, def = 4, min = 0, max = 20, step = 1, prec = 0, hint = "nemesis_emission_psy" },
@@ -143,18 +145,27 @@ function path(id)
 end
 
 DIFFICULTY = {
-    easy = { grace_period = 18, retreat_cooldown = 48, hunt_duration = 4, escalation_speed = 1.05,
-             max_escalation = 2, retreat_health = 30, br_pct_cap = 15, accuracy_boost = 10,
-             boss_chance = 1, boss_min_day = 7, named_chance = 15,
-             squad_w1 = 50, squad_w2 = 25, squad_w3 = 14, squad_w4 = 10, squad_w5 = 6 },
-    medium = { grace_period = 12, retreat_cooldown = 24, hunt_duration = 6, escalation_speed = 1.1,
-               max_escalation = 3, retreat_health = 25, br_pct_cap = 25, accuracy_boost = 20,
-               boss_chance = 2, boss_min_day = 7, named_chance = 25,
-               squad_w1 = 50, squad_w2 = 25, squad_w3 = 14, squad_w4 = 10, squad_w5 = 6 },
-    hard = { grace_period = 9, retreat_cooldown = 24, hunt_duration = 8, escalation_speed = 1.2,
-             max_escalation = 5, retreat_health = 20, br_pct_cap = 35, accuracy_boost = 30,
-             boss_chance = 4, boss_min_day = 4, named_chance = 40,
-             squad_w1 = 30, squad_w2 = 25, squad_w3 = 20, squad_w4 = 15, squad_w5 = 10 },
+    easy = {
+        grace_period = 21, retreat_cooldown = 43, hunt_duration = 4, named_chance = 10, follow_maps = 1,
+        squad_w1 = 60, squad_w2 = 30, squad_w3 = 14, squad_w4 = 8, squad_w5 = 4,
+        retreat_health = 35, accuracy_boost = 8, regular_dr = 0, named_dr = 20, esc_step = 1.5, esc_max = 15, max_damage_reduction = 55, br_bonus = 0, pct_bonus = 0,
+        boss_chance = 3, boss_min_day = 7, boss_escort = 3, boss_dr = 20, boss_npc_damage = 150, boss_misses = 3,
+        emission_chance = 80, emission_extra = 4, emission_dr = 20, emission_npc_cut = 55, emission_horde = 3, emission_psy = 3,
+    },
+    medium = {
+        grace_period = 18, retreat_cooldown = 36, hunt_duration = 5, named_chance = 15, follow_maps = 2,
+        squad_w1 = 50, squad_w2 = 25, squad_w3 = 14, squad_w4 = 10, squad_w5 = 6,
+        retreat_health = 30, accuracy_boost = 10, regular_dr = 0, named_dr = 25, esc_step = 2, esc_max = 20, max_damage_reduction = 70, br_bonus = 0, pct_bonus = 0,
+        boss_chance = 4, boss_min_day = 7, boss_escort = 4, boss_dr = 30, boss_npc_damage = 200, boss_misses = 2,
+        emission_chance = 100, emission_extra = 6, emission_dr = 30, emission_npc_cut = 70, emission_horde = 4, emission_psy = 4,
+    },
+    hard = {
+        grace_period = 15, retreat_cooldown = 29, hunt_duration = 6, named_chance = 20, follow_maps = 3,
+        squad_w1 = 40, squad_w2 = 20, squad_w3 = 14, squad_w4 = 12, squad_w5 = 8,
+        retreat_health = 25, accuracy_boost = 12, regular_dr = 0, named_dr = 30, esc_step = 2.5, esc_max = 25, max_damage_reduction = 85, br_bonus = 0, pct_bonus = 0,
+        boss_chance = 5, boss_min_day = 6, boss_escort = 4, boss_dr = 40, boss_npc_damage = 250, boss_misses = 1,
+        emission_chance = 100, emission_extra = 8, emission_dr = 40, emission_npc_cut = 85, emission_horde = 5, emission_psy = 5,
+    },
 }
 
 local APPLIED_SECTION, APPLIED_KEY = "nemesis", "difficulty_applied"
@@ -203,7 +214,8 @@ local function current_difficulty()
 end
 
 local function log(...)
-    if printf and get_bool("debug_logs", false) then printf(...) end
+    if nemesis_utils and nemesis_utils.log_tag then nemesis_utils.log_tag("MCM", ...)
+    elseif printf and get_bool("debug_logs", false) then printf(...) end
 end
 
 function sync_difficulty(picked)
@@ -324,6 +336,7 @@ function get_bool(id, default)
     return default
 end
 
+NAME_MAX = 48
 function get_string(id, default)
     local v = get_setting(id, default)
     if type(v) ~= "string" then return default end
@@ -331,5 +344,7 @@ function get_string(id, default)
     v = string.gsub(v, "^%s+", "")
     v = string.gsub(v, "%s+$", "")
     if v == "" then return default end
+
+    if #v > NAME_MAX then v = string.sub(v, 1, NAME_MAX) end
     return v
 end

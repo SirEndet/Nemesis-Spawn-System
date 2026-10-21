@@ -1,0 +1,29 @@
+-- Nemesis Events (round 111, restructure step 4: a small event bus)
+
+local function dbg(...) nemesis_utils.log_tag("EVENT", ...) end
+
+local listeners = {}
+local seq = 0
+
+function on(event, name, fn, order)
+    if type(fn) ~= "function" then return end
+    local list = listeners[event] or {}
+    listeners[event] = list
+    for _, l in ipairs(list) do if l.name == name then l.fn, l.order = fn, order or 100 return end end
+    seq = seq + 1
+    list[#list + 1] = { name = name, fn = fn, order = order or 100, seq = seq }
+    table.sort(list, function(a, b) if a.order ~= b.order then return a.order < b.order end return a.seq < b.seq end)
+end
+
+function emit(event, ...)
+    local list = listeners[event]
+    local n = list and #list or 0
+    dbg("Nemesis: %s (%s listener%s).", event, tostring(n), n == 1 and "" or "s")
+    if n == 0 then return end
+    for _, l in ipairs(list) do
+        local ok, err = pcall(l.fn, ...)
+        if not ok then dbg("!Nemesis ERROR: %s listener '%s' failed: %s", event, l.name, tostring(err)) end
+    end
+end
+
+function count(event) return listeners[event] and #listeners[event] or 0 end

@@ -2,43 +2,35 @@
 
 local DEFAULT_NAME = "Bogdan Kravets"
 
-local epoch = nil
-
 function debug_on() return nemesis_mcm.get_bool("debug_logs", false) end
 
-function log_msg(...)
-    if not debug_on() then return end
-    printf(...)
+function log_tag(tag, fmt, ...)
+    if not debug_on() or type(fmt) ~= "string" then return end
+    local head = "[" .. tag .. " " .. string.format("%.1f", (time_global() or 0) / 1000) .. "s] "
+    if fmt:sub(1, 1) == "!" then fmt = "!" .. head .. fmt:sub(2) else fmt = head .. fmt end
+    printf(fmt, ...)
+end
+
+function log_msg(fmt, ...)
+    local tag = "AI"
+    if type(fmt) == "string" then
+        if fmt:find("STALL", 1, true) then tag = "STALL"
+        elseif fmt:find("PDA message", 1, true) then tag = "PDA"
+        elseif fmt:find("sound", 1, true) then tag = "SOUND"
+        elseif fmt:find("Obrien", 1, true) or fmt:find("latest exes", 1, true) or fmt:find("squad section", 1, true) then tag = "COMPAT" end
+    end
+    log_tag(tag, fmt, ...)
 end
 
 ---------------------------------------------------------------------------
 -- Time
 ---------------------------------------------------------------------------
 
-function game_seconds()
-    if not epoch then
-        epoch = game.CTime()
-        epoch:set(2000, 1, 1, 0, 0, 0, 0)
-    end
-    return game.get_game_time():diffSec(epoch)
-end
+function game_seconds() return nemesis_engine.game_seconds() end
 
-function on_underground_map()
-    local under = false
-    pcall(function() under = xcombat.INDOOR_LEVELS[level.name()] == true end)
-    if under then return true end
-    pcall(function() under = GetEvent("underground") and true or false end)
-    return under
-end
+function on_underground_map() return nemesis_engine.on_underground_map() end
 
-function same_level(se_a, se_b)
-    if not se_a or not se_b then return nil end
-    local ok, a, b = pcall(function()
-        return xlevel.get_level_id(se_a), xlevel.get_level_id(se_b)
-    end)
-    if not ok or not a or not b then return nil end
-    return a == b
-end
+function same_level(se_a, se_b) return nemesis_engine.same_level(se_a, se_b) end
 
 ---------------------------------------------------------------------------
 -- Settings-derived values
@@ -46,7 +38,7 @@ end
 
 function spaced_name(name)
     if type(name) ~= "string" then return name end
-    return (string.gsub(name, "(%l)(%u)", "%1 %2"))
+    return (string.gsub(name, "(%u%l%l+)(%u)", "%1 %2"))
 end
 
 function monolith_boss_name() return spaced_name(nemesis_mcm.get_string("npc_name", DEFAULT_NAME)) end
@@ -60,121 +52,32 @@ function is_boss_name(n)
     return n ~= nil and (n == monolith_boss_name() or n == isg_boss_name())
 end
 
-local FIRST_NAMES = {
-    "Dmitri", "Sergei", "Ivan", "Mykola", "Andrei", "Alexei", "Viktor", "Pavel",
-    "Igor", "Oleg", "Boris", "Mikhail", "Yuri", "Roman", "Taras",
-    "Vasyl", "Petro", "Stepan", "Yaroslav", "Volodymyr", "Leonid", "Maksym", "Vadim",
-    "Artem", "Konstantin", "Gennadiy", "Arkadiy", "Ostap", "Fedir", "Anatoliy",
-}
+function set_health(obj, v) return nemesis_engine.set_health(obj, v) end
 
-local LAST_NAMES = {
-    "Shevchenko", "Kravchenko", "Petrenko", "Kovalenko", "Bondarenko", "Savchenko",
-    "Tkachenko", "Marchenko", "Rudenko", "Lysenko", "Boyko", "Melnyk",
-    "Kovalchuk", "Shevchuk", "Bondarchuk", "Polishchuk", "Kravchuk", "Tarasyuk",
-    "Sotkinov", "Volkov", "Sokolov", "Morozov", "Lebedev", "Novikov",
-    "Kozlov", "Orlov", "Fedorov", "Smirnov", "Popov", "Belov",
-}
-
-function set_health(obj, v)
-    if not obj or not v then return false end
-    if v < 0 then v = 0 end
-    if v > 1 then v = 1 end
-    return pcall(function() obj:set_health_ex(v) end)
-end
-
-local function compose_name()
-    return FIRST_NAMES[math.random(#FIRST_NAMES)] .. " " .. LAST_NAMES[math.random(#LAST_NAMES)]
-end
-
-local RANKS = {
-    monolith = { "Acolyte", "Disciple", "Zealot", "Sentinel", "Templar", "Herald" },
-    isg = { "Sergeant", "Lieutenant", "Captain", "Major", "Specialist", "Operative" },
-}
-
-local function rank()
-    local list = RANKS[nemesis_state.S.faction] or RANKS.monolith
-    return list[math.random(#list)]
-end
-
-function next_hunter_name(used, named)
-    used = used or {}
-    local name = nil
-    for _ = 1, 24 do
-        name = compose_name()
-        if named then name = rank() .. " " .. name end
-        if not used[name] and not is_boss_name(name) then break end
-    end
-    if is_boss_name(name) then name = (named and rank() .. " " or "") .. "Taras Kravchuk" end
-    used[name] = true
-    return name
-end
-
-function get_escalation(cycle)
-    local speed = nemesis_mcm.get_number("escalation_speed", 1.1)
-    if speed < 1 then speed = 1 end
-    local cap = nemesis_mcm.get_number("max_escalation", 3)
-    if cap < 1 then cap = 1 end
-    local v = speed ^ math.max(0, (cycle or 1) - 1)
-    if v > cap then v = cap end
+function clamped(id, def, lo, hi)
+    local v = tonumber(nemesis_mcm.get_number(id, def)) or def
+    if v < lo then v = lo end
+    if v > hi then v = hi end
     return v
 end
 
-function get_retreat_health(cycle)
-    local base = nemesis_mcm.get_number("retreat_health", 25) / 100
-    local v = base / get_escalation(cycle)
-    if v < 0.10 then v = 0.10 end
-    if v > 0.9 then v = 0.9 end
-    return v
+function escalation(cycle)
+    local step = clamped("esc_step", 2, 0, 5)
+    local max = clamped("esc_max", 20, 0, 40)
+    return math.min(max, step * math.max(0, (cycle or 1) - 1)) / 100
 end
 
-function br_gains(cycle)
-    local notch = nemesis_mcm.get_number("br_escalation", 0)
-    if notch < -5 or notch > 5 then notch = 0 end
-    local span = math.abs(notch) * 0.3
-    local mult = 1 + span
-    if notch < 0 then mult = 1 / mult end
-
-    local br_cap = nemesis_mcm.get_number("br_class_cap", 0.2)
-    if br_cap < 0 then br_cap = 0 end
-    if br_cap > 1 then br_cap = 1 end
-    local pct_cap = nemesis_mcm.get_number("br_pct_cap", 25)
-    if pct_cap < 5 then pct_cap = 5 end
-    if pct_cap > 50 then pct_cap = 50 end
-    pct_cap = pct_cap / 100
-    local steps = math.max(0, (cycle or 1) - 1)
-    local share = steps * mult / 10
-    local br = math.min(br_cap, br_cap * share)
-    local pct = math.min(pct_cap, pct_cap * share)
-    return br, pct
+function get_retreat_health()
+    return clamped("retreat_health", 30, 10, 60) / 100
 end
 
-function obrien_item_stats(sec, cond)
-    local br = ini_sys:r_float_ex(sec, "br_class") or 0
-    local pct = ini_sys:r_float_ex(sec, "hit_fraction_actor") or 0
-    return br * cond, pct * cond
+function br_bonus()
+    return clamped("br_bonus", 0, 0, 0.5), clamped("pct_bonus", 0, 0, 50) / 100
 end
 
-local obrien_found = false
-local obrien_checked = {}
-local OBRIEN_PROBES = { "novice_outfit", "stalker_outfit", "helm_respirator" }
-local function obrien_check(sec)
-    if obrien_found or not sec or obrien_checked[sec] then return end
-    obrien_checked[sec] = true
-    local has = false
-    pcall(function() has = ini_sys:line_exist(sec, "br_class") == true end)
-    if has then
-        obrien_found = true
-        log_msg("Nemesis: Obrien GAMMA Overhaul detected (%s has br_class); hunters copy its armour.", tostring(sec))
-    end
-end
-
-function reset_obrien() obrien_found, obrien_checked = false, {} end
-function obrien_on(outfit_sec, helmet_sec)
-    for _, sec in ipairs(OBRIEN_PROBES) do obrien_check(sec) end
-    obrien_check(outfit_sec)
-    obrien_check(helmet_sec)
-    return obrien_found
-end
+function obrien_item_stats(sec, cond) return nemesis_compat.obrien_item_stats(sec, cond) end
+function reset_obrien() return nemesis_compat.reset_obrien() end
+function obrien_on(outfit_sec, helmet_sec) return nemesis_compat.obrien_on(outfit_sec, helmet_sec) end
 
 local function clamp_br(v)
     if not v or v < 0 then return 0 end
@@ -283,7 +186,7 @@ local EMISSION_SQUADS = { greh = "nemesis_emission_squad", isg = "nemesis_emissi
 
 function resolve_squad_section(faction, emission)
     local sec = emission and (EMISSION_SQUADS[faction] or EMISSION_SQUADS.greh) or (SQUADS[faction] or SQUADS.monolith)
-    if ini_sys:section_exist(sec) then return sec end
+    if nemesis_engine.section_exists(sec) then return sec end
     log_msg("!Nemesis ERROR: squad section %s not found (squad_descr_nemesis.ltx is not loaded).", sec)
     return nil
 end
@@ -297,871 +200,17 @@ local MEMBER_POOL = {
 function pick_member_section(faction)
     local pool = {}
     for _, sect in ipairs(MEMBER_POOL[faction] or MEMBER_POOL.monolith) do
-        if ini_sys:section_exist(sect) then pool[#pool + 1] = sect end
+        if nemesis_engine.section_exists(sect) then pool[#pool + 1] = sect end
     end
     if #pool == 0 then return nil end
     return pool[math.random(#pool)]
 end
 
----------------------------------------------------------------------------
--- Chase movement
----------------------------------------------------------------------------
+function no_downed(id) return nemesis_compat.no_downed(id) end
 
-local CHASE_REFRESH_MS = 6000
+function sound_exists(path) return nemesis_engine.sound_exists(path) end
 
-local RESEND_MS = 250
-local SNEAK_REFRESH_MS = 1500
-local SPRINT_FROM_M = 50
-local CLOSE_THREAT_M = 30
-
-local CONTACT_LINGER_MS = 8000
-local HIT_CONTACT_MS = 1500
-
-local SHOW_EVERY_MS = 1000
-local HOLD_MAX_MS = 4000
-local SCAN_MS = 500
-local fight_memo = {}
-
-local roles = {}
-local retreat_dest = {}
-local focus = {}
-local sneak = {}
-local chase = {}
-
-local NPC_FIGHT_MS = 10000
-
-local CHECK_FIRST_MS, CHECK_SECOND_MS, CHECK_EVERY_MS = 4000, 15000, 30000
-local REHIT_MS = 1500
-local npc_drop = {}
-
-local sniper_spot = {}
-
-local STALL_MS, STALL_START_MS, STALL_MOVE_M = 3000, 8000, 1
-local stall = {}
-
-local function copy_vec(v)
-    local c = vector()
-    c:set(v.x, v.y, v.z)
-    return c
-end
-
-local known_spot_on = false
-local indoor_since = nil
-local indoor_now = false
-local outdoor_since = nil
-local siege_broken = false
-local siege_spot = {}
-
-function reset_chase(id)
-    if id then
-        chase[id] = nil
-    else
-        chase = {}
-        fight_memo = {}
-        npc_drop, sniper_spot, stall = {}, {}, {}
-        known_spot_on, indoor_since, siege_spot = false, nil, {}
-        indoor_now, outdoor_since, siege_broken = false, nil, false
-    end
-end
-
-function retreat_arrived(npc)
-    local vid = npc and retreat_dest[npc:id()]
-    if not vid then return true end
-    local here = false
-    pcall(function()
-        here = npc:level_vertex_id() == vid or npc:position():distance_to(level.vertex_position(vid)) < 1.5
-    end)
-    return here
-end
-
-function forget_fight(id)
-    if not id then return end
-    fight_memo[id] = nil
-    npc_drop[id], sniper_spot[id], stall[id] = nil, nil, nil
-    roles[id] = nil
-    retreat_dest[id] = nil
-    focus[id] = nil
-    sneak[id] = nil
-end
-
-function set_focus(id, on) if id then focus[id] = on and true or nil end end
-
-function set_sneak(id, on)
-    if not id then return end
-    if on then sneak[id] = sneak[id] or { done = false } else sneak[id] = nil end
-end
-function sneak_active(id) local s = id and sneak[id]; return s ~= nil and not s.done end
-function set_sneak_hold(id, on) local s = id and sneak[id]; if s then s.hold = on and true or nil end end
-local function sneak_holding(id) local s = id and sneak[id]; return s ~= nil and s.hold == true end
-local function sneak_closing(id) local s = id and sneak[id]; return s ~= nil and s.closing == true end
-
-local MOVE_ANY, MOVE_CROUCH, MOVE_WALK, MOVE_SPRINT = 15, 16, 32, 4096
-function player_running(actor)
-    local ok, st = pcall(level.actor_moving_state)
-    if not ok or type(st) ~= "number" then return false end
-    if bit_and(st, MOVE_SPRINT) ~= 0 then return true end
-    return bit_and(st, MOVE_ANY) ~= 0 and bit_and(st, MOVE_CROUCH + MOVE_WALK) == 0
-end
-function end_sneak(id, fight)
-    local s = id and sneak[id]
-    if s then s.done = true end
-    local memo = id and fight_memo[id]
-    if fight then
-        if not memo then memo = { scan_at = 0, scan_hit = false, last_fight = 0 }; fight_memo[id] = memo end
-        memo.last_fight = time_global()
-    end
-    if memo then memo.res_at = -1000000 end
-end
-
-function pick_dest(npc, pos, lv)
-    if not pos then return nil end
-    lv = lv or level.vertex_id(pos)
-    local reachable = false
-    local ok_acc, acc = pcall(function() return npc:accessible(pos) end)
-    if ok_acc then reachable = acc end
-    if not reachable then
-        local ok_near, near = pcall(function()
-            return npc:accessible_nearest(pos, vector())
-        end)
-        if ok_near and near and near < 4294967295 then
-            lv = near
-            local vp = level.vertex_position(near)
-            if vp then pos = vp end
-        end
-    end
-    if not lv or lv >= 4294967295 or not pos then return nil end
-    return lv, copy_vec(pos)
-end
-
-local fight_range_cache, fight_range_at = 70, -1000000
-local function fight_range()
-    local now = time_global()
-    if now - fight_range_at >= 1000 then
-        fight_range_at = now
-        local r = nemesis_mcm.get_number("fight_range", 70)
-        if r < 10 then r = 10 end
-        if r > 150 then r = 150 end
-        fight_range_cache = r
-    end
-    return fight_range_cache
-end
-
-local function _dist(a, b) return a:position():distance_to(b:position()) end
-local function _see(a, b) return a:see(b) end
-
-local function _prep_path(npc)
-    npc:set_path_type(game_object.level_path)
-    npc:set_detail_path_type(move.line)
-    npc:set_desired_position()
-    npc:set_desired_direction()
-end
-local function _best_enemy(npc) return npc:best_enemy() end
-
-local function sees_player(npc, range)
-    local actor = db.actor
-    if not actor then return false end
-    local ok, d = pcall(_dist, npc, actor)
-    if not ok or d > range then return false end
-    local ok2, seen = pcall(_see, npc, actor)
-    return ok2 and seen == true
-end
-
-local SHOOTER_MS = 20000
-local UNDER_FIRE_MS = 10000
-local function _threat(npc, be, range)
-    if be:id() == 0 or not be:alive() then return false end
-    if npc:relation(be) ~= game_object.enemy then return false end
-    local now = time_global()
-    local r = nemesis_state.member(npc:id())
-    if r and r.hit_from == be:id() and r.hit_at and now - r.hit_at < SHOOTER_MS then return true end
-    if xcombat.is_under_fire and xcombat.is_under_fire(npc, be, now, UNDER_FIRE_MS) then return true end
-    local d = npc:position():distance_to(be:position())
-    if d <= CLOSE_THREAT_M then return true end
-    return d <= range and npc:see(be)
-end
-
-local function hostile_near(npc, range)
-    local ok, be = pcall(_best_enemy, npc)
-    if not ok or not be then return false end
-    local ok2, hit = pcall(_threat, npc, be, range)
-    return ok2 and hit == true
-end
-
-local OWNS_CACHE_MS = 100
-function combat_owns(npc)
-    if not npc then return false end
-    local id = npc:id()
-    local memo = fight_memo[id]
-    if not memo then
-        memo = { scan_at = 0, scan_hit = false, last_fight = 0, res_at = -1000000, res = false }
-        fight_memo[id] = memo
-    end
-    local now = time_global()
-    if now - memo.res_at < OWNS_CACHE_MS then return memo.res end
-    memo.res_at = now
-    local was = memo.res
-    memo.res = combat_owns_now(npc, memo, now)
-
-    if memo.res ~= was and debug_on() then
-        local be_name = "none"
-        pcall(function() local be = npc:best_enemy(); if be then be_name = be:id() == 0 and "you" or (be:character_name() .. " (" .. be:id() .. ")") end end)
-        log_msg("Nemesis: %s %s (enemy: %s).", tostring(nemesis_state.name_of(id) or id),
-            memo.res and "fights" or "is back on the chase", be_name)
-    end
-    return memo.res
-end
-
-local function hit_contact(id, now)
-    local r = nemesis_state.member(id)
-    return r ~= nil and r.hit_at ~= nil and now - r.hit_at < HIT_CONTACT_MS
-end
-
-local function _show_enemy(npc, enemy) return xcombat.show_enemy(npc, enemy) end
-
-function combat_owns_now(npc, memo, now)
-    local id = npc:id()
-    if sneak_active(id) then return false end
-    local range = fight_range()
-    local sees = sees_player(npc, range)
-
-    if not sees and focus[id] and db.actor then
-        local okd, d = pcall(_dist, npc, db.actor)
-        sees = okd and d <= range
-    end
-    local hit = hit_contact(id, now)
-    local contact = sees or hit
-    if not contact then
-        if now - memo.scan_at >= SCAN_MS then
-            memo.scan_at = now
-            memo.scan_hit = hostile_near(npc, range)
-        end
-        contact = memo.scan_hit
-    end
-    if contact then memo.last_fight = now end
-    local okb, be = pcall(_best_enemy, npc)
-    if okb and be then
-        local eid = be:id()
-        if eid ~= 0 then
-
-            if drops_enemy(id, eid) then
-                memo.npc_fight = nil
-                return false
-            end
-            local f = memo.npc_fight
-            if not f or f.id ~= eid then
-                f = { id = eid, until_t = now + NPC_FIGHT_MS }
-                memo.npc_fight = f
-            end
-            local r = nemesis_state.member(id)
-            if r and r.hit_from == eid and r.hit_at and r.hit_at + NPC_FIGHT_MS > f.until_t then
-                f.until_t = r.hit_at + NPC_FIGHT_MS
-            end
-            if now >= f.until_t then
-                npc_drop[id] = npc_drop[id] or {}
-                npc_drop[id][eid] = true
-                memo.npc_fight = nil
-                memo.last_fight = 0
-                if debug_on() then
-                    log_msg("Nemesis: %s drops his fight with %s after %s s without a hit from him; back on the hunt.",
-                        tostring(nemesis_state.name_of(id) or id), tostring(eid), tostring(NPC_FIGHT_MS / 1000))
-                end
-                return false
-            end
-        else
-            memo.npc_fight = nil
-        end
-        memo.hold_start, memo.holding = nil, false
-        local fighting = contact or now - memo.last_fight < CONTACT_LINGER_MS
-        local S0 = nemesis_state.S
-        if id == S0.boss_id and not S0.emission_hunt then return fighting end
-        if not memo.res then
-
-            if fighting then
-                memo.combat_since, memo.next_check = now, now + CHECK_FIRST_MS
-            end
-            return fighting
-        end
-        if now < (memo.next_check or 0) then return true end
-
-        if fighting then
-            local since = memo.combat_since or now
-            if memo.next_check < since + CHECK_SECOND_MS then memo.next_check = since + CHECK_SECOND_MS
-            else memo.next_check = memo.next_check + CHECK_EVERY_MS end
-            return true
-        end
-        return false
-    end
-    local r = (sees or hit) and nemesis_state.member(id)
-    local player_contact = sees or (hit and r and r.hit_by_player == true)
-
-    if not player_contact and hit and r and not r.hit_by_player and r.hit_from then
-        local shooter = level.object_by_id(r.hit_from)
-
-        if shooter and (IsStalker(shooter) or IsMonster(shooter)) and nemesis_fx.alive_obj(shooter) then
-            if now - (memo.shown_at or -1000000) >= SHOW_EVERY_MS then
-                memo.shown_at = now
-                pcall(_show_enemy, npc, shooter)
-            end
-            memo.hold_start = memo.hold_start or now
-            memo.holding = now - memo.hold_start < HOLD_MAX_MS
-            return false
-        end
-    end
-    if player_contact and db.actor then
-        if now - (memo.shown_at or -1000000) >= SHOW_EVERY_MS then
-            memo.shown_at = now
-            pcall(_show_enemy, npc, db.actor)
-        end
-        memo.hold_start = memo.hold_start or now
-
-        memo.holding = now - memo.hold_start < HOLD_MAX_MS or sniper_spot[id] == true
-    else
-        memo.hold_start, memo.holding = nil, false
-    end
-    return false
-end
-
-function drops_enemy(a, e)
-    local t = a and npc_drop[a]
-    if not (t and t[e]) then return false end
-    local r = nemesis_state.member(a)
-    if r and r.hit_from == e and r.hit_at and time_global() - r.hit_at < REHIT_MS then
-        t[e] = nil
-        return false
-    end
-    return true
-end
-
-function contact_hold(id)
-    local memo = id and fight_memo[id]
-    return memo ~= nil and memo.holding == true
-end
-
----------------------------------------------------------------------------
--- Tactics (Batch D), built on xlibs xcombat (the primitives AlifeTactics uses)
----------------------------------------------------------------------------
-
-local LKP_GIVE_UP_MS = 60000
-local FLANK_MIN_M = 30
-local SNIPER_MARGIN_M = 5
-
-function set_role(id, role) if id then roles[id] = role end end
-function set_retreat_dest(id, vid) if id then retreat_dest[id] = vid end end
-function get_retreat_dest(id) return id and retreat_dest[id] or nil end
-
-local function player_target(npc, actor)
-    local live_pos, live_lv = actor:position(), actor:level_vertex_id()
-    if not nemesis_mcm.get_bool("last_known_chase", true) then
-        return live_pos, live_lv, "live"
-    end
-
-    if known_spot_on then return live_pos, live_lv, "remembered spot" end
-    local mt, sees = 0, false
-    pcall(function() mt = npc:memory_time(actor) end)
-    pcall(function() sees = npc:see(actor) end)
-    if sees then return live_pos, live_lv, "seen" end
-    if not mt or mt <= 0 or time_global() - mt > LKP_GIVE_UP_MS then return live_pos, live_lv, "live" end
-    local pos = nil
-    pcall(function() pos = xcombat.get_track_pos(npc, actor, false) end)
-    if not pos or (pos.x == 0 and pos.y == 0 and pos.z == 0) then return live_pos, live_lv, "live" end
-    return pos, nil, "last known"
-end
-
-local FLANK_WIDE_DEG = 75
-local function flank_vertex(npc, tpos, role)
-    local npos = npc:position()
-    local dx, dz = tpos.x - npos.x, tpos.z - npos.z
-    local d = math.sqrt(dx * dx + dz * dz)
-    if d < FLANK_MIN_M then return nil end
-    local angle = known_spot_on and math.max(role.angle, FLANK_WIDE_DEG) or role.angle
-    local a = math.rad(angle * role.side)
-    local ca, sa = math.cos(a), math.sin(a)
-    local dir = vector()
-    dir:set((dx * ca - dz * sa) / d, 0, (dx * sa + dz * ca) / d)
-    local vid = nil
-    pcall(function() vid = xcombat.find_flee_lane(npc, dir, math.min(d * 0.5, 35), 10, 30) end)
-    return vid
-end
-
-local function sniper_vertex(npc, tpos)
-    local kind = nil
-    pcall(function() kind = xcombat.get_weapon_kind(npc) end)
-    if not (kind and xcombat.SNIPER_KINDS[kind]) then return nil end
-    local hold = math.max(30, fight_range() - SNIPER_MARGIN_M)
-    if npc:position():distance_to(tpos) > hold then return nil end
-    local vid = nil
-    pcall(function()
-        vid = xcombat.find_cover(npc, tpos, { selection = xcombat.COVER.NEAREST, firing = true, radius = 15, search_pos = npc:position() })
-    end)
-    return vid or npc:level_vertex_id()
-end
-
-local SNEAK_RING_M = 70
-local SNEAK_STEP_DEG = 35
-local SNEAK_CLOSE_DEG = 30
-local SNEAK_BEHIND_M = 15
-local SNEAK_FACING_MS = 5000
-
-local function wrap_angle(a)
-    while a > math.pi do a = a - 2 * math.pi end
-    while a <= -math.pi do a = a + 2 * math.pi end
-    return a
-end
-
-local function sneak_target(npc, actor)
-    local s = sneak[npc:id()]
-    local apos, npos, dir = actor:position(), npc:position(), nil
-    pcall(function() dir = actor:direction() end)
-    if not dir then return nil end
-    local l = math.sqrt(dir.x * dir.x + dir.z * dir.z)
-    if l < 0.01 then return nil end
-    local back = math.atan2(-dir.z / l, -dir.x / l)
-    local now = time_global()
-    local p = vector()
-
-    if indoor_since and not s.homing then s.homing = true end
-    if s.homing then
-        if not s.face_at or now - s.face_at >= SNEAK_FACING_MS or now < s.face_at then
-            s.face_at, s.face_back = now, back
-        end
-        s.closing = true
-        local b = s.face_back
-        p:set(apos.x + math.cos(b) * SNEAK_BEHIND_M, apos.y, apos.z + math.sin(b) * SNEAK_BEHIND_M)
-        return p, "homing in behind you"
-    end
-    local vx, vz = npos.x - apos.x, npos.z - apos.z
-    local here = math.atan2(vz, vx)
-    local off = wrap_angle(back - here)
-    local deg = math.abs(off) * 180 / math.pi
-    if deg <= SNEAK_CLOSE_DEG then
-        s.homing, s.closing, s.face_at, s.face_back = true, true, now, back
-        p:set(apos.x + math.cos(back) * SNEAK_BEHIND_M, apos.y, apos.z + math.sin(back) * SNEAK_BEHIND_M)
-        return p, "homing in behind you"
-    end
-    local step = math.min(math.abs(off), SNEAK_STEP_DEG * math.pi / 180)
-    local a = here + (off >= 0 and step or -step)
-    p:set(apos.x + math.cos(a) * SNEAK_RING_M, apos.y, apos.z + math.sin(a) * SNEAK_RING_M)
-    return p, "circling behind you"
-end
-
-local SIEGE_MS = 90000
-local SIEGE_BOSS_MS = 20000
-local SIEGE_OUT_MS = 10000
-local SIEGE_RING_M = 25
-local SIEGE_MOVE_M = 5
-local SIEGE_TURNS = { 0, 30, -30, 60, -60, 90, -90 }
-
-function set_player_indoor(on, now)
-    indoor_now = on and true or false
-    if on then
-        indoor_since = indoor_since or now
-        outdoor_since = nil
-    else
-        outdoor_since = outdoor_since or now
-        if indoor_since and now - outdoor_since >= SIEGE_OUT_MS then
-            indoor_since, siege_spot, siege_broken = nil, {}, false
-        end
-    end
-end
-function player_indoor() return indoor_now end
-function break_siege()
-    if indoor_now and indoor_since and not siege_broken then
-        siege_broken = true
-        log_msg("Nemesis: you opened fire from inside; the hunters storm in.")
-    end
-end
-function siege_active(now)
-    local wait = nemesis_state.S.boss_hunt and SIEGE_BOSS_MS or SIEGE_MS
-    return indoor_now and not siege_broken and indoor_since ~= nil and (now or time_global()) - indoor_since < wait
-end
-function set_known_spot(on) known_spot_on = on and true or false end
-
-local function siege_vertex(npc, actor)
-    local id, apos = npc:id(), actor:position()
-    local c = siege_spot[id]
-    if c then
-        local dx, dz = apos.x - c.ax, apos.z - c.az
-        if dx * dx + dz * dz <= SIEGE_MOVE_M * SIEGE_MOVE_M then return c.lv end
-    end
-    local npos = npc:position()
-    local base = math.atan2(npos.z - apos.z, npos.x - apos.x)
-    local lv = nil
-    for _, t in ipairs(SIEGE_TURNS) do
-        local a = base + math.rad(t)
-        local p = vector()
-        p:set(apos.x + math.cos(a) * SIEGE_RING_M, apos.y, apos.z + math.sin(a) * SIEGE_RING_M)
-        local v = nil
-        pcall(function() v = level.vertex_id(p) end)
-        if v and v < 4294967295 then
-            local inside = true
-            pcall(function() inside = xcombat.is_indoor(level.vertex_position(v)) end)
-            if not inside then lv = v; break end
-        end
-    end
-    siege_spot[id] = { lv = lv, ax = apos.x, az = apos.z }
-    return lv
-end
-
-local function chase_target(npc, actor)
-    if siege_active() and not focus[npc:id()] then
-        local lv = siege_vertex(npc, actor)
-        if lv then return level.vertex_position(lv), lv, "waiting outside" end
-    end
-    if sneak_active(npc:id()) then
-
-        if sneak_holding(npc:id()) then
-            return npc:position(), npc:level_vertex_id(), "holding, about to open fire"
-        end
-
-        if not player_running(actor) then
-            local p, phase = sneak_target(npc, actor)
-            if p then return p, nil, phase end
-        else
-            local s = sneak[npc:id()]
-            if s then s.closing = false end
-        end
-    end
-    local tpos, tlv, mode = player_target(npc, actor)
-    local role = roles[npc:id()]
-    if role and role.extra and nemesis_mcm.get_bool("squad_tactics", true) then
-
-        local svid = mode == "seen" and sniper_vertex(npc, tpos)
-        if svid then return level.vertex_position(svid), svid, mode .. ", sniper position" end
-        local fvid = flank_vertex(npc, tpos, role)
-        if fvid then return level.vertex_position(fvid), fvid, mode .. ", flank" end
-    end
-    return tpos, tlv, mode
-end
-
-local function state_exists(name)
-    local ok, res = pcall(function()
-        return state_lib ~= nil and state_lib.states ~= nil and state_lib.states[name] ~= nil
-    end)
-    return ok and res == true
-end
-
-local STATE_ORDER = {
-    far = { "sprint", "rush", "assault", "run" },
-    near = { "rush", "assault", "run" },
-    sneak = { "sneak_run", "sneak", "assault", "run" },
-    walk = { "raid", "patrol", "walk" },
-}
-local picked_state = {}
-local function pick_state(far, sneaky, walking)
-    local key = walking and "walk" or (sneaky and "sneak" or (far and "far" or "near"))
-    local name = picked_state[key]
-    if name == nil then
-        name = false
-        for _, n in ipairs(STATE_ORDER[key]) do
-            if state_exists(n) then name = n; break end
-        end
-        if name then picked_state[key] = name end
-    end
-    return name or nil
-end
-
-local route_logged = {}
-local function apply_state(npc, slot, far, sneaky)
-    local walking = nemesis_emission.walks(npc:id())
-    local name = pick_state(far, sneaky, walking)
-    local ok = false
-    if name and db.storage[npc:id()] and db.storage[npc:id()].state_mgr then
-        ok = pcall(function()
-            state_mgr.set_state(npc, name, nil, nil, nil, { fast_set = true })
-        end)
-    end
-    if debug_on() then
-        local route = ok and ("state_mgr " .. tostring(name)) or "raw run (no state manager)"
-        if route_logged[npc:id()] ~= route then
-            route_logged[npc:id()] = route
-            log_msg("Nemesis: chase movement for %s via %s.", tostring(npc:id()), route)
-        end
-    end
-    if ok then
-        slot.state = name
-        return true
-    end
-    slot.state = nil
-    return pcall(function()
-        npc:set_movement_type(walking and move.walk or move.run)
-        npc:set_mental_state(anim.danger)
-        npc:set_sight(look.path_dir, nil, 0)
-    end)
-end
-
-local function send_to(npc, lv)
-    local used = nil
-    if utils_obj and utils_obj.send_to_nearest_accessible_vertex then
-        pcall(function() used = utils_obj.send_to_nearest_accessible_vertex(npc, lv, "nemesis_chase") end)
-    end
-    if type(used) == "number" and used < 4294967295 then return used end
-    local ok = pcall(function() npc:set_dest_level_vertex_id(lv) end)
-    return ok and lv or nil
-end
-
-function drive_chase(npc, actor)
-    if not npc or not actor then return false, false end
-
-    local id = npc:id()
-    local slot = chase[id]
-    if not slot then
-        slot = { at = 0 }
-        chase[id] = slot
-    end
-
-    local cover = retreat_dest[id]
-    if cover then
-        local now = time_global()
-        if slot.cover_lv == cover and now - (slot.cover_at or -1000000) < RESEND_MS then return true, false end
-        slot.cover_lv, slot.cover_at = cover, now
-        pcall(_prep_path, npc)
-        pcall(function() xcombat.set_destination(npc, cover) end)
-        return apply_state(npc, slot, true), false
-    end
-
-    if combat_owns(npc) then
-        slot.was_fighting = true
-        slot.holding = nil
-        return nil, nil
-    end
-
-    if contact_hold(id) then
-        if not slot.holding then
-            slot.holding = true
-            pcall(function()
-                npc:set_desired_position()
-                npc:set_desired_direction()
-            end)
-            local here = nil
-            pcall(function() here = npc:level_vertex_id() end)
-            if here and here < 4294967295 then send_to(npc, here) end
-            apply_state(npc, slot, false, false)
-            slot.was_fighting = true
-        end
-        return true, false
-    end
-    slot.holding = nil
-
-    if slot.was_fighting then
-        slot.was_fighting = nil
-        slot.lv = nil
-        slot.at = 0
-    end
-
-    local gt = time_global()
-    local refreshed = false
-    local sneaking = sneak_active(id)
-    local refresh_ms = sneaking and SNEAK_REFRESH_MS or CHASE_REFRESH_MS
-
-    if sneaking then
-        local how = (sneak_holding(id) and "hold") or (player_running(actor) and "run") or "still"
-        if slot.sneak_how ~= how then slot.sneak_how = how; slot.lv = nil end
-    end
-    if not slot.lv or gt - slot.at >= refresh_ms then
-        local tpos, tlv, mode = chase_target(npc, actor)
-        local lv, pos = pick_dest(npc, tpos, tlv)
-        if not lv then return false, false end
-        if slot.mode ~= mode then
-            slot.mode = mode
-            log_msg("Nemesis: %s chases toward %s.", tostring(id), mode)
-        end
-        slot.lv = lv
-        slot.pos = pos
-        slot.at = gt
-        refreshed = true
-    end
-
-    if not refreshed and slot.sent_lv == slot.lv and gt - (slot.sent_at or -1000000) < RESEND_MS then
-        return true, false
-    end
-
-    local okd, dist = pcall(_dist, npc, actor)
-    if not okd then dist = 9999 end
-    local far = dist > SPRINT_FROM_M
-
-    local sneaky = sneaking and sneak_closing(id) and not sneak_holding(id) and not player_running(actor)
-
-    pcall(_prep_path, npc)
-    local used = send_to(npc, slot.lv)
-    if not used then return false, refreshed end
-    local moved = apply_state(npc, slot, far, sneaky)
-    slot.sent_lv, slot.sent_at = slot.lv, gt
-
-    local at_spot = false
-    if slot.mode and slot.mode:find("sniper position", 1, true) and slot.pos then
-        pcall(function() at_spot = npc:position():distance_to(slot.pos) < 3 end)
-    end
-    sniper_spot[id] = at_spot or nil
-    return moved, refreshed
-end
-
-function stall_check(npc, gt)
-    if not npc or not debug_on() then return end
-    local id = npc:id()
-    local pos = nil
-    pcall(function() pos = npc:position() end)
-    if not pos then return end
-    local s = stall[id]
-    if not s then
-        stall[id] = { first = gt, pos = pos, since = gt }
-        return
-    end
-    if pos:distance_to(s.pos) >= STALL_MOVE_M then
-        if s.logged then log_msg("Nemesis STALL: %s moves again after %s s.", tostring(nemesis_state.name_of(id) or id), string.format("%.1f", (gt - s.since) / 1000)) end
-        s.pos, s.since, s.logged = pos, gt, nil
-        return
-    end
-    if s.logged or gt - s.since < STALL_MS or gt - s.first < STALL_START_MS then return end
-    s.logged = true
-    local memo, slot = fight_memo[id], chase[id]
-    local owner = "the chase"
-    if memo and memo.res then
-        local be_name = "none"
-        pcall(function() local be = npc:best_enemy(); if be then be_name = be:id() == 0 and "you" or (be:character_name() .. " (" .. be:id() .. ")") end end)
-        owner = "combat AI (enemy: " .. be_name .. ")"
-    elseif memo and memo.holding then
-        owner = "the chase, holding for the engine to pick you"
-    end
-    local dest = "-"
-    if slot and slot.pos then pcall(function() dest = string.format("%.0f m", pos:distance_to(slot.pos)) end) end
-    log_msg("Nemesis STALL: %s has stood still for 3 s. Driven by %s; target %s, %s to it; state %s%s%s%s.",
-        tostring(nemesis_state.name_of(id) or id), owner, tostring(slot and slot.mode or "-"), dest,
-        tostring(slot and slot.state or "-"), sniper_spot[id] and ", on his sniper spot" or "",
-        siege_active() and ", siege (you are indoors)" or "", sneak_active(id) and ", sneaking" or "")
-end
-
----------------------------------------------------------------------------
--- UI
----------------------------------------------------------------------------
-
-local FALLBACK_ICON = "ui_inGame2_PD_storonnik_ravnovesiya"
-local NEWS_SHOW_MS = 7000
-
-function send_news(text, caption, icon_override)
-    local actor = db.actor
-    if not actor then
-        log_msg("!Nemesis: PDA message skipped, no actor yet: %s", tostring(text))
-        return false
-    end
-    if type(caption) ~= "string" or caption == "" then caption = "Nemesis" end
-    local icon = "ui_nemesis_news"
-    if nemesis_mcm.get_bool("hd_icon", false) then
-        icon = "ui_nemesis_news_hd"
-    end
-    if type(icon_override) == "string" and icon_override ~= "" then icon = icon_override end
-    local ok, err = pcall(function() actor:give_game_news(caption, text, icon, 0, NEWS_SHOW_MS) end)
-    if not ok then
-        log_msg("!Nemesis ERROR: PDA message failed with icon %s (%s), retrying with a vanilla icon.", icon, tostring(err))
-        icon = FALLBACK_ICON
-        ok, err = pcall(function() actor:give_game_news(caption, text, icon, 0, NEWS_SHOW_MS) end)
-    end
-    if ok then
-        pcall(function() xr_sound.set_sound_play(AC_ID, "pda_tips") end)
-        log_msg("Nemesis: PDA message sent [%s] %s (icon %s).", caption, text, icon)
-    else
-        log_msg("!Nemesis ERROR: PDA message failed twice (%s).", tostring(err))
-    end
-    return ok
-end
-
-function sound_exists(path)
-    local ok, res = pcall(function() return getFS():exist("$game_sounds$", path .. ".ogg") end)
-    return ok and res and true or false
-end
-
-local sound_pick = {}
-function pick_sound(key, paths)
-    if sound_pick[key] == nil then
-        sound_pick[key] = false
-        for _, p in ipairs(paths) do
-            if sound_exists(p) then sound_pick[key] = p; break end
-        end
-        if sound_pick[key] then log_msg("Nemesis: %s sound: %s.", key, sound_pick[key])
-        else log_msg("!Nemesis ERROR: no %s sound file found (tried %s); it stays silent.", key, table.concat(paths, ", ")) end
-    end
-    return sound_pick[key] or nil
-end
-
-local PSY_L = { "anomaly\\psy_voices_1_l" }
-local PSY_R = { "anomaly\\psy_voices_1_r" }
-function psy_voices()
-    local l = pick_sound("psy voices (left)", PSY_L)
-    if not l then return nil end
-    return l, pick_sound("psy voices (right)", PSY_R)
-end
-
-local ap_found, ap_next_try = nil, 0
-function ap()
-    if ap_found then return ap_found end
-    local now = time_global()
-    if now < ap_next_try then return nil end
-    ap_next_try = now + 60000
-    local t = nil
-    pcall(function() t = ap_api end)
-    if type(t) == "table" then ap_found = t end
-    return ap_found
-end
-
-function exe_ai_on() return nemesis_mcm.get_bool("exe_ai", true) end
-
-function register_post(name, fn)
-    if type(RegisterScriptCallbackPost) == "function" then
-        if pcall(RegisterScriptCallbackPost, name, fn) then return true end
-    end
-    RegisterScriptCallback(name, fn)
-    return false
-end
-
-local held = {}
-local hold_logged = false
-function hold_still(obj)
-    if not obj or not exe_ai_on() then return false end
-    local ok, done = pcall(xcombat.set_movement_hold, obj, true)
-    if not (ok and done) then return false end
-    held[obj:id()] = true
-    if not hold_logged then
-        hold_logged = true
-        log_msg("Nemesis: engine movement hold in use (latest exes).")
-    end
-    return true
-end
-function is_held(id) return id ~= nil and held[id] == true end
-
-local BIAS_ACTOR = 1800
-local REDIRECT_FALLOFF_M = 60
-
-local function attack_pull(boss)
-    local v = boss and nemesis_mcm.get_number("boss_attack_pull", 300) or nemesis_mcm.get_number("hunter_attack_pull", 900)
-    if v < 0 then v = 0 end
-    if v > 1800 then v = 1800 end
-    return v > 0 and v or -1
-end
-local AI_REFRESH_MS = 2000
-local ai_logged = false
-function apply_ai(obj, r, gt)
-    if not (obj and r and r.named) then return end
-    if exe_ai_on() then
-        if r.ai_at and gt - r.ai_at < AI_REFRESH_MS then return end
-        r.ai_at = gt
-        local boss = r.id == nemesis_state.S.boss_id
-        local ok1, b = pcall(xcombat.set_visible_enemy_bias, obj, BIAS_ACTOR, -1)
-        local ok2, h = pcall(xcombat.set_hit_redirect, obj, attack_pull(boss), REDIRECT_FALLOFF_M)
-        r.ai_set = ((ok1 and b) or (ok2 and h)) and true or nil
-        if r.ai_set and not ai_logged then
-            ai_logged = true
-            log_msg("Nemesis: engine target bias and hit redirect in use (latest exes).")
-        end
-    elseif r.ai_set then
-        r.ai_set, r.ai_at = nil, nil
-        pcall(xcombat.set_visible_enemy_bias, obj, -1, -1)
-        pcall(xcombat.set_hit_redirect, obj, -1, 0)
-    end
-end
-function release_hold(id, obj)
-    if not (id and held[id]) then return end
-    held[id] = nil
-    if obj then pcall(xcombat.set_movement_hold, obj, false) end
-end
+function ap() return nemesis_compat.alifeplus() end
 
 function volume_setting(id, default)
     local v = nemesis_mcm.get_number(id, default) / 100
@@ -1170,232 +219,72 @@ function volume_setting(id, default)
     return v
 end
 
-local function player_name()
-    local name = nil
-    pcall(function() name = db.actor:character_name() end)
-    if type(name) ~= "string" or name == "" then name = "Stalker" end
-    return name
-end
-
----------------------------------------------------------------------------
--- Lines, per hunt faction. %name% is the player's name, %boss% the boss's.
----------------------------------------------------------------------------
-local LINES = {
-    monolith = {
-        warning = {
-            "You feel watched.",
-            "Static on every channel. Something is coming.",
-            "Your PDA picks up a broken Monolith prayer. It is getting closer.",
-            "A voice under the static whispers your name.",
-            "The Zone has noticed you, %name%.",
-        },
-        taunt = {
-            { max = 1, lines = {
-                "I can smell your fear, Stalker. Run while you still can.",
-                "The Zone is a small place. There is nowhere left to hide.",
-                "Did you think you were the predator here?",
-                "Your footsteps are like a beacon in the dark. I am coming.",
-            } },
-            { max = 3, lines = {
-                "You were lucky last time. Luck runs out in the Zone.",
-                "I remember how you fight, %name%. I have learned.",
-                "Again, Stalker. The Monolith does not forget.",
-            } },
-            { max = 6, lines = {
-                "How many times must I come for you, %name%?",
-                "Every wound you gave me made me stronger. Count them.",
-                "You are running out of places, %name%. I am not running out of patience.",
-            } },
-            { max = math.huge, lines = {
-                "%name%. The Monolith has whispered your name to me so many times.",
-                "There is no hunt left. Only the ending.",
-                "I have died for you a hundred times, %name%. Tonight it is your turn.",
-            } },
-        },
-        retreat = {
-            "Enjoy this while it lasts. We are not finished.",
-            "Not today. But I will find you again.",
-            "You got lucky, Stalker. Remember my face.",
-        },
-        time_up = {
-            "The Monolith calls me back. This is not over.",
-            "You ran well. Next time you will not run far enough.",
-            "Your time is borrowed, Stalker. I will collect it.",
-        },
-        boss = {
-            "Glory to the Monolith. Your road ends here, %name%.",
-            "The Monolith spoke your name. I came to answer.",
-            "You cannot hide from what lives in the static.",
-            "Kneel before the Monolith. It will be quick.",
-            "Every step you took led you here. The Zone is closing in.",
-            "Za Monolith! The Zone will drink your blood.",
-            "I walked through the Brain Scorcher to reach you. You will not outrun me.",
-            "The Monolith does not forgive. Neither do I.",
-        },
-        boss_warning = {
-            "The static is screaming. Something old is coming for you.",
-            "Every channel at once: a man's voice, praying to the Monolith.",
-            "Your PDA flickers a name you have never seen: %boss%. The signal is getting closer.",
-            "The Zone goes quiet. Even the anomalies are listening for him.",
-        },
-        boss_stash = {
-            "%boss% has fallen. His last coordinates come through on the Monolith channel: a stash.",
-            "The prayers on the channel stop. Someone sends coordinates instead: %boss%'s stash.",
-        },
-        boss_escape = {
-            "You slipped away this time. The Monolith keeps count.",
-            "Hide, then. I will be waiting in the static.",
-            "The Monolith calls me home. Do not mistake that for mercy.",
-        },
-        dread = {
-            "I can hear your heartbeat.",
-            "You are walking the way I want you to.",
-            "Look around. You will not see me.",
-            "The static is me. It has always been me.",
-            "Closer than you think, %name%.",
-            "Your breath is so loud in the quiet.",
-        },
-        sneak = { "%name%, you don't see me because I'm behind you right now." },
-        rush = { "Run, %name%. Every step brings you closer to me." },
-        close = { "%name%. Close enough to hear you breathe." },
-        follow = {
-            "You cannot outrun the Monolith, %name%.",
-            "New ground. Same prey.",
-            "The Monolith walks every road you walk, %name%.",
-        },
-        reload = { "Reloading, %name%?" },
-        known_spot = {
-            "Same place as last time, %name%. The Monolith remembers.",
-            "You fought us here before, %name%. We know this ground now.",
-        },
-    },
-    isg = {
-        warning = {
-            "Encrypted military traffic on your frequency. Your callsign is in it.",
-            "Your PDA pings a UNISG tracker. Someone is triangulating you.",
-            "Rotor noise far off, then silence. They are coming on foot.",
-            "Intercepted: 'Target is %faction%. Liquidate on sight.'",
-            "The Zone has noticed you, %name%. So has UNISG.",
-        },
-        taunt = {
-            { max = 1, lines = {
-                "Target acquired. One of %faction%, alone. Moving in.",
-                "This is a cleanup operation. You are the mess.",
-                "Whatever is in your head will not stop a bullet.",
-            } },
-            { max = 3, lines = {
-                "You walked away last time. The file on you got thicker, %name%.",
-                "Second contact. We adjusted the approach.",
-            } },
-            { max = 6, lines = {
-                "%name%. Every report ends with your name. Today we close the file.",
-                "Command wants you gone. I want it personal.",
-            } },
-            { max = math.huge, lines = {
-                "%name%. Priority one. No withdrawal authorised.",
-                "This ends with you bagged and tagged.",
-            } },
-        },
-        retreat = {
-            "Pulling out. This is not over.",
-            "Extraction. Mark this place, we will be back.",
-            "Fall back. We will finish this, %name%.",
-        },
-        time_up = {
-            "Operation window closed. You got lucky.",
-            "Recall order received. Next time, %name%.",
-            "We are pulled out. Your file stays open.",
-        },
-        boss = {
-            "UNISG Command authorised your removal, %name%.",
-            "I have hunted things in the Zone that would eat %faction% whole.",
-            "No prayers on this channel. Only the countdown.",
-            "So, %faction%. I was trained to break things like you.",
-            "Rules of engagement: none.",
-            "The rest of %faction% is next. You are first.",
-            "Hold still. This will be clean.",
-            "I never miss twice, %name%.",
-        },
-        boss_warning = {
-            "Military channel: 'Specialist deployed, codename %boss%.' The signal is getting closer.",
-            "Your PDA locks up for a second. Someone very good has your position.",
-            "Every UNISG channel goes silent at once.",
-        },
-        boss_stash = {
-            "Operator %boss% KIA. His cache coordinates were on the squad net.",
-            "Military channel: '%boss% is down.' Then a set of coordinates: his cache.",
-        },
-        boss_escape = {
-            "Operation window closed. The file stays open.",
-            "Recalled. Do not get comfortable.",
-            "Command pulls me out. Next time there is no recall.",
-        },
-        dread = {
-            "Thermals have you. Keep walking.",
-            "I can hear your heartbeat on the mic.",
-            "You will not see me. Nobody ever does.",
-            "Closer than you think, %name%.",
-            "Checking your six yet, %name%?",
-        },
-        sneak = { "%name%. Don't turn around. I'm right behind you." },
-        rush = { "Keep running, %name%. You're only making this easier." },
-        close = { "Close enough, %name%. Lights out." },
-        follow = {
-            "Changing maps won't save you, %name%.",
-            "Target relocated. Pursuit continues.",
-            "You moved. So did we, %name%.",
-        },
-        reload = { "Reloading, %name%?" },
-        known_spot = {
-            "Same position as last time, %name%? Sloppy.",
-            "We mapped this spot last time, %name%. Predictable.",
-        },
-    },
-}
-
-local FACTION_NAMES = { monolith = "Monolith", zombied = "the Zombified", greh = "Sin" }
-local function player_faction_name()
-    return FACTION_NAMES[player_community() or ""] or "Monolith"
-end
-
-local function fill(line, boss)
-    local you = player_name()
-    line = string.gsub(line, "%%name%%", function() return you end)
-    line = string.gsub(line, "%%faction%%", function() return player_faction_name() end)
-    line = string.gsub(line, "%%boss%%", function() return tostring(boss or get_npc_name()) end)
-    return line
-end
-
-function fill_line(line, boss) return fill(line, boss) end
-
-local function pick(kind, boss)
-
-    local own = (nemesis_state.S.emission_hunt or (kind == "boss_stash" and boss ~= nil and boss == nemesis_emission.boss_name()))
-        and nemesis_emission.line(kind) or nil
-    if own then return own end
-    local set = LINES[hunt_faction()][kind]
-    return fill(set[math.random(#set)], boss)
-end
-
-function warning_line() return pick("warning") end
-function retreat_line() return pick("retreat") end
-function time_up_line() return pick("time_up") end
-function boss_line() return pick("boss") end
-function boss_warning_line(boss) return pick("boss_warning", boss) end
-function boss_stash_line(boss) return pick("boss_stash", boss) end
-function boss_escape_line() return pick("boss_escape") end
-function dread_line() return pick("dread") end
-function sneak_line() return pick("sneak") end
-function rush_line() return pick("rush") end
-function close_line() return pick("close") end
-function known_spot_line() return pick("known_spot") end
-function follow_line() return pick("follow") end
-function reload_line() return pick("reload") end
-
-function taunt(cycle)
-    cycle = cycle or 1
-    for _, tier in ipairs(LINES[hunt_faction()].taunt) do
-        if cycle <= tier.max then return fill(tier.lines[math.random(#tier.lines)]) end
+function reset_chase(id)
+    if id then
+        nemesis_chase.reset_slot(id)
+    else
+        nemesis_chase.reset_slots()
+        nemesis_combat.reset()
+        nemesis_siege.reset()
     end
-    return "I am coming."
 end
+
+function forget_fight(id)
+    if not id then return end
+    nemesis_combat.forget(id)
+    nemesis_chase.forget_tactics(id)
+    nemesis_sneak.forget(id)
+end
+function drive_chase(...) return nemesis_chase.drive_chase(...) end
+function pick_dest(...) return nemesis_chase.pick_dest(...) end
+function retreat_arrived(...) return nemesis_chase.retreat_arrived(...) end
+function set_role(...) return nemesis_chase.set_role(...) end
+function set_retreat_dest(...) return nemesis_chase.set_retreat_dest(...) end
+function get_retreat_dest(...) return nemesis_chase.get_retreat_dest(...) end
+
+function combat_owns(...) return nemesis_combat.combat_owns(...) end
+function combat_owns_now(...) return nemesis_combat.combat_owns_now(...) end
+function drops_enemy(...) return nemesis_combat.drops_enemy(...) end
+function contact_hold(...) return nemesis_combat.contact_hold(...) end
+function set_focus(...) return nemesis_combat.set_focus(...) end
+function stall_check(...) return nemesis_combat.stall_check(...) end
+
+function set_sneak(...) return nemesis_sneak.set_sneak(...) end
+function sneak_active(...) return nemesis_sneak.sneak_active(...) end
+function set_sneak_hold(...) return nemesis_sneak.set_sneak_hold(...) end
+function player_running(...) return nemesis_sneak.player_running(...) end
+function end_sneak(...) return nemesis_sneak.end_sneak(...) end
+
+function set_player_indoor(...) return nemesis_siege.set_player_indoor(...) end
+function player_indoor(...) return nemesis_siege.player_indoor(...) end
+function break_siege(...) return nemesis_siege.break_siege(...) end
+function siege_active(...) return nemesis_siege.siege_active(...) end
+function set_known_spot(...) return nemesis_siege.set_known_spot(...) end
+
+function send_news(...) return nemesis_lines.send_news(...) end
+function pick_sound(...) return nemesis_lines.pick_sound(...) end
+function psy_voices(...) return nemesis_lines.psy_voices(...) end
+function next_hunter_name(...) return nemesis_lines.next_hunter_name(...) end
+function fill_line(...) return nemesis_lines.fill_line(...) end
+function taunt(...) return nemesis_lines.taunt(...) end
+function warning_line() return nemesis_lines.warning_line() end
+function retreat_line() return nemesis_lines.retreat_line() end
+function time_up_line() return nemesis_lines.time_up_line() end
+function boss_line() return nemesis_lines.boss_line() end
+function boss_warning_line(boss) return nemesis_lines.boss_warning_line(boss) end
+function boss_stash_line(boss) return nemesis_lines.boss_stash_line(boss) end
+function boss_escape_line() return nemesis_lines.boss_escape_line() end
+function dread_line() return nemesis_lines.dread_line() end
+function sneak_line() return nemesis_lines.sneak_line() end
+function rush_line() return nemesis_lines.rush_line() end
+function close_line() return nemesis_lines.close_line() end
+function known_spot_line() return nemesis_lines.known_spot_line() end
+function follow_line() return nemesis_lines.follow_line() end
+function reload_line() return nemesis_lines.reload_line() end
+
+function exe_ai_on() return nemesis_compat.exe_ai_on() end
+function register_post(...) return nemesis_compat.register_post(...) end
+function hold_still(...) return nemesis_compat.hold_still(...) end
+function is_held(...) return nemesis_compat.is_held(...) end
+function apply_ai(...) return nemesis_compat.apply_ai(...) end
+function release_hold(...) return nemesis_compat.release_hold(...) end
