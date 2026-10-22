@@ -1,17 +1,50 @@
 -- Nemesis Sound: every sound of the mod in one place (the owner's wish; gathered in round 126).
+-- Used by: nemesis_core, nemesis_spawn (the warning, arrivals), nemesis_fx (the teleport sound,
+-- the hum's distances), nemesis_emission (the lightning), nemesis_lines (the PDA beep),
+-- nemesis_mcm (this file's menu section).
+-- Uses: xlibs xsound (play), the engine's sound_object (the hum, the warm-up), nemesis_engine
+-- (sound_exists, obj, the world's volume factors for the silence), nemesis_mcm (get_number), nemesis_state (name_of), nemesis_utils (log_tag).
+-- Which file plays (pick, psy_voices), how loud (volume: the sliders on the General page), and
+-- every sound the mod plays:
+--   warning(boss)      the arrival warning: the radio static, for the boss also the psy voices
+--   teleport(spot)     the teleport sound with the burst (a retreat, a teleport death, arrivals)
+--   play_at(path, pos, volume)   any 3D one-shot (the emission boss's lightning goes through it)
+--   hum_update / hum_stop        the psy hum on the nearest named hunter
+--   heart_update / heart_frame / heart_stop   the heartbeat while the boss is near (round 142)
+--   whisper_update / whisper_frame / whisper_fade   the whispers on a cloaked boss (round 143; no
+--                      boss uses them since round 151: kept for a solo boss or The Twins)
+--   arrival_call(pos, boost)     the Monolith's call where a hunt arrives (round 144)
+--   silence_begin / silence_frame / silence_cancel   the silence before the warning (round 145)
+--   pda_tip()          the PDA "tips" beep with a Nemesis message
+-- The other scripts call here directly (the old forwarding names in nemesis_utils, nemesis_lines
+-- and nemesis_fx were removed in round 137).
+--
+-- xlibs first: every one-shot goes through xsound.play, 2D at your ear or 3D at a position. It
+-- hands the engine the volume with the play itself (sound_object:play_no_feedback), so a sample
+-- never starts at full volume, and the engine owns the sound until it ends, so nothing has to be
+-- kept alive while it plays (our own one-shot used to set the volume before and after the play
+-- and keep the object, so a sample could start loud; replaced in round 126). The hum is the one
+-- exception: it follows a hunter
+-- (set_position every tick), which xsound cannot do, so it stays one engine sound object of ours.
+-- The volume sliders stay on the General page with their saved paths (owner): this script
+-- declares that section (mcm_sound_section), nemesis_mcm places it.
 
+-- Writes a [SOUND] debug line, through nemesis_utils.log_tag (the tagged logger, only with Debug logs on).
 local function dbg(...) nemesis_utils.log_tag("SOUND", ...) end
 
 ---------------------------------------------------------------------------
 -- Files and volumes
 ---------------------------------------------------------------------------
-local sound_pick = {}
+local sound_pick = {}            -- [list name] = the path picked, or false when none exists
 
+-- The first path of paths that exists (nemesis_engine.sound_exists), cached under key, so each
+-- list is searched once. Returns nil when none exists, and logs which one was picked (or none).
+-- For: a missing sound file must leave the mod silent, never break it.
 function pick(key, paths)
     if sound_pick[key] == nil then
         sound_pick[key] = false
         for _, p in ipairs(paths) do
-
+            -- sound_exists: nemesis_engine, whether the game has this sound file
             if nemesis_engine.sound_exists(p) then
                 sound_pick[key] = p
                 break
@@ -26,14 +59,19 @@ end
 local PSY_L = { "anomaly\\psy_voices_1_l" }
 local PSY_R = { "anomaly\\psy_voices_1_r" }
 
+-- The psy voices' files (the ones vanilla's psy antenna and the burer play), left and right
+-- channel, through pick. If the right one is missing, the left one plays alone. Returns nil when
+-- neither exists. Used by warning (the boss's), the hum and the warm-up.
 function psy_voices()
     local l = pick("psy voices (left)", PSY_L)
     if not l then return nil end
     return l, pick("psy voices (right)", PSY_R)
 end
 
+-- An MCM volume slider id (0..100 %) as 0..1, kept in range; default when it isn't set.
+-- Used by every sound here, and by nemesis_emission for its own (the lightning).
 function volume(id, default)
-    local v = nemesis_mcm.get_number(id, default) / 100
+    local v = nemesis_mcm.get_number(id, default) / 100   -- get_number: nemesis_mcm, a menu number (cached)
     if v < 0 then v = 0 end
     if v > 1 then v = 1 end
     return v
@@ -42,34 +80,47 @@ end
 ---------------------------------------------------------------------------
 -- One-shots
 ---------------------------------------------------------------------------
-
+-- Plays sound file path once, 2D at your ear, at volume vol (0..1), through xlibs xsound.play.
+-- Returns true when it went out; nothing at volume 0.
 function play(path, vol)
     if not path or (vol or 1) <= 0 then return false end
     local ok, done = false, false
-
+    -- src: xlibs xsound.script (xsound.play)
     ok = pcall(function() done = xsound.play(path, { volume = vol or 1 }) end)
     return ok and done == true
 end
 
+-- Plays sound file path once, 3D at position pos (heard from there, with the engine's falloff),
+-- at volume vol (0..1), through xlibs xsound.play. Returns true when it went out.
 function play_at(path, pos, vol)
     if not (path and pos) or (vol or 1) <= 0 then return false end
     local ok, done = false, false
-
+    -- src: xlibs xsound.script (xsound.play)
     ok = pcall(function() done = xsound.play(path, { position = pos, volume = vol or 1 }) end)
     return ok and done == true
 end
 
+-- Plays the teleport sound at position spot, at the Teleport volume slider. nemesis_fx calls it
+-- with its burst (play_retreat_fx): a hunter teleporting out, a body teleported away, an arrival.
 function teleport(spot)
     return play_at("anomaly\\teleport_incoming", spot, volume("teleport_volume", 40))
 end
 
+-- Plays the PDA "tips" beep, the one GAMMA's own skill messages play (haru_skills), through
+-- Anomaly's xr_sound. nemesis_lines calls it with a Nemesis PDA message.
 function pda_tip()
-
+    -- src: anomaly xr_sound.script (xr_sound.set_sound_play)
     pcall(function() xr_sound.set_sound_play(AC_ID, "pda_tips") end)
 end
 
 local STATIC_SOUNDS = { "radio\\white_noise\\white_noise_heavy_fade_in", "radio\\white_noise\\white_noise_light", "ambient\\radar_1" }
 
+-- Plays the arrival warning at the Arrival warning volume slider: the radio static (the first of
+-- STATIC_SOUNDS that exists). Nothing when the volume is 0. Called by nemesis_spawn when it gives
+-- the warning; boss (a boss hunt) is kept for its callers but changes nothing since round 150:
+-- the boss warning's burst of the psy voices played in your head (2D) and, held up out of the
+-- silence before the warning, lasted into the hunt's start; the owner wants the hum to come only
+-- from the hunters (play test of round 148).
 function warning(boss)
     local snd = pick("warning static", STATIC_SOUNDS)
     local vol = volume("warning_volume", 70)
@@ -80,26 +131,37 @@ end
 ---------------------------------------------------------------------------
 -- The psy hum
 ---------------------------------------------------------------------------
-
+-- The psy hum (round 102, user design: positional). The psy voices (the left file: one mono
+-- channel, what the psy antenna and the burer play) looped as a 3D sound on one named hunter,
+-- moved with him every tick (sound_object:set_position, as other GAMMA mods move a looped hum).
+-- The engine's 3D sound does the rest: Psy hum volume within HUM_FULL_M of him, fading out at
+-- HUM_MAX_M. One source, no second hum at your ear. He keeps it while he is still in range and
+-- not leaving; then the nearest named hunter takes it. It fades in over about a second, and
+-- stops between hunts. Moved here from nemesis_fx in round 126 (nemesis_fx.measure still finds
+-- the hunters, for the hum and the boss distortion in one pass).
 HUM_FULL_M, HUM_MAX_M = 10, 100
-local HUM_RAMP = 0.25
-local hum = nil
+local HUM_RAMP = 0.25              -- share of the slider added per tick while it fades in
+local hum = nil                    -- { snd = sound_object, id = hunter id, vol = current } while playing
 
+-- The hunter the hum is on, or nil.
 function hum_id() return hum and hum.id or nil end
 
+-- The hum stops (no hunter in range, volume 0, between hunts, a load).
 function hum_stop()
     if not hum then return end
-
+    -- src: engine script_sound_script.cpp / script_particles_script.cpp (stop)
     pcall(function() hum.snd:stop() end)
     dbg("Nemesis: psy hum stops.")
     hum = nil
 end
 
+-- From nemesis_fx.measure(): the nearest named hunter's distance and id, and the distance of the
+-- one the hum is on (nil: he is gone, dead or leaving).
 function hum_update(nearest, near_id, hum_d)
     local vol = volume("hum_volume", 10)
-
+    -- The one it is on while he is in range; else the nearest in range; else none.
     local id = (hum and hum_d and hum_d <= HUM_MAX_M and hum.id) or (nearest and nearest <= HUM_MAX_M and near_id) or nil
-    local obj = id and vol > 0.001 and nemesis_engine.obj(id)
+    local obj = id and vol > 0.001 and nemesis_engine.obj(id)   -- obj: nemesis_engine, the online object of an id or nil
     if not obj then hum_stop() return end
     if hum and hum.id ~= id then hum_stop() end
     local p = obj:position()
@@ -108,22 +170,22 @@ function hum_update(nearest, near_id, hum_d)
         local path = psy_voices()
         if not path then return end
         local ok, snd = pcall(function()
-
+            -- src: engine script_sound_script.cpp (sound_object)
             local s = sound_object(path)
             s.volume = 0
-
+            -- src: engine script_sound_script.cpp / script_particles_script.cpp (play_at_pos)
             s:play_at_pos(obj, pos, 0, sound_object.s3d + sound_object.looped)
             s.min_distance, s.max_distance = HUM_FULL_M, HUM_MAX_M
             return s
         end)
         if not (ok and snd) then return end
         hum = { snd = snd, id = id, vol = 0 }
-
+        -- name_of: nemesis_state, the name kept for a member's id
         dbg("Nemesis: psy hum starts on %s (3D, full within %s m, gone at %s m).", tostring(nemesis_state.name_of(id) or id), HUM_FULL_M, HUM_MAX_M)
     end
     hum.vol = math.min(vol, hum.vol + vol * HUM_RAMP)
     pcall(function()
-
+        -- src: engine script_sound_script.cpp / script_particles_script.cpp (set_position)
         hum.snd:set_position(pos)
         hum.snd.volume = hum.vol
     end)
@@ -132,14 +194,25 @@ end
 ---------------------------------------------------------------------------
 -- The heartbeat
 ---------------------------------------------------------------------------
-
+-- The heartbeat, the owner's design of round 142: the boss within HEART_FROM_M, a heartbeat in
+-- your head (2D), faster as he nears. One lub-dub, heart\7 (0.56 s, the soft beat at 140 ms and
+-- the strong one at 360 ms; measured with ffprobe in the owner's GAMMA), played by us at our own rate: HEART_LOW_BPM at HEART_FROM_M, up to Heartbeat top
+-- rate when he is on you, bpm = low + (top - low) x k^1.5 with k = 1 - distance / HEART_FROM_M,
+-- so it climbs slowly far out and fast close in. The rate moves at most HEART_SLEW_BPM a second,
+-- so a cloak, a turn or a wobbly read never makes it jump. Either boss.
+-- The distance comes every hunt tick (heart_update, from nemesis_fx.measure in nemesis_core.manage);
+-- the beats are timed every frame (heart_frame, a frame job of the core), so the rhythm stays even
+-- at 140 bpm, where the 250 ms tick is too coarse. Every way out stops it: he is out of range,
+-- dead or off this map (no distance), the hunt is over or the tick is taken (heart_stop, from the
+-- core), a load (reset_runtime), and a distance older than HEART_STALE_MS (nothing reads him).
 HEART_FROM_M, HEART_LOW_BPM = 80, 85
-local HEART_SLEW_BPM = 10
-local HEART_STALE_MS = 1000
+local HEART_SLEW_BPM = 10          -- the most the rate moves in a second
+local HEART_STALE_MS = 1000        -- a distance this old stops it (four hunt ticks missed)
 local HEART_FILES = { "heart\\7" }
-local heart = nil
-local heart_d, heart_d_at = nil, nil
+local heart = nil                  -- { bpm, at, next_at, path } while it beats
+local heart_d, heart_d_at = nil, nil   -- the boss's last distance (m) and when it came (ms)
 
+-- Heartbeat top rate (MCM, 120..180 bpm).
 local function heart_top()
     local v = nemesis_mcm.get_number("heartbeat_top", 140)
     if v < 120 then v = 120 end
@@ -147,6 +220,7 @@ local function heart_top()
     return v
 end
 
+-- The heartbeat's rate for the boss d metres away, with top as the top rate (see above).
 function heart_bpm(d, top)
     local k = 1 - d / HEART_FROM_M
     if k < 0 then k = 0 end
@@ -154,6 +228,8 @@ function heart_bpm(d, top)
     return HEART_LOW_BPM + (top - HEART_LOW_BPM) * k ^ 1.5
 end
 
+-- The heartbeat stops (why goes in the log line, when it was beating). Called here and by
+-- nemesis_core (between hunts, the emission boss's wait, the uninstall preparation).
 function heart_stop(why)
     heart_d, heart_d_at = nil, nil
     if not heart then return end
@@ -161,12 +237,16 @@ function heart_stop(why)
     dbg("Nemesis: the heartbeat stops (%s).", why or "?")
 end
 
+-- Every hunt tick (nemesis_core.manage): the boss's distance from nemesis_fx.measure, or nil
+-- when there is no living boss on this map. Out of range, or the volume at 0: it stops.
 function heart_update(boss_d)
     if not boss_d or boss_d > HEART_FROM_M then return heart_stop("the boss is out of range") end
     if volume("heartbeat_volume", 30) <= 0 then return heart_stop("volume 0") end
     heart_d, heart_d_at = boss_d, time_global()
 end
 
+-- Every frame (the core's frame job, gt: time_global): the rate follows the distance, and the
+-- next beat plays when it is due. A late frame plays one beat, never a burst to catch up.
 function heart_frame(gt)
     if not heart_d then return end
     if gt - heart_d_at > HEART_STALE_MS or gt < heart_d_at then return heart_stop("no distance any more") end
@@ -196,27 +276,42 @@ end
 ---------------------------------------------------------------------------
 -- The whispers
 ---------------------------------------------------------------------------
-
+-- The whispers, the owner's design of round 143: the boss cloaked within WHISPER_MAX_M (25 m,
+-- the owner's number), whispers come from where he is; turn your head, and they are over there.
+-- arszi_psy\pripyat_whispers_final (one 138 s track, in Anomaly's sounds; GAMMA's Voiced Actor
+-- copy is the same file, checked by the main coder) as one quiet 3D loop on him, moved every tick
+-- as the hum is (set_position). The engine's 3D sound does the distance: Whispers volume within
+-- WHISPER_FULL_M of him, gone at WHISPER_MAX_M. It fades in over about WHISPER_FADE_MS once he
+-- is cloaked within range, and out over the same when he shows, leaves the range, dies, or the
+-- hunt ends; one loop, never stacked. Either boss who cloaks (the emission boss never does).
+-- The target comes every hunt tick (whisper_update), the fade runs every frame (whisper_frame, a
+-- frame job of the core); no target for WHISPER_STALE_MS fades it too. A load stops it at once.
 WHISPER_FULL_M, WHISPER_MAX_M = 5, 25
-local WHISPER_FADE_MS = 1000
-local WHISPER_STALE_MS = 1000
+local WHISPER_FADE_MS = 1000       -- a fade in or out takes this long
+local WHISPER_STALE_MS = 1000      -- no target this long: it fades out (four hunt ticks missed)
 local WHISPER_FILES = { "arszi_psy\\pripyat_whispers_final" }
-local whisper = nil
+local whisper = nil                -- { snd, id, vol, want, full, at, seen_at, why } while it plays
 
+-- The whispers stop at once (why goes in the log line).
 local function whisper_off(why)
     if not whisper then return end
-
+    -- src: engine script_sound_script.cpp / script_particles_script.cpp (stop)
     pcall(function() whisper.snd:stop() end)
     whisper = nil
     dbg("Nemesis: the whispers stop (%s).", why or "?")
 end
 
+-- The whispers fade out over WHISPER_FADE_MS (why goes in the log line when they are gone).
+-- Called here and by nemesis_core (between hunts, the emission boss's wait, the uninstall).
 function whisper_fade(why)
     if not whisper or whisper.want == 0 then return end
     whisper.want = 0
     whisper.why = why
 end
 
+-- Every hunt tick (nemesis_core.manage): the boss's id, his distance (nil: none on this map) and
+-- whether he is cloaked. Cloaked within range: the loop goes to Whispers volume on him; else it
+-- fades out.
 function whisper_update(id, d, cloaked)
     local vol = volume("whispers_volume", 25)
     local on = id ~= nil and d ~= nil and d <= WHISPER_MAX_M and cloaked == true and vol > 0
@@ -229,10 +324,10 @@ function whisper_update(id, d, cloaked)
         local path = pick("whispers", WHISPER_FILES)
         if not path then return end
         local ok, snd = pcall(function()
-
+            -- src: engine script_sound_script.cpp (sound_object)
             local s = sound_object(path)
             s.volume = 0
-
+            -- src: engine script_sound_script.cpp / script_particles_script.cpp (play_at_pos)
             s:play_at_pos(obj, pos, 0, sound_object.s3d + sound_object.looped)
             s.min_distance, s.max_distance = WHISPER_FULL_M, WHISPER_MAX_M
             return s
@@ -242,10 +337,12 @@ function whisper_update(id, d, cloaked)
         dbg("Nemesis: the whispers start (the boss cloaked %s m away).", string.format("%.0f", d))
     end
     whisper.want, whisper.full, whisper.seen_at = vol, vol, time_global()
-
+    -- src: engine script_sound_script.cpp / script_particles_script.cpp (set_position)
     pcall(function() whisper.snd:set_position(pos) end)
 end
 
+-- Every frame (the core's frame job, gt: time_global): the volume moves toward its target, a
+-- whole slider in WHISPER_FADE_MS; at 0 with nothing wanted the loop stops.
 function whisper_frame(gt)
     if not whisper then return end
     if whisper.want > 0 and gt - (whisper.seen_at or gt) > WHISPER_STALE_MS then
@@ -267,7 +364,13 @@ function whisper_frame(gt)
 end
 
 local CALL_FILES = { "monolith_call_1", "characters_voice\\scenario\\sarcofag\\monolith_call_1" }
-
+-- The arrival call, the owner's design of round 144: the Monolith's call once per hunt arrival,
+-- 3D at the spot where the squad's leader appears, so you hear the direction. monolith_call_1
+-- (10.3 s, mono: measured with ffprobe; at the top of sounds\ and in the sarcofag voices, the
+-- same length). Arrival call volume raised by the cycle's share (boost, 0..1, from
+-- nemesis_fx.arrival_boost), never over the slider's 100 (ears first, owner). Monolith hunts only
+-- (owner, 22 October: UNISG and the emission boss, a Sin, get the swell alone). Returns true when
+-- it went out. Called by nemesis_spawn's arrival.
 function arrival_call(pos, boost)
     local vol = volume("arrival_call_volume", 50) * (1 + (boost or 0))
     if vol > 1 then vol = 1 end
@@ -279,24 +382,46 @@ end
 ---------------------------------------------------------------------------
 -- The silence before the warning
 ---------------------------------------------------------------------------
-
+-- The silence before the warning, the owner's design of round 145: the world goes quiet. The
+-- game's sound effects and music fade out over SILENCE_FADE_MS, the silence holds (Silence length,
+-- 0.5..1 s), then the warning comes out of it (the radio static, and the PDA line as today), and
+-- the world comes back up under the static over SILENCE_BACK_MS. About 5 s in all; the hunt's
+-- own timing is unchanged (its spawn counts from the roll).
+-- How: the engine's runtime volume factors (nemesis_engine.sound_factors), read at the start and
+-- moved every frame (silence_frame, a frame job of the core), never below SILENCE_FLOOR of where
+-- they were. The static is ours, held (a 2D sound object, kept until it ends), and raised by
+-- 1 / share while the world is down, so it is heard at its own volume all the way, the way
+-- Anomaly's Brain Scorcher keeps its sound up (sr_psy_antenna.script: 1 / vol - 1). A 2D sound's
+-- volume passes through until the final gain, which the engine clamps to 1 (xrSound
+-- SoundRender_Emitter_FSM.cpp 355-358, SoundRender_TargetA.cpp 184-185).
+-- Safety: every way out puts the factors back as they were read (the end, a load, the warning
+-- being called off, an error in a step). Another script that moves a factor meanwhile wins: we
+-- stop writing at once (the warning still comes). The engine's own explosion shock
+-- (ActorEffector.cpp 340-365) and the Brain Scorcher store the factor they find and put it back
+-- later, so one that started during our fade would put back our lowered value: for
+-- SILENCE_WATCH_MS after such a hand-over, a factor left below where we found it, and still for
+-- SILENCE_STABLE_MS (longer than the shock's quiet half), is put back once.
 local SILENCE_FADE_MS, SILENCE_BACK_MS = 3000, 1500
-local SILENCE_FLOOR = 0.05
+local SILENCE_FLOOR = 0.05         -- the share of the world's volume left at the quietest
 local SILENCE_WATCH_MS, SILENCE_STABLE_MS = 60000, 8000
-local silence = nil
-local owed = nil
-local held = {}
+local silence = nil                -- { stage, t0, fx0, mu0, set_fx, set_mu, hold_ms, boss, on_warning, said }
+local owed = nil                   -- { fx0, until_at, last, since }: after another script took the factor
+local held = {}                    -- our raised one-shots: { snd, vol } while they play
 
+-- Whether the silence comes before the warning: MCM Silence before the warning, and the warning's
+-- volume above 0 (nemesis_spawn checks Arrival warning audio).
 function silence_wanted()
-    return nemesis_mcm.get_bool("silence_before", true) and volume("warning_volume", 70) > 0
+    return nemesis_mcm.get_bool("silence_before", true) and volume("warning_volume", 70) > 0   -- get_bool: nemesis_mcm, a menu checkbox (cached)
 end
 
+-- A 2D one-shot of ours at volume vol whose loudness the silence can raise (see above), held in
+-- held while it plays so it is not collected mid-play (xsound's own note, script_sound.cpp 30-37).
 local function held_shot(path, vol, share)
     local ok, snd = pcall(function()
-
+        -- src: engine script_sound_script.cpp (sound_object)
         local s = sound_object(path)
         s.volume = vol / share
-
+        -- src: engine script_sound_script.cpp / script_particles_script.cpp (play_at_pos)
         s:play_at_pos(db.actor, vector():set(0, 0, 0), 0, sound_object.s2d)
         s.volume = vol / share
         return s
@@ -304,11 +429,12 @@ local function held_shot(path, vol, share)
     if ok and snd then held[#held + 1] = { snd = snd, vol = vol } end
 end
 
+-- Every held one-shot at its own volume over the world's share; finished ones are let go.
 local function raise_held(share)
     for i = #held, 1, -1 do
         local h = held[i]
         local playing = false
-
+        -- src: engine script_sound_script.cpp / script_particles_script.cpp (playing)
         pcall(function() playing = h.snd:playing() end)
         if playing then
             pcall(function() h.snd.volume = h.vol / share end)
@@ -318,6 +444,8 @@ local function raise_held(share)
     end
 end
 
+-- The warning comes out of the silence: the line (nemesis_spawn's on_warning) and the static, as
+-- warning() plays it, but held. Once only.
 local function say_warning(s, share)
     if s.said then return end
     s.said = true
@@ -325,18 +453,20 @@ local function say_warning(s, share)
     local vol = volume("warning_volume", 70)
     local snd = pick("warning static", STATIC_SOUNDS)
     if snd then held_shot(snd, vol, share) end
-
+    -- (No psy voices for a boss hunt any more: see warning, round 150.)
 end
 
+-- The factors go back to where they were read (each one that is still ours), and the silence
+-- ends (why goes in the log line). say: the warning still comes when it has not yet.
 local function silence_end(why, say)
     local s = silence
     if not s then return end
     silence = nil
     if say then say_warning(s, 1) end
-    local fx, mu = nemesis_engine.sound_factors()
+    local fx, mu = nemesis_engine.sound_factors()   -- sound_factors: nemesis_engine, the world's volume factors
     local fx_ours = fx ~= nil and math.abs(fx - s.set_fx) <= 0.001
     local mu_ours = mu ~= nil and math.abs(mu - s.set_mu) <= 0.001
-
+    -- set_sound_factors: nemesis_engine, the factors written
     nemesis_engine.set_sound_factors(fx_ours and s.fx0 or nil, mu_ours and s.mu0 or nil)
     if fx and not fx_ours then
         owed = { fx0 = s.fx0, until_at = time_global() + SILENCE_WATCH_MS, last = fx, since = time_global() }
@@ -345,6 +475,10 @@ local function silence_end(why, say)
     dbg("Nemesis: the silence ends (%s)%s.", why or "?", fx_ours and "" or "; another script holds the sound volume, watched")
 end
 
+-- The silence starts (see above); boss: a boss hunt's warning (its psy voices); on_warning: the
+-- caller's part of the warning (the PDA line), called once when it comes. False when the factors
+-- cannot be read, or one is already running: the caller then gives its warning as before.
+-- Called by nemesis_spawn.give_warning.
 function silence_begin(boss, on_warning)
     if silence then return false end
     local fx0, mu0 = nemesis_engine.sound_factors()
@@ -359,6 +493,8 @@ function silence_begin(boss, on_warning)
     return true
 end
 
+-- The silence is called off (a load, the hunt called off): the factors go back, no warning.
+-- Called here and by nemesis_spawn.reset_runtime.
 function silence_cancel(why)
     if silence then
         silence.on_warning, silence.said = nil, true
@@ -366,6 +502,7 @@ function silence_cancel(why)
     end
 end
 
+-- After a hand-over (see above): the factor put back once, if another script left it low and still.
 local function owed_tick(gt)
     local fx = nemesis_engine.sound_factors()
     if not fx or fx >= owed.fx0 - 0.01 or gt > owed.until_at then
@@ -382,6 +519,7 @@ local function owed_tick(gt)
     owed = nil
 end
 
+-- One step of the silence (see silence_frame).
 local function silence_step(gt)
     local s = silence
     local fx, mu = nemesis_engine.sound_factors()
@@ -407,11 +545,13 @@ local function silence_step(gt)
     end
     s.set_fx, s.set_mu = s.fx0 * share, s.mu0 * share
     if not nemesis_engine.set_sound_factors(s.set_fx, s.set_mu) then return silence_end("the volume could not be set", true) end
-
+    -- The engine keeps the factor as a 32-bit float: what it reads back is what we compare.
     s.set_fx, s.set_mu = nemesis_engine.sound_factors()
     raise_held(share)
 end
 
+-- Every frame (the core's frame job, gt: time_global): the silence's next step, the watch after a
+-- hand-over, and the held one-shots. An error in a step ends the silence and puts the volume back.
 function silence_frame(gt)
     if owed then owed_tick(gt) end
     if not silence then
@@ -425,22 +565,32 @@ function silence_frame(gt)
     end
 end
 
+-- A load (nemesis_fx.reset_runtime): the hum stops without a line, the picks are kept (the
+-- files do not change while the game runs). The warm-up is due WARM_DELAY_MS later.
 local WARM_DELAY_MS = 5000
-local warm_due = nil
+local warm_due = nil              -- time_global when the warm-up is due, or nil when done
 
+-- Stops the hum and schedules the warm-up, after a load. Called by nemesis_fx.reset_runtime.
 function reset_runtime()
-
+    -- src: engine script_sound_script.cpp / script_particles_script.cpp (stop)
     if hum then pcall(function() hum.snd:stop() end) end
     hum = nil
-    heart, heart_d, heart_d_at = nil, nil, nil
-
+    heart, heart_d, heart_d_at = nil, nil, nil   -- the heartbeat too (round 142)
+    -- src: engine script_sound_script.cpp / script_particles_script.cpp (stop)
     if whisper then pcall(function() whisper.snd:stop() end) end
-    whisper = nil
-    silence_cancel("a load")
+    whisper = nil                                -- and the whispers (round 143)
+    silence_cancel("a load")                     -- the volume put back (round 145)
     held, owed = {}, nil
     warm_due = time_global() + WARM_DELAY_MS
 end
 
+-- The warm-up: the first arrival warning of a session took 95 ms, later ones 3 ms (the owner's
+-- test of RC12; fixed in round 127). The engine reads a sound file the first time a sound of that name is created,
+-- and keeps it for the rest of the game (xray-monolith xrSound SoundRender_Core_SourceManager.cpp:
+-- i_create_source looks the name up in s_sources, else creates the source and loads it at once;
+-- i_destroy_source destroys nothing). So, WARM_DELAY_MS after a load, every one-shot a hunt's
+-- start plays is created once and dropped: nothing is played, nothing kept, and the first warning
+-- and the first arrival no longer wait for a file. A tick job (nemesis_core).
 function warm_tick(gt)
     if not warm_due or gt < warm_due then return end
     warm_due = nil
@@ -450,7 +600,7 @@ function warm_tick(gt)
     paths[#paths + 1] = r
     local n = 0
     for _, p in pairs(paths) do
-
+        -- src: engine script_sound_script.cpp (sound_object)
         if p and pcall(function() local s = sound_object(p) end) then n = n + 1 end
     end
     dbg("Nemesis: %s sound files loaded ahead of the first hunt (nothing played).", tostring(n))
@@ -459,7 +609,11 @@ end
 ---------------------------------------------------------------------------
 -- Settings: the sound section of the General page
 ---------------------------------------------------------------------------
-
+-- nemesis_mcm puts it on the General page where it always was, so every slider keeps its saved
+-- path ("nemesis/general/<id>"). The Lightning strike volume belongs to the emission boss's
+-- arrival; it sits here with the other volumes.
+-- Returns the section's menu rows (MCM's own table format). Called by nemesis_mcm when it builds
+-- the menu, never at load.
 function mcm_sound_section()
     return {
         { id = "line_sound", type = "line" },

@@ -1,17 +1,59 @@
 -- Nemesis Chase
+-- Hunter movement as a motivation action. No monkey-patching, no fallback.
+-- Used by: nemesis_core (install, set_wanted, offline, reset_all, the roles and cover spots),
+-- nemesis_spawn (reset_all), nemesis_utils (reset_slot, reset_slots, forget_tactics), nemesis_combat
+-- (chase_slot, for the stall line).
+-- Uses: xlibs xgraft (the planner list, takeovers) and xcombat (track position, flee lanes,
+-- destinations); nemesis_combat (who owns him), nemesis_siege (the siege spot, remembered spots),
+-- nemesis_events (the boss's sneak, a module's walker), nemesis_engine, nemesis_mcm, nemesis_utils;
+-- Anomaly's state_mgr and utils_obj.
+--
+-- Each hunter gets one gate evaluator and one action on its motivation action manager.
+-- While the gate is open, the action runs drive_chase (below) on every planner pass,
+-- and the vanilla planners listed in planner_ids() get a precondition that the gate is
+-- closed. So the idle alife action cannot overwrite the move order.
+--
+-- The gate closes when the hunter is not wanted (it is wounded, or the hunt is over) or
+-- when combat AI owns the fight (a living enemy within the handoff range, see
+-- nemesis_combat.combat_owns). The vanilla planners then run, and the chase resumes when
+-- the gate opens again.
+--
+-- This module never touches smart terrain, squad membership or the NPC's group. Those
+-- writes released the stalkers in earlier builds (the self-kill in the death reports).
+--
+-- Names checked against the shipped sources (xlibs and AlifePlus docs, see Nemesis_CHANGES.md):
+--   xlibs architecture.md, xgraft:  xgraft.get_blocked_planners() (the planner id list),
+--                                    xgraft.TAKEOVER_ID = 188347 (reserved, do not reuse).
+--   Anomaly/vanilla: stalker_ids.property_alive, world_property, property_evaluator,
+--     action_base, manager:add_evaluator / add_action, planner:add_precondition,
+--     npc:motivation_action_manager(). The same calls xgraft makes; confirmed in game.
+-- A planner belongs to the online game object. Going offline destroys it, so offline()
+-- drops the install flags and the next online tick adds the action to the new planner.
+-- src (plain reads used throughout this file, round 121): engine script_game_object_script2.cpp (id); engine script_game_object_script2.cpp (level_vertex_id); engine script_game_object_script2.cpp (position)
 
+-- GOAP id shared by the gate and the action. xgraft reserves 188347 (xgraft.TAKEOVER_ID)
+-- and must not be reused. 188590 is not in any repo checked here, but other GOAP schemes
+-- in the install (AlifeTactics, vanilla) are not checked: grep the game gamedata for it.
 local CHASE_ID = 188590
 
-local wanted = {}
-local installed = {}
-local blocked = {}
-local complete = {}
-local ran = {}
-local refs = {}
+-- Runtime only. Rebuilt by the core on every spawn, load and game start.
+local wanted = {}     -- [npc id] = true while this hunter should chase
+local installed = {}  -- [npc id] = true once the evaluator and action are on the manager
+local blocked = {}    -- [npc id] = { [planner id] = true } for planners already preconditioned
+local complete = {}   -- [npc id] = true once every listed planner is blocked: nothing left to do
+local ran = {}        -- [npc id] = true once the action has executed (diagnostic only)
+local refs = {}       -- [npc id] = { evaluator, action } kept alive for the manager
 
+-- The vanilla planners that would take the NPC away from the chase. The list comes from
+-- xgraft (documented in xlibs architecture.md), not from a hand-built id list. Each is
+-- looked up at install time; an id not bound on this NPC is skipped and retried next tick.
+-- xgraft's list was built for a COMBAT takeover. A chase also has to keep the hunter off the
+-- loot and help schemes ("an action not listed satisfies the brain's goal directly and
+-- bypasses the takeover", xgraft.script): picking up items, searching corpses, helping the
+-- wounded. Each is added only if its id exists in this install.
 local function extra_ids()
     local ids = {}
-
+    -- Adds v to ids when it is a number (an id that exists in this install).
     local function add(v)
         if type(v) == "number" then ids[#ids + 1] = v end
     end
@@ -23,15 +65,15 @@ end
 
 local planner_list = nil
 local planner_warned = false
-
+-- xgraft's planner list plus extra_ids, built once; {} with an important error when xgraft has none.
 local function planner_ids()
     if planner_list then return planner_list end
-
+    -- src: xlibs xgraft.script (xgraft.get_blocked_planners)
     local ok, list = pcall(xgraft.get_blocked_planners)
     if not (ok and type(list) == "table" and #list > 0) then
         if not planner_warned then
             planner_warned = true
-
+            -- log_tag: nemesis_utils, a tagged log line
             nemesis_utils.log_tag("CHASE", "!Nemesis ERROR: xgraft returned no planner list; vanilla AI may override the chase.")
         end
         return {}
@@ -45,51 +87,60 @@ local function planner_ids()
     return planner_list
 end
 
+-- The gate is open only for a hunter we want moving, and only while combat AI does not
+-- own the fight. Read every planner pass, so it must stay a cheap check.
+-- A hunter running for cover keeps the gate open whatever else happens. Otherwise: while
+-- AlifeTactics (or any xgraft takeover) is running a maneuver on him, it keeps him
+-- (xgraft.is_takeover_current); then combat AI when combat_owns says so.
 local function takeover_running(npc)
-
+    -- src: xlibs xgraft.script (xgraft.is_takeover_current)
     local ok, busy = pcall(xgraft.is_takeover_current, npc)
     return ok and busy == true
 end
 
+-- Whether the gate is open for npc (see above).
 local function gate_open(npc)
     if not npc then return false end
     local id = npc:id()
     if not wanted[id] then return false end
     if get_retreat_dest(id) then return true end
     if takeover_running(npc) then return false end
-    if nemesis_combat.combat_owns(npc) then return false end
+    if nemesis_combat.combat_owns(npc) then return false end   -- combat_owns: nemesis_combat, combat AI has him
     return true
 end
 
+-- The gate: true exactly while gate_open says so.
 class "nemesis_chase_gate" (property_evaluator)
-
+-- src: engine action_base_script.cpp (__init)
 function nemesis_chase_gate:__init(name) super(nil, name) end
-
+-- src: engine property_evaluator_script.cpp (evaluate)
 function nemesis_chase_gate:evaluate()
     return gate_open(self.object) == true
 end
 
+-- The action. initialize sets the path and mental state. execute drives the chase.
+-- finalize drops the slot so the next chase starts with a fresh destination.
 class "nemesis_chase_action" (action_base)
-
+-- src: engine action_base_script.cpp (__init)
 function nemesis_chase_action:__init(name) super(nil, name) end
-
+-- src: engine action_base_script.cpp (initialize)
 function nemesis_chase_action:initialize()
-    action_base.initialize(self)
+    action_base.initialize(self)   -- initialize: the engine's action_base, its own step first
     local npc = self.object
-
+    -- src: engine script_game_object_script2.cpp (clear_animations)
     pcall(function() npc:clear_animations() end)
-
+    -- src: engine script_game_object_script2.cpp (set_path_type)
     npc:set_path_type(game_object.level_path)
-
+    -- src: engine script_game_object_script2.cpp (set_desired_position)
     npc:set_desired_position()
-
+    -- src: engine script_game_object_script2.cpp (set_desired_direction)
     npc:set_desired_direction()
-
+    -- Fresh slot: drive_chase picks a destination and sends the move state on this pass.
     reset_slot(npc:id())
 end
-
+-- src: engine action_base_script.cpp (execute)
 function nemesis_chase_action:execute()
-    action_base.execute(self)
+    action_base.execute(self)   -- execute: the engine's action_base, its own step first
     local npc = self.object
     if not npc or not npc:alive() then return end
     local actor = db.actor
@@ -97,18 +148,21 @@ function nemesis_chase_action:execute()
     ran[npc:id()] = true
     drive_chase(npc, actor)
 end
-
+-- src: engine action_base_script.cpp (finalize)
 function nemesis_chase_action:finalize()
-    action_base.finalize(self)
+    action_base.finalize(self)   -- finalize: the engine's action_base, its own step first
     local npc = self.object
     if npc then reset_slot(npc:id()) end
 end
 
+-- Add the gate and the action to this NPC's manager, once. Then keep the planner
+-- blocks up to date, because a planner can be bound after the install.
+-- Returns true when the NPC has the action, false when it cannot be added yet.
 function install(npc)
     if not npc then return false end
     local id = npc:id()
     if complete[id] then return true end
-
+    -- src: engine script_game_object_script2.cpp (motivation_action_manager)
     local manager = npc:motivation_action_manager()
     if not manager then return false end
 
@@ -116,18 +170,18 @@ function install(npc)
         local ok, err = pcall(function()
             local eva = nemesis_chase_gate("eva_nemesis_chase")
             local act = nemesis_chase_action("act_nemesis_chase")
-
+            -- src: engine action_base_script.cpp (add_precondition)
             act:add_precondition(world_property(stalker_ids.property_alive, true))
-
+            -- Same as xgraft's takeover: a wounded (lying) stalker is not chased forward.
             if xr_evaluators_id and type(xr_evaluators_id.sidor_wounded_base) == "number" then
                 act:add_precondition(world_property(xr_evaluators_id.sidor_wounded_base, false))
             end
             act:add_precondition(world_property(CHASE_ID, true))
-
+            -- src: engine action_base_script.cpp (add_effect)
             act:add_effect(world_property(CHASE_ID, false))
-
+            -- src: engine action_planner_script.cpp (add_evaluator)
             manager:add_evaluator(CHASE_ID, eva)
-
+            -- src: engine action_planner_script.cpp (add_action)
             manager:add_action(CHASE_ID, act)
             refs[id] = { eva, act }
         end)
@@ -144,7 +198,7 @@ function install(npc)
     local missing = false
     for _, pid in ipairs(list) do
         if not done[pid] then
-
+            -- src: engine action_planner_script.cpp (action)
             local planner = manager:action(pid)
             if planner then
                 planner:add_precondition(world_property(CHASE_ID, false))
@@ -158,14 +212,16 @@ function install(npc)
     return true
 end
 
+-- Core calls these. wanted is the only switch the hunt logic needs to turn.
 function set_wanted(id, on)
     if not id then return end
     wanted[id] = on and true or nil
 end
 
+-- The NPC is released or leaves the hunt. Forget its runtime entries.
 function forget(id)
     if not id then return end
-    nemesis_utils.forget_fight(id)
+    nemesis_utils.forget_fight(id)   -- forget_fight: nemesis_utils, his fight memory, role and cover spot
     wanted[id] = nil
     installed[id] = nil
     blocked[id] = nil
@@ -174,6 +230,9 @@ function forget(id)
     refs[id] = nil
 end
 
+-- The NPC went offline. His planner is destroyed with the game object and the next one is
+-- new, so the install flags are dropped and install() adds the gate and action again.
+-- wanted stays: he is still in the hunt.
 function offline(id)
     if not id then return end
     installed[id] = nil
@@ -183,6 +242,8 @@ function offline(id)
     refs[id] = nil
 end
 
+-- A new game, a load, or a fresh spawn. The manager of a loaded NPC is new, so every
+-- install flag from before the load is wrong.
 function reset_all()
     wanted = {}
     installed = {}
@@ -192,66 +253,86 @@ function reset_all()
     refs = {}
 end
 
+-- Diagnostic: did the action ever execute for this NPC?
 function has_run(id)
     return ran[id] == true
 end
 
-local NO_VERTEX = 4294967295
+---------------------------------------------------------------------------
+-- Where he goes and how he moves (moved here from nemesis_utils in round 112; callers call
+-- here directly since the old names went in round 137)
+---------------------------------------------------------------------------
+-- The chase target each refresh (chase_target): the siege spot outside (nemesis_siege), the
+-- boss's sneak (asked: the boss module, round 135), the player live or last known, a flanker's lane. Then the move
+-- order (send_to, apply_state). Combat ownership is nemesis_combat's.
 
+local NO_VERTEX = 4294967295     -- the engine's "no level vertex"
+-- Whether Debug logs is on: nemesis_utils.debug_on, the menu checkbox.
 local function debug_on() return nemesis_utils.debug_on() end
-
+-- One log line: nemesis_utils.log_msg (tagged AI).
 local function log_msg(...) return nemesis_utils.log_msg(...) end
 
+-- Destination is rebuilt on this period. Re-applying the same vertex does not
+-- search the level graph again; the idle action clears the order every think,
+-- so the order has to be written back or he plants himself.
 local CHASE_REFRESH_MS = 6000
-
+-- The move order (path type, destination, state_mgr state) is re-sent at most this often
+-- while the target vertex is unchanged. A new target, a fresh chase or the end of a fight
+-- sends it at once. Before this it went out on every planner pass.
 local RESEND_MS = 250
-local SNEAK_REFRESH_MS = 1500
-local SPRINT_FROM_M = 50
+local SNEAK_REFRESH_MS = 1500   -- a sneaking boss follows the spot behind you more closely
+local SPRINT_FROM_M = 50 -- farther than this: sprint state. Closer: rush (run, weapon up)
+-- Per hunter tactics, set by the core, kept across chase start/stop, cleared by forget_fight.
+local roles = {}          -- [id] = { extra = true, side = 1|-1, angle = deg } (named hunters: nil)
+local retreat_dest = {}   -- [id] = level vertex of the cover he runs to before teleporting
+local chase = {}          -- [npc id] = { lv, pos, at, ... }: his current chase target and move order
 
-local roles = {}
-local retreat_dest = {}
-local chase = {}
-
+-- A new vector with v's coordinates (the engine reuses its vectors).
 local function copy_vec(v)
     local c = vector()
     c:set(v.x, v.y, v.z)
     return c
 end
 
+-- True once he stands on (or right next to) his cover vertex.
 function retreat_arrived(npc)
     local vid = npc and retreat_dest[npc:id()]
     if not vid then return true end
     local here = false
     pcall(function()
-
+        -- vertex_pos: nemesis_engine, a copy of a vertex's position
         here = npc:level_vertex_id() == vid or npc:position():distance_to(nemesis_engine.vertex_pos(vid)) < 1.5
     end)
     return here
 end
 
-local LKP_GIVE_UP_MS = 60000
-local FLANK_MIN_M = 30
+-- Per hunter, set by the core. Kept across chase start/stop; cleared by forget_fight.
+local LKP_GIVE_UP_MS = 60000   -- no contact this long: back to the player's live position
+local FLANK_MIN_M = 30         -- closer than this, flankers go straight in
 
+-- An extra's role (side and flank angle), set by nemesis_core on his first online tick.
 function set_role(id, role)
     if id then roles[id] = role end
 end
-
+-- The cover vertex he runs to before teleporting, set by nemesis_core at his retreat (nil clears it).
 function set_retreat_dest(id, vid)
     if id then retreat_dest[id] = vid end
 end
-
+-- His cover vertex, or nil. Read by the gate and by nemesis_core.
 function get_retreat_dest(id) return id and retreat_dest[id] or nil end
 
+-- Destination vertex for a target position (the player's, a remembered one, a flank or a
+-- firing spot). Falls back to the nearest accessible vertex.
 function pick_dest(npc, pos, lv)
     if not pos then return nil end
-    lv = lv or nemesis_engine.vertex_at(pos)
+    lv = lv or nemesis_engine.vertex_at(pos)   -- vertex_at: nemesis_engine, the level vertex at a position
     local reachable = false
-
+    -- src: engine script_game_object_script3.cpp (accessible)
     local ok_acc, acc = pcall(function() return npc:accessible(pos) end)
     if ok_acc then reachable = acc end
     if not reachable then
         local ok_near, near = pcall(function()
-
+            -- src: engine script_game_object_script3.cpp (accessible_nearest)
             return npc:accessible_nearest(pos, vector())
         end)
         if ok_near and near and near < NO_VERTEX then
@@ -264,40 +345,49 @@ function pick_dest(npc, pos, lv)
     return lv, copy_vec(pos)
 end
 
+-- Path setup for a move order: straight segments, no desired position or direction (round 80:
+-- one file-level helper instead of a closure built on every resend).
 local function _prep_path(npc)
-
+    -- src: engine script_game_object_script2.cpp (set_path_type)
     npc:set_path_type(game_object.level_path)
-
+    -- src: engine script_game_object_script2.cpp (set_detail_path_type)
     npc:set_detail_path_type(move.line)
-
+    -- src: engine script_game_object_script2.cpp (set_desired_position)
     npc:set_desired_position()
-
+    -- src: engine script_game_object_script2.cpp (set_desired_direction)
     npc:set_desired_direction()
 end
 
+-- Where he goes for the player. Never perceived (memory_time 0) or out of contact for
+-- LKP_GIVE_UP_MS: the live position (he is hunting you). Otherwise the engine's own
+-- memory of where you were - sight, sound or a hit (xcombat.get_track_pos =
+-- memory_position; memory_manager.cpp) - so breaking contact makes him search there.
 local function player_target(npc, actor)
     local live_pos, live_lv = actor:position(), actor:level_vertex_id()
-    if not nemesis_mcm.get_bool("last_known_chase", true) then
+    if not nemesis_mcm.get_bool("last_known_chase", true) then   -- get_bool: nemesis_mcm, a menu checkbox (cached)
         return live_pos, live_lv, "live"
     end
-
-    if nemesis_siege.known_spot() then return live_pos, live_lv, "remembered spot" end
+    -- You fight from a spot they remember: they know where you are (round 64).
+    if nemesis_siege.known_spot() then return live_pos, live_lv, "remembered spot" end   -- known_spot: nemesis_siege, you are at one
     local mt, sees = 0, false
-
+    -- src: engine script_game_object_script2.cpp (memory_time)
     pcall(function() mt = npc:memory_time(actor) end)
-
+    -- src: engine script_game_object_script2.cpp (see)
     pcall(function() sees = npc:see(actor) end)
     if sees then return live_pos, live_lv, "seen" end
     if not mt or mt <= 0 or time_global() - mt > LKP_GIVE_UP_MS then return live_pos, live_lv, "live" end
     local pos = nil
-
+    -- src: xlibs xcombat.script (xcombat.get_track_pos)
     pcall(function() pos = xcombat.get_track_pos(npc, actor, false) end)
     if not pos or (pos.x == 0 and pos.y == 0 and pos.z == 0) then return live_pos, live_lv, "live" end
     return pos, nil, "last known"
 end
 
-local FLANK_WIDE_DEG = 75
-
+-- A flanker's approach point: off to one side of the straight line, on a clear running lane
+-- (xcombat.find_flee_lane fans headings until one is open for the whole distance).
+local FLANK_WIDE_DEG = 75       -- at a remembered spot they flank this wide at once
+-- The flank vertex toward target position tpos for an extra with role (see above), or nil
+-- inside FLANK_MIN_M or without a clear lane.
 local function flank_vertex(npc, tpos, role)
     local npos = npc:position()
     local dx, dz = tpos.x - npos.x, tpos.z - npos.z
@@ -309,24 +399,26 @@ local function flank_vertex(npc, tpos, role)
     local dir = vector()
     dir:set((dx * ca - dz * sa) / d, 0, (dx * sa + dz * ca) / d)
     local vid = nil
-
+    -- src: xlibs xcombat.script (xcombat.find_flee_lane)
     pcall(function() vid = xcombat.find_flee_lane(npc, dir, math.min(d * 0.5, 35), 10, 30) end)
     return vid
 end
 
+-- Destination for one refresh: the player (live or last known), then the extra's role.
 local function chase_target(npc, actor)
-
+    -- siege_active: nemesis_siege, they wait outside; has_focus: nemesis_combat, the boss's focus
     if nemesis_siege.siege_active() and not nemesis_combat.has_focus(npc:id()) then
-        local lv = nemesis_siege.vertex(npc, actor)
+        local lv = nemesis_siege.vertex(npc, actor)   -- vertex: nemesis_siege, his spot outside
         if lv then return nemesis_engine.vertex_pos(lv), lv, "waiting outside" end
     end
-
-    local move = nemesis_events.ask("sneak_move", npc:id())
-
+    -- The boss sneaking up on you (round 135: his module answers; nil when he is not sneaking).
+    local move = nemesis_events.ask("sneak_move", npc:id())   -- ask: nemesis_events, the first module's answer, or nil
+    -- His line went out: he stays where he is until he opens fire.
     if move == "hold" then
         return npc:position(), npc:level_vertex_id(), "holding, about to open fire"
     end
-
+    -- You stand still: he circles to your back and homes in. You run: no circling, he runs
+    -- straight at you (the normal chase below).
     if move == "still" then
         local t = nemesis_events.ask("sneak_target", npc, actor)
         if t then return t.pos, nil, t.mode end
@@ -340,6 +432,12 @@ local function chase_target(npc, actor)
     return tpos, tlv, mode
 end
 
+-- Movement goes through the NPC's state manager, never through raw set_movement_type.
+-- state_mgr runs from the stalker binder every frame and puts movement, mental and body
+-- state back to its own target state (idle = stand). A raw run order was undone each
+-- frame, which is why the hunters stood still or stuttered. Vanilla schemes and xlibs'
+-- xcombat drive movement with state_mgr.set_state for the same reason.
+-- Only states that exist in state_lib are used; a missing name is skipped, never asserted.
 local function state_exists(name)
     local ok, res = pcall(function()
         return state_lib ~= nil and state_lib.states ~= nil and state_lib.states[name] ~= nil
@@ -347,14 +445,15 @@ local function state_exists(name)
     return ok and res == true
 end
 
+-- The state list is fixed once the game runs, so each pick is looked up once.
 local STATE_ORDER = {
     far = { "sprint", "rush", "assault", "run" },
     near = { "rush", "assault", "run" },
     sneak = { "sneak_run", "sneak", "assault", "run" },
-    walk = { "raid", "patrol", "walk" },
+    walk = { "raid", "patrol", "walk" },      -- the emission boss (round 93: he walks, never runs)
 }
 local picked_state = {}
-
+-- The first state of STATE_ORDER that exists for this move (far, sneaking or walking), or nil.
 local function pick_state(far, sneaky, walking)
     local key = walking and "walk" or (sneaky and "sneak" or (far and "far" or "near"))
     local name = picked_state[key]
@@ -371,15 +470,19 @@ local function pick_state(far, sneaky, walking)
     return name or nil
 end
 
+-- Sent every pass, so a reset by anything else (a scheme, a squad reset_animation)
+-- is undone on the next planner pass (throttled to RESEND_MS per hunter).
+-- No state manager on this NPC: raw orders are the only option left.
 local route_logged = {}
-
+-- Sends the move state (see above); slot.state is the state sent, nil on raw orders. Returns
+-- whether an order went out.
 local function apply_state(npc, slot, far, sneaky)
-    local walking = nemesis_events.ask("walks", npc:id()) == true
+    local walking = nemesis_events.ask("walks", npc:id()) == true   -- a module's walker (the emission boss)
     local name = pick_state(far, sneaky, walking)
     local ok = false
     if name and db.storage[npc:id()] and db.storage[npc:id()].state_mgr then
         ok = pcall(function()
-
+            -- src: anomaly state_mgr.script (state_mgr.set_state)
             state_mgr.set_state(npc, name, nil, nil, nil, { fast_set = true })
         end)
     end
@@ -396,27 +499,34 @@ local function apply_state(npc, slot, far, sneaky)
     end
     slot.state = nil
     return pcall(function()
-
+        -- src: engine script_game_object_script2.cpp (set_movement_type)
         npc:set_movement_type(walking and move.walk or move.run)
-
+        -- src: engine script_game_object_script2.cpp (set_mental_state)
         npc:set_mental_state(anim.danger)
-
+        -- src: engine script_game_object_script3.cpp (set_sight)
         npc:set_sight(look.path_dir, nil, 0)
     end)
 end
 
+-- Send the NPC to lv. Uses vanilla's helper when present (it falls back to the nearest
+-- accessible vertex, the same call xr_reach_task uses for squads). Returns the vertex used.
 local function send_to(npc, lv)
     local used = nil
     if utils_obj and utils_obj.send_to_nearest_accessible_vertex then
-
+        -- src: anomaly utils_obj.script (utils_obj.send_to_nearest_accessible_vertex)
         pcall(function() used = utils_obj.send_to_nearest_accessible_vertex(npc, lv, "nemesis_chase") end)
     end
     if type(used) == "number" and used < NO_VERTEX then return used end
-
+    -- src: engine script_game_object_script2.cpp (set_dest_level_vertex_id)
     local ok = pcall(function() npc:set_dest_level_vertex_id(lv) end)
     return ok and lv or nil
 end
 
+-- Move toward the player at a sprint (rush inside SPRINT_FROM_M).
+-- The target vertex is refreshed every CHASE_REFRESH_MS (6 s), and again the moment a fight
+-- ends. Combat AI is left in charge per combat_owns (fight range, line of sight, linger).
+-- A hunter running for cover goes there first, whatever else happens.
+-- Returns moved (bool), refreshed (bool). nil, nil while combat owns them.
 function drive_chase(npc, actor)
     if not npc or not actor then return false, false end
 
@@ -427,13 +537,14 @@ function drive_chase(npc, actor)
         chase[id] = slot
     end
 
+    -- Wounded and running for cover before the teleport: nothing else matters.
     local cover = retreat_dest[id]
     if cover then
         local now = time_global()
         if slot.cover_lv == cover and now - (slot.cover_at or -1000000) < RESEND_MS then return true, false end
         slot.cover_lv, slot.cover_at = cover, now
         pcall(_prep_path, npc)
-
+        -- src: xlibs xcombat.script (xcombat.set_destination)
         pcall(function() xcombat.set_destination(npc, cover) end)
         return apply_state(npc, slot, true), false
     end
@@ -443,26 +554,26 @@ function drive_chase(npc, actor)
         slot.holding = nil
         return nil, nil
     end
-
-    if nemesis_combat.contact_hold(id) then
+    -- In contact, the engine is about to take over: stop where he stands, weapon up.
+    if nemesis_combat.contact_hold(id) then   -- contact_hold: nemesis_combat, he holds for the engine
         if not slot.holding then
             slot.holding = true
             pcall(function()
-
+                -- src: engine script_game_object_script2.cpp (set_desired_position)
                 npc:set_desired_position()
-
+                -- src: engine script_game_object_script2.cpp (set_desired_direction)
                 npc:set_desired_direction()
             end)
             local here = nil
             pcall(function() here = npc:level_vertex_id() end)
             if here and here < NO_VERTEX then send_to(npc, here) end
             apply_state(npc, slot, false, false)
-            slot.was_fighting = true
+            slot.was_fighting = true   -- a fresh chase target once the hold ends
         end
         return true, false
     end
     slot.holding = nil
-
+    -- Fight ended or the enemy is too far. Drop the old vertex and sprint again.
     if slot.was_fighting then
         slot.was_fighting = nil
         slot.lv = nil
@@ -471,10 +582,10 @@ function drive_chase(npc, actor)
 
     local gt = time_global()
     local refreshed = false
-    local move = nemesis_events.ask("sneak_move", id)
+    local move = nemesis_events.ask("sneak_move", id)   -- the boss sneaking up on you (round 135)
     local sneaking = move ~= nil
     local refresh_ms = sneaking and SNEAK_REFRESH_MS or CHASE_REFRESH_MS
-
+    -- A sneaking boss re-aims at once when you start or stop running, or his line goes out.
     if sneaking and slot.sneak_how ~= move then
         slot.sneak_how = move
         slot.lv = nil
@@ -497,11 +608,15 @@ function drive_chase(npc, actor)
         return true, false
     end
 
-    local dist = nemesis_engine.dist(npc, actor) or 9999
+    local dist = nemesis_engine.dist(npc, actor) or 9999   -- dist: nemesis_engine, metres between two objects or nil
     local far = dist > SPRINT_FROM_M
-
+    -- Crouched on the last stretch only: behind you, you standing still, his line not out yet.
     local sneaky = move == "still" and nemesis_events.ask("sneak_closing", id) == true
 
+    -- Straight segments between path nodes (vanilla xr_reach_task does the same): the default
+    -- smoothed path slows a running stalker on every turn. No desired position: the destination
+    -- is a vertex, and a desired position outside it (the player's feet vs the nearest
+    -- accessible vertex) makes the detail path fail and the NPC stands.
     pcall(_prep_path, npc)
     local used = send_to(npc, slot.lv)
     if not used then return false, refreshed end
@@ -510,14 +625,18 @@ function drive_chase(npc, actor)
     return moved, refreshed
 end
 
+-- His chase slot (the stall detector reads its target and state), or nil.
 function chase_slot(id) return id and chase[id] or nil end
 
+-- A fresh slot: the next drive_chase picks a destination at once (the action's start and end).
 function reset_slot(id)
     if id then chase[id] = nil end
 end
 
+-- Every slot (a new hunt or a load: nemesis_utils.reset_chase with no id).
 function reset_slots() chase = {} end
 
+-- He left the hunt (nemesis_utils.forget_fight): his role and cover spot.
 function forget_tactics(id)
     if not id then return end
     roles[id] = nil

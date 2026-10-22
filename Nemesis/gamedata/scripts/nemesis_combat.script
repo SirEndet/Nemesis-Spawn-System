@@ -1,37 +1,68 @@
 -- Nemesis Combat: who fights, the chase or combat AI; split out of nemesis_utils in round 112.
+-- Used by: nemesis_chase (combat_owns, contact_hold, has_focus), nemesis_fx (combat_owns,
+-- drops_enemy), nemesis_core (stall_check), nemesis_boss and nemesis_emission (set_focus,
+-- sneak_over), nemesis_utils (reset, forget).
+-- Uses: nemesis_state (the member records), nemesis_engine (safe reads), nemesis_mcm (the fight
+-- range), nemesis_events (the boss's sneak), nemesis_chase and nemesis_siege (the stall line),
+-- xlibs xcombat (show_enemy, is_under_fire).
+-- Who owns a hunter, the chase or vanilla combat AI (combat_owns, every planner pass), and the
+-- rules around it: contact (you seen in the fight range, a hit, a hostile his AI picked), the
+-- 8 s linger, the hold while the engine has not picked you yet, the NPC fight cap (round 96)
+-- and the check schedule (round 97). Also the boss's focus and the stall detector (Debug logs).
+-- The chase (nemesis_chase.drive_chase and its gate) asks here (round 137: directly; the
+-- old names in nemesis_utils are gone).
+-- src (plain reads used throughout this file, round 121): engine script_game_object_script3.cpp (character_name); engine script_game_object_script2.cpp (id); engine script_game_object_script2.cpp (position)
 
+-- Whether Debug logs is on: nemesis_utils.debug_on, the menu checkbox.
 local function debug_on() return nemesis_utils.debug_on() end
-
+-- One log line: nemesis_utils.log_msg (tagged AI, or STALL for the stall detector's lines).
 local function log_msg(...) return nemesis_utils.log_msg(...) end
 
-local CLOSE_THREAT_M = 15
-
+local CLOSE_THREAT_M = 15   -- a hostile NPC/mutant this close counts even unseen (it is on top of him); was 30 (round 104: a foe behind a wall pulled hunters into fights they could not see)
+-- Combat keeps a hunter until CONTACT_LINGER_MS after the last contact (seeing you in the fight
+-- range, a hit, or a hostile his AI picked), then the chase takes over again (user: 8 s).
 local CONTACT_LINGER_MS = 8000
-local BOSS_FOCUS_M = 15
-local HIT_CONTACT_MS = 1500
-
+local BOSS_FOCUS_M = 15     -- the boss, his approach over: you count as seen this close (round 104)
+local HIT_CONTACT_MS = 1500 -- a hit counts as contact this long
+-- Contact, but the engine has not picked an enemy yet (GAMMA's stealth makes noticing slow): he
+-- is shown the player (xcombat.show_enemy, at most once a second) and holds still, weapon up,
+-- instead of sprinting into you. After HOLD_MAX_MS without an engine enemy the chase resumes.
 local SHOW_EVERY_MS = 1000
 local HOLD_MAX_MS = 4000
-local SCAN_MS = 500
-local fight_memo = {}
-local focus = {}
-
-local NPC_FIGHT_MS = 10000
-
+local SCAN_MS = 500        -- nearby-enemy scan is cached this long per hunter
+local fight_memo = {}      -- [npc id] = { scan_at, scan_hit, last_fight, shown_at, hold_start, holding }
+local focus = {}          -- [id] = true: the boss, who knows where you are once his approach ends
+-- NPC fights are capped (round 96, user design). An NPC the engine picks keeps a hunter for
+-- NPC_FIGHT_MS from the start of that fight, or from that NPC's last hit on him (each hit
+-- refreshes it). Then the hunter drops that NPC (no longer an enemy to him, nemesis_fx
+-- on_enemy_eval) and hunts you again, until that NPC hits him once more. Before, combat kept
+-- him as long as any hostile NPC was near, with no cap: in play a regular fought one NPC for
+-- 73 s, standing in place, until it killed him.
+local NPC_FIGHT_MS = 10000        -- ten seconds, the owner's figure since round 97
+-- Combat checks on a schedule (round 97, user design): once combat AI has a hunter, the mod
+-- leaves him alone while he has an enemy, and only asks "still fighting?" (contact: you or his
+-- enemy seen, heard or a hit within CONTACT_LINGER_MS) at these times after the hand-over:
+-- 4 s, 15 s, then every 30 s, until he dies or the fight is over. A check only reads; nothing
+-- is sent to the NPC, so combat runs undisturbed. No enemy any more, or the NPC fight cap:
+-- the chase takes him at once. Every hunter except the sneaking boss (the Monolith or UNISG
+-- boss keeps the continuous rule; the emission boss uses this one).
 local CHECK_FIRST_MS, CHECK_SECOND_MS, CHECK_EVERY_MS = 4000, 15000, 30000
-local REHIT_MS = 1500
-local npc_drop = {}
-
+local REHIT_MS = 1500             -- a hit this recent from a dropped NPC brings the fight back
+local npc_drop = {}               -- [hunter id] = { [npc id] = true }
+-- Stall detector (Debug logs only, since round 96): a hunter standing still for STALL_MS, not in
+-- his first STALL_START_MS online, gets one log line with what drives him, and one when he moves
+-- again.
 local STALL_MS, STALL_START_MS, STALL_MOVE_M = 3000, 8000, 1
-local stall = {}
+local stall = {}                  -- [id] = { first, pos, since, logged }
 
-local fight_range_cache, fight_range_at = 100, -1000000
-
+local fight_range_cache, fight_range_at = 100, -1000000   -- the last read and its time
+-- Fight range from MCM (default 100 m, held to 10..150 m).
+-- Read once a second, not on every planner pass.
 local function fight_range()
     local now = time_global()
     if now - fight_range_at >= 1000 then
         fight_range_at = now
-        local r = nemesis_mcm.get_number("fight_range", 100)
+        local r = nemesis_mcm.get_number("fight_range", 100)   -- get_number: nemesis_mcm, a menu number (cached)
         if r < 10 then r = 10 end
         if r > 150 then r = 150 end
         fight_range_cache = r
@@ -39,37 +70,56 @@ local function fight_range()
     return fight_range_cache
 end
 
+-- The player counts only when he can actually see you (real line of sight, npc:see).
+-- Nothing forces you into his memory any more: the old make_object_visible_somewhen on
+-- every refresh kept you as his best_enemy at any distance, so other NPCs never were.
+-- Hot path helpers: called through pcall(f, args) so no closure is made per call.
+-- src: engine script_game_object_script2.cpp (see)
 local function _see(a, b) return a:see(b) end
-
+-- src: engine script_game_object_script2.cpp (best_enemy)
 local function _best_enemy(npc) return npc:best_enemy() end
 
+-- Whether npc sees you within range metres (see above).
 local function sees_player(npc, range)
     local actor = db.actor
     if not actor then return false end
-    local d = nemesis_engine.dist(npc, actor)
+    local d = nemesis_engine.dist(npc, actor)   -- dist: nemesis_engine, metres between two objects or nil
     if not d or d > range then return false end
     local ok2, seen = pcall(_see, npc, actor)
     return ok2 and seen == true
 end
 
+-- Another hostile he should fight: the engine's own pick (best_enemy, what vanilla combat
+-- would fight anyway: seen, heard or hit him), if it is a living enemy within CLOSE_THREAT_M,
+-- or within the range and in sight. The player is handled by sees_player. Before this, every
+-- object within up to 150 m was scanned twice a second per hunter (level.iterate_nearest),
+-- the mod's most expensive call.
+-- An enemy shooting at him counts whatever the distance or sight, since round 69 (in game,
+-- hunters raised their guns at NPCs shooting them and never fired). A shooter who hit him within
+-- SHOOTER_MS, or whose shots his danger memory holds within UNDER_FIRE_MS (misses too,
+-- xcombat.is_under_fire). Before, a miss was no contact, and a shooter beyond 30 m and out of
+-- sight lost him back to the chase 8 s after the last hit that landed.
 local SHOOTER_MS = 20000
 local UNDER_FIRE_MS = 10000
-
+-- Whether be, his engine enemy, is an NPC or mutant to fight now (see above): a living enemy
+-- that shot at him, is on top of him, or is in sight within range. Called in a pcall.
 local function _threat(npc, be, range)
     if be:id() == 0 or not be:alive() then return false end
-
+    -- src: engine script_game_object_script2.cpp (relation)
     if npc:relation(be) ~= game_object.enemy then return false end
     local now = time_global()
-    local r = nemesis_state.member(npc:id())
+    local r = nemesis_state.member(npc:id())   -- member: nemesis_state, his member record
     if r and r.hit_from == be:id() and r.hit_at and now - r.hit_at < SHOOTER_MS then return true end
-
+    -- src: xlibs xcombat.script (xcombat.is_under_fire)
     if xcombat.is_under_fire and xcombat.is_under_fire(npc, be, now, UNDER_FIRE_MS) then return true end
     local d = npc:position():distance_to(be:position())
     if d <= CLOSE_THREAT_M then return true end
-
+    -- src: engine script_game_object_script2.cpp (see)
     return d <= range and npc:see(be)
 end
 
+-- Whether npc's engine enemy is another hostile he should fight (see above); the caller
+-- caches the answer for SCAN_MS.
 local function hostile_near(npc, range)
     local ok, be = pcall(_best_enemy, npc)
     if not ok or not be then return false end
@@ -77,8 +127,11 @@ local function hostile_near(npc, range)
     return ok2 and hit == true
 end
 
-local OWNS_CACHE_MS = 100
-
+local OWNS_CACHE_MS = 100   -- milliseconds one answer is kept
+-- True = vanilla combat AI owns the hunter; false = he chases you.
+-- Called on every planner pass, so the area scan is cached per SCAN_MS.
+-- The whole answer is reused for OWNS_CACHE_MS: the gate (every planner pass), the chase and
+-- the cloak all ask, often in the same frame (nemesis_chase and nemesis_fx).
 function combat_owns(npc)
     if not npc then return false end
     local id = npc:id()
@@ -92,36 +145,49 @@ function combat_owns(npc)
     memo.res_at = now
     local was = memo.res
     memo.res = combat_owns_now(npc, memo, now)
-
+    -- Diagnostics (Debug logs): every hand-over between the chase and combat.
     if memo.res ~= was and debug_on() then
         local be_name = "none"
-
+        -- src: engine script_game_object_script2.cpp (best_enemy)
         pcall(function()
             local be = npc:best_enemy()
             if be then
                 be_name = be:id() == 0 and "you" or (be:character_name() .. " (" .. be:id() .. ")")
             end
         end)
-        log_msg("Nemesis: %s %s (enemy: %s).", tostring(nemesis_state.name_of(id) or id),
+        log_msg("Nemesis: %s %s (enemy: %s).", tostring(nemesis_state.name_of(id) or id),   -- name_of: nemesis_state, his PDA name
             memo.res and "fights" or "is back on the chase", be_name)
     end
     return memo.res
 end
 
+-- A hit this hunter took counts as contact, the boss included (round 83, user rule: he fights
+-- anyone who fights him, so he does not walk into his death; you stay his first choice).
 local function hit_contact(id, now)
     local r = nemesis_state.member(id)
     return r ~= nil and r.hit_at ~= nil and now - r.hit_at < HIT_CONTACT_MS
 end
 
+-- src: xlibs xcombat.script (xcombat.show_enemy)
 local function _show_enemy(npc, enemy) return xcombat.show_enemy(npc, enemy) end
 
+-- Hand over ONLY when the engine has selected an enemy (best_enemy). That is exactly when
+-- vanilla combat runs (the stalker's enemy evaluator reads the same selection). Before round 41
+-- the chase stepped aside on sight alone; when the engine had no enemy (job logic ignoring
+-- combat, a fresh perception), the next planner down was the A-Life job, and the hunter stood
+-- in it - looting, sitting - for as long as he could see the player.
+-- In contact with the player but no engine enemy yet (since round 47), he is shown the player and
+-- holds still (memo.holding, read by drive_chase) until the engine picks the enemy.
 function combat_owns_now(npc, memo, now)
     local id = npc:id()
-
+    -- The boss sneaking up on you never hands over (round 135: asked, his module answers).
     if nemesis_events.ask("sneak_move", id) then return false end
     local range = fight_range()
     local sees = sees_player(npc, range)
-
+    -- The boss, once his approach is over, knows where you are: within BOSS_FOCUS_M that counts
+    -- as seeing you, so he is shown you and fights (round 67: in game he could run up to you
+    -- without the engine ever "seeing" you, and never opened fire). Farther out only
+    -- his real sight counts (round 104: within the whole fight range he was shown you through walls).
     if not sees and focus[id] and db.actor then
         local d = nemesis_engine.dist(npc, db.actor)
         sees = d ~= nil and d <= math.min(range, BOSS_FOCUS_M)
@@ -140,7 +206,7 @@ function combat_owns_now(npc, memo, now)
     if okb and be then
         local eid = be:id()
         if eid ~= 0 then
-
+            -- An NPC or a mutant: NPC_FIGHT_MS, refreshed by each of his hits.
             if drops_enemy(id, eid) then
                 memo.npc_fight = nil
                 return false
@@ -171,16 +237,16 @@ function combat_owns_now(npc, memo, now)
         memo.hold_start, memo.holding = nil, false
         local fighting = contact or now - memo.last_fight < CONTACT_LINGER_MS
         local S0 = nemesis_state.S
-        if id == S0.boss_id and not S0.emission_hunt then return fighting end
+        if id == S0.boss_id and not S0.emission_hunt then return fighting end   -- the sneaking boss: as before
         if not memo.res then
-
+            -- The hand-over: the checks start from here.
             if fighting then
                 memo.combat_since, memo.next_check = now, now + CHECK_FIRST_MS
             end
             return fighting
         end
         if now < (memo.next_check or 0) then return true end
-
+        -- A scheduled check: still fighting stays with combat, the next check is set.
         if fighting then
             local since = memo.combat_since or now
             if memo.next_check < since + CHECK_SECOND_MS then memo.next_check = since + CHECK_SECOND_MS
@@ -191,10 +257,15 @@ function combat_owns_now(npc, memo, now)
     end
     local r = (sees or hit) and nemesis_state.member(id)
     local player_contact = sees or (hit and r and r.hit_by_player == true)
-
+    -- Shot by an NPC (round 68): he is shown the shooter and fights him at once, instead of
+    -- turning and then drifting back to the chase or his siege spot. The boss too since round 83
+    -- (you still come first: this is only when you are not in contact).
     if not player_contact and hit and r and not r.hit_by_player and r.hit_from then
-        local shooter = nemesis_engine.obj(r.hit_from)
-
+        local shooter = nemesis_engine.obj(r.hit_from)   -- obj: nemesis_engine, the online object by id
+        -- Only a living stalker or mutant: an anomaly, fire or explosion object has no alive()
+        -- and raised an engine error here (round 79, the same trap as the cloak scan in round 73).
+        -- src: anomaly _g.script (IsStalker); anomaly _g.script (IsMonster)
+        -- is_stalker, is_mutant, alive: nemesis_engine, class and life reads that cannot fail
         if shooter and (nemesis_engine.is_stalker(shooter) or nemesis_engine.is_mutant(shooter)) and nemesis_engine.alive(shooter) then
             if now - (memo.shown_at or -1000000) >= SHOW_EVERY_MS then
                 memo.shown_at = now
@@ -218,6 +289,8 @@ function combat_owns_now(npc, memo, now)
     return false
 end
 
+-- The hunter dropped this NPC (NPC_FIGHT_MS ran out). A fresh hit from him (REHIT_MS) brings
+-- the fight back. Asked by nemesis_fx.on_enemy_eval and by combat_owns_now.
 function drops_enemy(a, e)
     local t = a and npc_drop[a]
     if not (t and t[e]) then return false end
@@ -229,17 +302,22 @@ function drops_enemy(a, e)
     return true
 end
 
+-- Holding still for the engine to pick the player (see combat_owns_now).
 function contact_hold(id)
     local memo = id and fight_memo[id]
     return memo ~= nil and memo.holding == true
 end
 
+-- The boss: once his approach is over he knows where you are within the fight range (on: set
+-- or clear). Set by nemesis_boss and nemesis_emission when his approach ends.
 function set_focus(id, on)
     if id then focus[id] = on and true or nil end
 end
-
+-- Whether id has the boss's focus; read by nemesis_chase (a focused boss is not held at a siege spot).
 function has_focus(id) return id ~= nil and focus[id] == true end
 
+-- The boss's sneak ended (the boss module's end_sneak). fight: his fight starts now (the contact
+-- linger holds combat). Either way combat_owns is asked again on the next pass.
 function sneak_over(id, fight)
     if not id then return end
     local memo = id and fight_memo[id]
@@ -253,6 +331,9 @@ function sneak_over(id, fight)
     if memo then memo.res_at = -1000000 end
 end
 
+-- The stall detector, Debug logs only (round 96): every tick from nemesis_core for each online
+-- member not breaking off. One line when he has stood still for STALL_MS (not in his first
+-- STALL_START_MS online), saying what drives him; one line when he moves again.
 function stall_check(npc, gt)
     if not npc or not debug_on() then return end
     local id = npc:id()
@@ -271,11 +352,11 @@ function stall_check(npc, gt)
     end
     if s.logged or gt - s.since < STALL_MS or gt - s.first < STALL_START_MS then return end
     s.logged = true
-    local memo, slot = fight_memo[id], nemesis_chase.chase_slot(id)
+    local memo, slot = fight_memo[id], nemesis_chase.chase_slot(id)   -- chase_slot: nemesis_chase, his chase target and state
     local owner = "the chase"
     if memo and memo.res then
         local be_name = "none"
-
+        -- src: engine script_game_object_script2.cpp (best_enemy)
         pcall(function()
             local be = npc:best_enemy()
             if be then
@@ -291,16 +372,20 @@ function stall_check(npc, gt)
     log_msg("Nemesis STALL: %s has stood still for 3 s. Driven by %s; target %s, %s to it; state %s%s%s.",
         tostring(nemesis_state.name_of(id) or id), owner, tostring(slot and slot.mode or "-"), dest,
         tostring(slot and slot.state or "-"),
-        nemesis_siege.siege_active() and ", siege (you are indoors)" or "", nemesis_events.ask("sneak_move", id) and ", sneaking" or "")
+        nemesis_siege.siege_active() and ", siege (you are indoors)" or "", nemesis_events.ask("sneak_move", id) and ", sneaking" or "")   -- siege_active: nemesis_siege, are they waiting outside
 end
 
+-- Forgets every fight memory, the dropped fights, the stall watch and the boss's focus. Called by
+-- nemesis_utils.reset_chase with no id: a new hunt, its end, a change of map, and a load (round 149).
 function reset()
     fight_memo = {}
     npc_drop, stall = {}, {}
-
+    -- The boss's focus too (round 149): it outlived a hunt's end and a load. A boss sets his own
+    -- again every tick (nemesis_boss.update, nemesis_emission.boss_update).
     focus = {}
 end
 
+-- He left the hunt (nemesis_utils.forget_fight).
 function forget(id)
     if not id then return end
     fight_memo[id] = nil

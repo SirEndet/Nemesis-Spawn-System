@@ -1,64 +1,86 @@
 -- Nemesis State: the mod's whole saved state in one table, S, and its member records.
+-- Used by: nearly every Nemesis script (nemesis_state.S, member, name_of ...); nemesis_core saves
+-- and loads it (save, load) and resets it (reset).
+-- Uses: nothing of the mod's: plain Lua tables and strings (time_global for the load's timers).
+-- The whole hunt state in one table, S, shared by every Nemesis module (nemesis_state.S).
+-- S is never replaced, only refilled (reset), so a module may keep a reference to it.
+--
+-- Every hunt member has ONE record, S.m[id], made by add_member and dropped by drop_member.
+-- A member's data was once spread over about twenty id-keyed tables (before round 39), and a reset
+-- that missed one of them left stale data behind for a recycled engine id (the round 30 bugs).
+-- A record is created fresh when the member joins, so nothing from an earlier NPC with the
+-- same id can leak into it.
+--
+-- Save format: the same keys as round 37/38 saves (they load unchanged), plus ver.
 
-SAVE_VERSION = 3
+SAVE_VERSION = 3                   -- written into every save as ver
 
-S = {}
+S = {}                             -- the state; refilled by reset, never replaced
 
+-- A fresh state: every field with its starting value and what it holds (the list below is
+-- also the reference for S's fields). Used by reset.
 local function blank()
     return {
-        phase = "idle",
+        phase = "idle",          -- idle | hunting
         cycle = 1,
         spawned_count = 0,
-        first_hunt = nil,
-        last_retreat = nil,
-        hunt_start = nil,
-        faction = nil,
-        hunter_ids = {},
-        squad_ids = {},
-        m = {},
-        dying = {},
-        sim_squad_id = nil,
-        pending_squad = nil,
+        first_hunt = nil,        -- game seconds the mod first ran in this game
+        last_retreat = nil,      -- game seconds the last hunt ended (cooldown)
+        hunt_start = nil,        -- game seconds the running hunt spawned (time limit)
+        faction = nil,           -- "monolith", or "isg" when the player is Monolith, Zombified or Sin
+        hunter_ids = {},         -- named hunters in spawn order; the first is the leader
+        squad_ids = {},          -- regular members
+        m = {},                  -- [id] = member record (add_member)
+        dying = {},              -- [id] = true: a death the next frame handles
+        sim_squad_id = nil,      -- the hunt's simulation squad
+        pending_squad = nil,     -- extras still waiting for their own vertex
         retreat_announced = false,
         offline_since = nil,
         seen_online = nil,
         target_restore_logged = nil,
-        role_side = nil,
-        fx = {},
-
-        boss_id = nil,
-        boss_hunt = nil,
-        boss_ghost = nil,
-        boss_sneak = nil,
-        boss_look = nil,
-        last_boss_day = nil,
-        hunts_since_boss = 0,
+        role_side = nil,         -- flank side handed to the last extra
+        fx = {},                 -- recent particle and sound objects (kept alive while they play)
+        -- the boss
+        boss_id = nil,           -- the boss of the running hunt
+        boss_hunt = nil,         -- he was in this hunt (beating it halves the cycle)
+        boss_ghost = nil,        -- the last boss, until he is confirmed gone
+        boss_sneak = nil,        -- his approach is running (until he opens fire)
+        boss_look = nil,         -- his model
+        last_boss_day = nil,     -- in-game day of the last boss (once a day)
+        hunts_since_boss = 0,    -- hunts since the last boss (his chance climbs with it)
         sneak_started = nil,
-        sneak_said = nil,
-        sneak_wait = nil,
-        boss_shots = nil,
-        boss_hit_frames = nil,
+        sneak_said = nil,        -- when his line went out
+        sneak_wait = nil,        -- ms from his line to opening fire (5 s behind you, 1.5 s running)
+        boss_shots = nil,        -- shots he has fired this hunt (his first ones always miss)
+        boss_hit_frames = nil,   -- frames in which his hits reached you (the same, if shots are not counted)
         boss_hit_frame = nil,
         dread_next = nil,
-
+        -- where you beat them (round 64): { lvl, x, y, z, t } (t: game seconds)
         spots = {},
-        spot_said = nil,
-
-        follow = nil,
-        follows = 0,
-        stash_owed = nil,
-
-        emission_hunt = nil,
-        reload_said = nil,
-        reserved = {},
+        spot_said = nil,         -- this hunt's "same spot" line went out
+        -- they follow you to another map (round 65)
+        follow = nil,            -- { members = { {name, named, boss, hp} }, faction, boss_look, boss_hunt, hunt_start, lvl, ax, az }
+        follows = 0,             -- changes of map they followed this hunt
+        stash_owed = nil,        -- the boss's name: his stash reward is still to be marked (round 66)
+        -- the emission boss (round 93); the rest of his state is his module's own (round 115)
+        emission_hunt = nil,     -- this hunt is his (nemesis_emission)
+        reload_said = nil,       -- the boss's "Reloading?" line went out this hunt
+        reserved = {},           -- [body id] = { t = game seconds you killed him, sec = his section } (round 76/79)
     }
 end
 
+---------------------------------------------------------------------------
+-- Remembered spots (user design): where you stood when a named hunter broke off from your
+-- hits. Up to SPOT_MAX per level, each forgotten after SPOT_DAYS in-game days. A later hunt
+-- that finds you within SPOT_NEAR_M of one knows where you are.
+---------------------------------------------------------------------------
 local SPOT_MAX = 5
 local SPOT_DAYS = 7
-local SPOT_MERGE_M = 20
+local SPOT_MERGE_M = 20          -- a new spot this close to an old one refreshes it
 local SPOT_NEAR_M = 40
 
+-- Drops the remembered spots older than SPOT_DAYS (or from the future, after a time change),
+-- at game time now (seconds).
 local function forget_old_spots(now)
     local keep = {}
     for _, p in ipairs(S.spots) do
@@ -67,11 +89,15 @@ local function forget_old_spots(now)
     S.spots = keep
 end
 
+-- The squared distance between spot p and position pos on the ground (height left out).
 local function flat_dist2(p, pos)
     local dx, dz = p.x - pos.x, p.z - pos.z
     return dx * dx + dz * dz
 end
 
+-- Remembers spot pos on level lvl at game time now: refreshes a spot within SPOT_MERGE_M, else
+-- adds one and drops the oldest past SPOT_MAX on that level. Called by nemesis_core when you
+-- beat a hunt, so later hunters know where you fought them.
 function remember_spot(lvl, pos, now)
     if not lvl or not pos or not now then return end
     forget_old_spots(now)
@@ -92,6 +118,8 @@ function remember_spot(lvl, pos, now)
     if on_level > SPOT_MAX then table.remove(S.spots, oldest) end
 end
 
+-- Whether pos on level lvl is within SPOT_NEAR_M of a spot remembered in the last SPOT_DAYS.
+-- Called by nemesis_core, which then tells the chase that they know where you are.
 function known_spot(lvl, pos, now)
     if not lvl or not pos or not now then return false end
     for _, p in ipairs(S.spots) do
@@ -103,6 +131,7 @@ function known_spot(lvl, pos, now)
     return false
 end
 
+-- Follow list: "name~named~boss~hp|..." (names hold no ~ or |).
 local function save_follow_list(list)
     if not list then return nil end
     local out = {}
@@ -112,6 +141,7 @@ local function save_follow_list(list)
     return table.concat(out, "|")
 end
 
+-- The follow list back from its save string (save_follow_list's format); nil when empty.
 local function load_follow_list(str)
     if not str or str == "" then return nil end
     local out = {}
@@ -122,6 +152,7 @@ local function load_follow_list(str)
     return out
 end
 
+-- The remembered spots as one save string: "level:x:y:z:time|...".
 local function save_spots()
     local out = {}
     for _, p in ipairs(S.spots) do
@@ -130,6 +161,7 @@ local function save_spots()
     return table.concat(out, "|")
 end
 
+-- The reserved bodies (Reserve your kills) as one save string: "id:time:section,...".
 local function save_reserved()
     local out = {}
     for id, v in pairs(S.reserved) do
@@ -138,6 +170,7 @@ local function save_reserved()
     return table.concat(out, ",")
 end
 
+-- The reserved bodies back from save_reserved's string: { [id] = { t, sec } }.
 local function load_reserved(str)
     local out = {}
     for id, t, sec in string.gmatch(tostring(str or ""), "(%d+):(%d+):([%w_]*)") do
@@ -146,6 +179,7 @@ local function load_reserved(str)
     return out
 end
 
+-- The remembered spots back from save_spots' string; a malformed item is skipped.
 local function load_spots(str)
     local out = {}
     for item in string.gmatch(tostring(str or ""), "[^|]+") do
@@ -156,6 +190,9 @@ local function load_spots(str)
     return out
 end
 
+-- Empties S and refills it with blank()'s fields, in place: S is never replaced, so every
+-- script's reference to it stays good. Called here at load time of this file and by
+-- nemesis_core (a new game, or a save without Nemesis data).
 function reset()
     for k in pairs(S) do S[k] = nil end
     for k, v in pairs(blank()) do S[k] = v end
@@ -166,33 +203,33 @@ reset()
 ---------------------------------------------------------------------------
 -- Members
 ---------------------------------------------------------------------------
-
+-- named: a named hunter (escalation, retreat, cloak, boss) or a regular extra.
 function add_member(id, named, name)
     local r = {
         id = id,
         named = named and true or false,
         name = name,
-        inited = false,
-        hp_armed = false,
-        last_hp = nil,
-        grace_until = nil,
-        hit_cut = nil,
-        hit_pre = nil,
-        bh_frame = nil,
-        bypass_guard = nil,
-        mask_vis = nil,
-        pending = false,
-        retreat_at = nil,
-        cover_until = nil,
-        teleport_at = nil,
-        cloak_vis = nil,
-        cloak_off_at = nil,
-        hit_at = nil,
-        death = nil,
-        dead = false,
-        bound = false,
-        role_set = false,
-        idle_warned = false,
+        inited = false,          -- seen online once (relations, retreat grace, health armed)
+        hp_armed = false,        -- a real health reading is stored in last_hp
+        last_hp = nil,           -- health after the last check or hit
+        grace_until = nil,       -- time_global before which he cannot retreat
+        hit_cut = nil,           -- an engine hit was cut before it landed (the hit callback)
+        hit_pre = nil,           -- his health just before that hit
+        bh_frame = nil,          -- time_global of the last hit seen by "before hit" (round 88)
+        bypass_guard = nil,      -- invulnerable for a lethal hit that skipped "before hit"
+        mask_vis = nil,          -- his own model while masked for a possibly lethal hit
+        pending = false,         -- a hit asked for the retreat; the tick starts it
+        retreat_at = nil,        -- time_global he broke off
+        cover_until = nil,       -- time_global by which he must have teleported
+        teleport_at = nil,       -- time_global of the burst (vanish timer)
+        cloak_vis = nil,         -- his own model while cloaked (saved)
+        cloak_off_at = nil,      -- time_global he last reappeared
+        hit_at = nil,            -- time_global of the last hit he took
+        death = nil,             -- { teleport = bool }, set by the death callback
+        dead = false,            -- the death callback fired
+        bound = false,           -- squad relations have been set
+        role_set = false,        -- extra: tactic role handed to the chase
+        idle_warned = false,     -- diagnostic: "chase action has not run" logged
     }
     S.m[id] = r
     local list = r.named and S.hunter_ids or S.squad_ids
@@ -200,12 +237,15 @@ function add_member(id, named, name)
     return r
 end
 
+-- Removes every entry id from the id list list (hunter_ids, squad_ids).
 local function drop_from(list, id)
     for i = #list, 1, -1 do
         if list[i] == id then table.remove(list, i) end
     end
 end
 
+-- Drops member id: his record, his pending death and his place in the hunter and squad lists.
+-- Called by nemesis_member when he is gone for good.
 function drop_member(id)
     if not id then return end
     S.m[id] = nil
@@ -214,6 +254,7 @@ function drop_member(id)
     drop_from(S.squad_ids, id)
 end
 
+-- Drops every member at once. Called by nemesis_core and nemesis_spawn at a hunt's end and start.
 function clear_members()
     S.m = {}
     S.hunter_ids = {}
@@ -221,20 +262,27 @@ function clear_members()
     S.dying = {}
 end
 
+-- Member id's record (S.m[id]), or nil when he is no member. The most called read of the mod.
 function member(id) return id ~= nil and S.m[id] or nil end
-
+-- Whether id is a member now. Called by nemesis_core and nemesis_guard.
 function is_member(id) return id ~= nil and S.m[id] ~= nil end
-
+-- Member id's name (the one his PDA lines carry), or nil.
 function name_of(id)
     local r = id ~= nil and S.m[id]
     return r and r.name or nil
 end
-
+-- A regular who is not dead (a body you left stays listed as a corpse).
 function regular_alive(id)
     local r = S.m[id]
     return r ~= nil and not r.death and not r.dead
 end
 
+-- The hunt lasts while anyone is left (round 82, user rule): a named hunter, or a living
+-- regular. When the last named hunter is gone the regulars keep hunting you. Members still to
+-- come count too (round 121): a squad fills one stalker every 750 ms (nemesis_spawn.fill_squad),
+-- so a boss killed before his first escort joined used to end the hunt and drop the escort.
+-- Every way the filling can fail clears S.pending_squad, so this never keeps a hunt alive for
+-- nobody.
 function members_left()
     if #S.hunter_ids > 0 then return true end
     local p = S.pending_squad
@@ -247,6 +295,7 @@ function members_left()
     return false
 end
 
+-- The first named hunter; with none left, the first living regular (for the PDA lines).
 function leader()
     if S.hunter_ids[1] then return S.hunter_ids[1] end
     for _, id in ipairs(S.squad_ids) do
@@ -267,6 +316,7 @@ local function load_ids(text)
     return ids
 end
 
+-- An "id=value|..." save string back as { [id] = value } (the names, models, health).
 local function load_map(text)
     local map = {}
     if type(text) ~= "string" then return map end
@@ -274,6 +324,8 @@ local function load_map(text)
     return map
 end
 
+-- vanish_ids: teleports still waiting for removal (nemesis_fx), so an invisible hunter or
+-- body is not left in the world after a load.
 function save(mdata, vanish_ids)
     local names, cloak, mask, retreating, struck, hps, dead = {}, {}, {}, {}, {}, {}, {}
     for id, r in pairs(S.m) do
@@ -282,7 +334,8 @@ function save(mdata, vanish_ids)
         if r.mask_vis then mask[#mask + 1] = tostring(id) .. "=" .. r.mask_vis end
         if r.retreat_at then retreating[#retreating + 1] = id end
         if r.player_struck then struck[#struck + 1] = id end
-
+        -- A change of map is a save and a load (found in round 87). Health and bodies must outlive it, the
+        -- hunters are offline on the old map by then and cannot be read again.
         if r.last_hp then hps[#hps + 1] = tostring(id) .. "=" .. string.format("%.3f", r.last_hp) end
         if r.dead or r.death then dead[#dead + 1] = id end
     end
@@ -338,6 +391,7 @@ function save(mdata, vanish_ids)
     }
 end
 
+-- Returns the ids to remove after the load (pending teleports).
 function load(mdata)
     reset()
     local s = mdata and mdata.nemesis_state
@@ -368,7 +422,7 @@ function load(mdata)
 
     local hunters = load_ids(s.hunter_ids)
     local squad = load_ids(s.squad_ids)
-
+    -- Only regulars left is still a hunt (round 82); before round 87 a load dropped it.
     if #hunters == 0 and #squad == 0 then return vanish end
 
     local names = load_map(s.names)
@@ -379,7 +433,8 @@ function load(mdata)
     for id, vis in pairs(cloak) do
         if S.m[id] then S.m[id].cloak_vis = vis end
     end
-
+    -- A member masked in the save comes back masked (round 79) and is restored on the first
+    -- frame; the boss you already shot stays a normal enemy and never cloaks again.
     for id, vis in pairs(load_map(s.mask_vis)) do
         if S.m[id] then S.m[id].mask_vis = vis end
     end
@@ -390,7 +445,7 @@ function load(mdata)
         local hp = tonumber(v)
         if S.m[id] and hp and hp > 0.05 and hp <= 1 then S.m[id].last_hp = hp end
     end
-
+    -- A body left in the hunt stays a body (it is listed as a corpse, round 82).
     for _, id in ipairs(load_ids(s.dead)) do
         if S.m[id] then
             S.m[id].dead = true

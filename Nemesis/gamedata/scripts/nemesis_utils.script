@@ -1,14 +1,56 @@
 -- Nemesis Utilities: the debug log, the settings readers and the hunt's squad sections.
+-- Used by: every other Nemesis script (log_tag, log_msg, debug_on above all).
+-- Uses: nemesis_mcm (the settings), nemesis_lines (text, the boss names' defaults), nemesis_compat
+-- (Obrien's armour reads), nemesis_engine (section_exists), nemesis_chase, nemesis_combat and
+-- nemesis_siege (reset_chase, forget_fight), Anomaly's get_actor_true_community.
+-- Plain global functions (callable as nemesis_utils.xxx). Anomaly scripts are not
+-- Lua modules: do NOT use `local function` for anything that must be called from
+-- another script, and a trailing `return { ... }` table is ignored.
+--
+-- What is here (the rest of the split of round 112): the debug log, the settings readers (boss
+-- names, escalation, retreat health, the armour copy player_br_stats), the hunt faction and squad
+-- sections. Everything else moved to a script per feature (the volume read is nemesis_sound's):
+--   nemesis_chase    the chase target and move orders     nemesis_combat  chase or combat AI
+--   nemesis_boss     the boss, his sneak (a module, 135)    nemesis_siege   you indoors
+--   nemesis_lines    PDA messages, names, lines, sounds    nemesis_compat  the latest-exe levers
+-- Callers call the owning script directly (nemesis_engine, nemesis_compat, nemesis_sound,
+-- nemesis_lines, nemesis_chase, nemesis_combat, nemesis_siege); the one-line aliases that stayed
+-- here went in round 137.
+-- src (plain reads used throughout this file, round 121): engine script_game_object_script2.cpp (id); engine script_game_object_script2.cpp (section)
 
-local function default_name(kind) return nemesis_lines.text("st_nemesis_boss_name_" .. kind) end
+-- A boss's default name in the game's language, from the string tables (round 134: in Russian,
+-- Bogdan Kravets in Cyrillic); kind is "monolith" or "isg".
+local function default_name(kind) return nemesis_lines.text("st_nemesis_boss_name_" .. kind) end   -- text: nemesis_lines, a string table's text
 
-function debug_on() return nemesis_mcm.get_bool("debug_logs", false) end
+-- (The game_seconds epoch lives in nemesis_engine since round 109.)
 
+-- Console lines for the MCM "Debug logs" checkbox. Off by default.
+-- An error line keeps a leading "!" so the console shows it as an error; an important one (below)
+-- starts with "~" instead.
+function debug_on() return nemesis_mcm.get_bool("debug_logs", false) end   -- get_bool: nemesis_mcm, a menu checkbox (cached)
+
+-- Debug log lines (round 106, owner: a debug system that is easy to read). Every line says which
+-- part of the mod wrote it and when (seconds since the game started), so a log can be filtered:
+--   [DAMAGE 312.4s] Nemesis: ...       an error keeps its "!" first: ![SPAWN 12.0s] Nemesis ERROR: ...
+-- Each script logs with its own tag (its local dbg); lines from here pick theirs by subject.
+-- With Debug logs off nothing is built at all (these calls sit in hot paths: hits, every tick).
+--
+-- Important errors (the owner's rule, round 120): a line marked "!!" in the code may lead to a crash or a
+-- broken save, or breaks something lasting without a word (critical_errors.md, published with
+-- the source: groups A and B). It is written whatever Debug logs says, labelled NEMESIS
+-- IMPORTANT ERROR (please report), and in the console's bright yellow: a console line takes its
+-- colour from its first character, "~" is yellow (xray-monolith XR_IOConsole.h, Console_mark;
+-- there is no orange). Each message (its tag and full text, so two different listeners failing
+-- are two messages) at most once every IMPORTANT_EVERY_MS, so one that repeats every tick cannot
+-- flood the log, and one failure cannot hide another (review of round 120).
 local IMPORTANT_EVERY_MS = 60000
-local important_at = {}
-
+local important_at = {}            -- [tag .. the formatted text] = time_global it was last written
+-- The line's head: "[TAG 12.3s] ", tag and the game's running time in seconds (now: time_global).
 local function stamp(tag, now) return "[" .. tag .. " " .. string.format("%.1f", now / 1000) .. "s] " end
 
+-- Writes one log line with its tag (fmt and the values, as printf): an important "!!" line
+-- always (at most once a minute per message, yellow), every other line only with Debug logs on.
+-- Every script's local dbg comes here; the important errors are listed in critical_errors.md.
 function log_tag(tag, fmt, ...)
     if type(fmt) ~= "string" then return end
     if fmt:sub(1, 2) == "!!" then
@@ -29,6 +71,8 @@ function log_tag(tag, fmt, ...)
     printf(fmt, ...)
 end
 
+-- The shared helpers' lines (this script, and scripts without a tag of their own): AI by
+-- default (the chase and combat lines here), STALL, PDA, SOUND or COMPAT by what the line is about.
 function log_msg(fmt, ...)
     local tag = "AI"
     if type(fmt) == "string" then
@@ -44,87 +88,119 @@ end
 -- Settings-derived values
 ---------------------------------------------------------------------------
 
+-- A boss name from an MCM text box. The box loses the space (round 93, seen in game:
+-- "BogdanKravets"), so a space goes back wherever a small letter meets a capital.
+-- Only after a capital and at least two small letters (round 103): "BogdanKravets" gets its
+-- space back, "McAllister" stays one word. Round 134: Cyrillic too. The game's text is
+-- Windows-1251, where Lua's %u and %l see only A to Z (LuaJIT's own ASCII character table):
+-- capitals are bytes 192-223 and 168 (Yo), small letters 224-255 and 184 (yo), so a Cyrillic
+-- "BogdanKravets" gets its space back as well. Since round 142 the four Ukrainian letters too
+-- (the main coder's review): capitals 165, 170, 175, 178 (Ghe with upturn, Ye, Yi, I) and small
+-- 180, 186, 191, 179, their Windows-1251 bytes (checked with Python's cp1251 codec).
 local UP, LOW = "[%u\192-\223\168\165\170\175\178]", "[%l\224-\255\184\180\186\191\179]"
 local SPACE_AT = "(" .. UP .. LOW .. LOW .. "+)(" .. UP .. ")"
 
+-- name with its spaces put back (see above); anything that is not a string comes back as it is.
+-- Used by the boss names below and by nemesis_emission (the emission boss's name).
 function spaced_name(name)
     if type(name) ~= "string" then return name end
     return (string.gsub(name, SPACE_AT, "%1 %2"))
 end
 
-function monolith_boss_name() return spaced_name(nemesis_mcm.get_string("npc_name", default_name("monolith"))) end
-
+-- The boss's name, by the hunt's faction: the Monolith's (MCM Boss name) or UNISG's own
+-- (MCM UNISG boss name, round 93: their best fighter, not their leader). Lyutomyr ("fierce")
+-- Kat ("executioner").
+function monolith_boss_name() return spaced_name(nemesis_mcm.get_string("npc_name", default_name("monolith"))) end   -- get_string: nemesis_mcm, a menu text box
+-- UNISG's boss name (MCM UNISG boss name, else its default in the game's language).
 function isg_boss_name() return spaced_name(nemesis_mcm.get_string("isg_boss_name", default_name("isg"))) end
-
+-- The MCM boxes' defaults (round 134), the same text as the fallbacks above.
 function default_boss_name(kind) return default_name(kind) end
 
+-- The running hunt's boss name: UNISG's when the hunt's faction is "isg", else the Monolith's.
 function get_npc_name()
     if nemesis_state.S.faction == "isg" then return isg_boss_name() end
     return monolith_boss_name()
 end
-
+-- Either boss name (a body or a ghost is one of ours).
 function is_boss_name(n)
     return n ~= nil and (n == monolith_boss_name() or n == isg_boss_name())
 end
 
+-- An MCM number held to lo..hi.
 function clamped(id, def, lo, hi)
-    local v = tonumber(nemesis_mcm.get_number(id, def)) or def
+    local v = tonumber(nemesis_mcm.get_number(id, def)) or def   -- get_number: nemesis_mcm, a menu number (cached)
     if v < lo then v = lo end
     if v > hi then v = hi end
     return v
 end
 
+-- Escalation, linear by the owner's design (round 100). Each cycle after the first adds Escalation per
+-- cycle (%) of damage reduction to named hunters and bosses, up to Max escalation (%).
+-- 0..0.4. Before, it was speed^(cycle-1), and it also lowered the retreat line and grew the
+-- hunters' armour every cycle: three growths stacked on one hunter (5 body hits at cycle 1,
+-- 18 at cycle 10 with the defaults).
 function escalation(cycle)
     local step = clamped("esc_step", 2, 0, 5)
     local max = clamped("esc_max", 20, 0, 40)
     return math.min(max, step * math.max(0, (cycle or 1) - 1)) / 100
 end
 
+-- Health fraction (0..1) at which a named hunter breaks off (MCM Retreat health). Fixed: the
+-- cycle no longer lowers it, since round 100.
 function get_retreat_health()
     return clamped("retreat_health", 30, 10, 60) / 100
 end
 
+-- The armour bonus every mod NPC gets on top (round 100, MCM Hunter armour class bonus and
+-- Hunter BR% bonus): flat, the same in every cycle. Before, the armour grew each cycle, so one
+-- cycle could cross your ammo's AP and double the hits needed (a hidden step).
 function br_bonus()
     return clamped("br_bonus", 0, 0, 0.5), clamped("pct_bonus", 0, 0, 50) / 100
 end
 
+-- Obrien GAMMA Overhaul: how its armour is read, and whether it is installed, live in
+-- nemesis_compat (player_br_stats below calls it there; the test kit wraps nemesis_compat.obrien_on).
+-- The reads moved there to keep the outside mods in one script, round 109.
+
+-- An armour class held to 0 or more (nil reads as 0).
 local function clamp_br(v)
     if not v or v < 0 then return 0 end
     return v
 end
-
+-- A mitigation held to 0..0.90 (no hunter blocks more than 90 % of a bullet).
 local function clamp_pct(v)
     if not v or v < 0 then return 0 end
     if v > 0.90 then return 0.90 end
     return v
 end
-
+-- A hit fraction held to 0.05..1 (nil reads as 1: no protection).
 local function clamp_hf(v)
     if not v or v > 1 then return 1 end
     if v < 0.05 then return 0.05 end
     return v
 end
 
+-- The full read: slots, conditions, the ini lines, the casts and the bone armour.
 local function read_br_stats(actor, outfit, helmet, obrien)
     local body_br, head_br, body_pct, head_pct = 0, 0, 0, 0
     local body_hf, head_hf = 1, 1
     pcall(function()
         if outfit then
-
+            -- src: engine script_game_object_script2.cpp (condition)
             local cond = outfit:condition() or 1
             if obrien then
-                body_br, body_pct = nemesis_compat.obrien_item_stats(outfit:section(), cond)
+                body_br, body_pct = nemesis_compat.obrien_item_stats(outfit:section(), cond)   -- obrien_item_stats: nemesis_compat, Obrien's class and mitigation
             else
-
+                -- src: anomaly _g.script ini_file (r_float_ex)
                 local hf = ini_sys:r_float_ex(outfit:section(), "hit_fraction_actor")
                 if hf then
                     body_br = (1 - hf) * cond
                     body_hf = hf
                 end
-
+                -- src: engine script_game_object_script3.cpp (cast_CustomOutfit)
                 local c = outfit:cast_CustomOutfit()
                 if c and BoneID and BoneID["bip01_spine"] then
-
+                    -- src: engine CustomOutfit_script.cpp (GetBoneArmor)
                     body_pct = (c:GetBoneArmor(BoneID["bip01_spine"]) or 0) * cond * 0.80
                 end
             end
@@ -139,7 +215,7 @@ local function read_br_stats(actor, outfit, helmet, obrien)
                     head_br = (1 - hf) * cond
                     head_hf = hf
                 end
-
+                -- src: engine script_game_object_script3.cpp (cast_Helmet)
                 local c = helmet:cast_Helmet()
                 if c and BoneID and BoneID["bip01_head"] then
                     head_pct = (c:GetBoneArmor(BoneID["bip01_head"]) or 0) * cond * 0.80
@@ -151,22 +227,29 @@ local function read_br_stats(actor, outfit, helmet, obrien)
         clamp_hf(body_hf), clamp_hf(head_hf) }
 end
 
-local BR_CACHE_MS = 500
+-- The player's current body BR, head BR, body mitigation and head mitigation, and the hit
+-- fractions. Suit covers the body. Helmet covers the head. Belt artefacts are not copied.
+-- BR is the armor class GAMMA compares with AP. Mitigation is 0..1.
+-- This runs on every hit on a named hunter, NPC hits too (since round 74; 10-40 a second in a
+-- firefight), so the read is kept for BR_CACHE_MS while the same suit and helmet are worn
+-- (a cache since round 80). A swap is seen at once; only wear inside those 500 ms is not.
+local BR_CACHE_MS = 500           -- milliseconds a read is kept
 local br_cache = { at = -1000000 }
-
-local function _item_id(o) return o:id() end
-
+-- An item's cache key: its id and section ("-" for an empty slot).
+local function _item_id(o) return o:id() end   -- the item's id (called in a pcall)
+-- The item's section (called in a pcall).
 local function _item_sec(o) return o:section() end
-
+-- src: engine script_game_object_script2.cpp (item_in_slot)
 local function _slot(a, n) return a:item_in_slot(n) end
-
+-- item's cache key, "id/section", or "-" for an empty slot.
 local function item_key(item)
     if not item then return "-" end
     local ok1, id = pcall(_item_id, item)
     local ok2, sec = pcall(_item_sec, item)
     return tostring(ok1 and id or "?") .. "/" .. tostring(ok2 and sec or "?")
 end
-
+-- The six numbers above for the suit and helmet you wear now (see read_br_stats), cached for
+-- BR_CACHE_MS. Called by nemesis_damage for every hit on a named hunter (his armour copies yours).
 function player_br_stats()
     local actor = db.actor
     if not actor then return 0, 0, 0, 0, 1, 1 end
@@ -177,7 +260,7 @@ function player_br_stats()
     local oid, hid = item_key(outfit), item_key(helmet)
     local okso, so = pcall(_item_sec, outfit)
     local oksh, sh = pcall(_item_sec, helmet)
-    local obrien = nemesis_compat.obrien_on(okso and so or nil, oksh and sh or nil)
+    local obrien = nemesis_compat.obrien_on(okso and so or nil, oksh and sh or nil)   -- obrien_on: nemesis_compat, is Obrien installed
     local now = time_global()
     local c = br_cache
     if not (c.v and c.oid == oid and c.hid == hid and c.obrien == obrien and now - c.at < BR_CACHE_MS) then
@@ -192,42 +275,62 @@ end
 -- Spawn sections
 ---------------------------------------------------------------------------
 
+-- Hunt faction. Monolith, except when the player is Monolith, Zombified or Sin: then UNISG,
+-- because Monolith hunters would be on their side, and killing them would cost standing.
+-- get_actor_true_community (Anomaly _g.script) ignores disguises. The hunt's faction is kept in
+-- nemesis_state.S.faction (set at the warning and at the spawn, saved with the hunt).
+-- The player's faction ("stalker", "dolg", ...), or nil when it cannot be read.
 function player_community()
     local comm = nil
     pcall(function() comm = get_actor_true_community() end)
-
+    -- src: engine script_game_object_script3.cpp (actor) (db.actor.character_community)
     if type(comm) ~= "string" then pcall(function() comm = db.actor:character_community() end) end
     if type(comm) == "string" then comm = string.gsub(comm, "^actor_", "") end
     return type(comm) == "string" and comm or nil
 end
 
+-- Players the Monolith would not hunt get UNISG hunters instead: the Monolith itself, and the
+-- factions close to it, the Zombified and Sin (user design, round 71).
 local UNISG_HUNTS = { monolith = true, zombied = true, greh = true }
 
+-- The hunt's faction for the player you are now: "isg" for the factions above, else
+-- "monolith". Called by nemesis_spawn at the warning and the spawn.
 function faction_for_player()
     return UNISG_HUNTS[player_community()] and "isg" or "monolith"
 end
 
+-- The hunt squad: this mod's own squad_descr_nemesis.ltx (one generic stalker, no story id, no
+-- home smart). The emission boss's squads are his module's (round 115, nemesis_emission).
 local SQUADS = { monolith = "nemesis_hunter_squad", isg = "nemesis_hunter_squad_isg" }
 
+-- The hunt squad's section for faction (SQUADS), or nil with an important error when the
+-- mod's squad_descr file is not loaded (a broken install). Called by nemesis_spawn.
 function resolve_squad_section(faction)
     local sec = SQUADS[faction] or SQUADS.monolith
-    if nemesis_engine.section_exists(sec) then return sec end
+    if nemesis_engine.section_exists(sec) then return sec end   -- section_exists: nemesis_engine, is this ini section there
     log_msg("!!Nemesis ERROR: squad section %s not found (squad_descr_nemesis.ltx is not loaded).", sec)
     return nil
 end
 
+-- NPC sections for extra members: vanilla simulation stalkers of the hunt faction (no story id,
+-- default custom data, which add_squad_member requires). sim_default_monolith_3 is the
+-- leader's own section. Extras are added to the squad by add_squad_member (nemesis_spawn).
 local MEMBER_POOL = {
     monolith = { "sim_default_monolith_3", "sim_default_monolith_2", "sim_default_monolith_4",
                  "sim_default_monolith_1", "sim_monolith_sniper" },
     isg = { "sim_default_isg_3", "sim_default_isg_4", "sim_default_isg_2", "sim_default_isg_1" },
 }
 
+-- A copy of the extras' sections for faction (MEMBER_POOL), for the warm-up after a load
+-- (nemesis_spawn.warm_tick; added in round 147).
 function member_pool(faction)
     local out = {}
     for i, sec in ipairs(MEMBER_POOL[faction] or MEMBER_POOL.monolith) do out[i] = sec end
     return out
 end
 
+-- A random NPC section of MEMBER_POOL for faction that exists in this game, or nil when none
+-- does. Called by nemesis_spawn for each extra member.
 function pick_member_section(faction)
     local pool = {}
     for _, sect in ipairs(MEMBER_POOL[faction] or MEMBER_POOL.monolith) do
@@ -237,18 +340,23 @@ function pick_member_section(faction)
     return pool[math.random(#pool)]
 end
 
+---------------------------------------------------------------------------
+-- The two that clear several scripts at once (the chase, the combat memory, the siege):
+-- reset_chase(id): his chase slot (the chase action's start and end). reset_chase(): a new
+-- hunt or a load: every slot, the fight memory, the siege and the remembered spot.
 function reset_chase(id)
     if id then
-        nemesis_chase.reset_slot(id)
+        nemesis_chase.reset_slot(id)   -- reset_slot: nemesis_chase, forgets one hunter's chase target
     else
-        nemesis_chase.reset_slots()
-        nemesis_combat.reset()
-        nemesis_siege.reset()
+        nemesis_chase.reset_slots()   -- reset_slots: nemesis_chase, forgets every chase target
+        nemesis_combat.reset()   -- reset: nemesis_combat, forgets every fight memory
+        nemesis_siege.reset()   -- reset: nemesis_siege, ends the siege and the remembered spot
     end
 end
-
+-- forget_fight(id): he left the hunt. His fight memory, role, cover spot and focus. (The boss's
+-- sneak is the boss module's own since round 135: a new boss starts a fresh one.)
 function forget_fight(id)
     if not id then return end
-    nemesis_combat.forget(id)
-    nemesis_chase.forget_tactics(id)
+    nemesis_combat.forget(id)   -- forget: nemesis_combat, his fight memory and focus
+    nemesis_chase.forget_tactics(id)   -- forget_tactics: nemesis_chase, his role and cover spot
 end

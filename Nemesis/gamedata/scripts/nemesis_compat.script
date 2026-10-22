@@ -1,11 +1,40 @@
 -- Nemesis Compat: the doorway to every other mod (made in round 109). Each part is detected at
+-- runtime and does nothing without its mod, so no other mod is ever required.
+-- Used by: nemesis_core, nemesis_damage, nemesis_fx, nemesis_guard, nemesis_utils,
+-- nemesis_emission (each for the parts named in the table below).
+-- Uses: the other mods' own tables (grok_bo, arszi_psy, wd_attach, ap_api, surge_manager,
+-- phantom_manager, xr_wounded's db.storage), xlibs (xlevel, xcombat), nemesis_engine,
+-- nemesis_mcm, nemesis_state, nemesis_utils (log_tag, log_msg).
+-- Every other mod (or vanilla script another mod replaces) the Nemesis talks to, in one place,
+-- each detected at runtime: nothing here is required, and without the mod each part does nothing
+-- (or the documented fallback). What each one is, and what we learned about it, is in
+-- notes/DEV_NOTES.md section 4 and Documents/Phase 0 (EF-0xx).
+--
+--   GAMMA ballistics (grok_bo)          grok_bo()           nemesis_damage seeds its bone armour (never wraps it, round 139)
+--   GAMMA psy rework (arszi_psy)        psy_rework()        the emission ghosts' psy hit
+--   Wearable Devices (wd_attach)        wearable()          nemesis_fx's malfunction
+--   AlifePlus (ap_api)                  alifeplus()         ownership, reserved kills
+--   Obrien GAMMA Overhaul (br_class)    obrien_on() ...     how hunters copy your armour
+--   surge_manager, its ignore list      surge_on(), surge_deadly(), surge_ignore_list()
+--   the emission's cover (actor_status) actor_in_surge_cover() (round 116)
+--   phantom_manager                     phantom_count()
+--   xr_wounded (GAMMA: Modular Tweaks)  no_downed()         named hunters never lie down
+--   the latest demonized exes           exe_ai_on() ...     hold, target bias, hit redirect
+--
+-- A global that does not exist makes Anomaly try to load a script of that name (EF-048), so a
+-- lookup that can miss is either behind a file check or done at most once a minute.
+-- src (plain reads used throughout this file, round 121): engine script_game_object_script2.cpp (id)
 
+-- Writes a [COMPAT] debug line, through nemesis_utils.log_tag (the tagged logger, only with Debug logs on).
 local function dbg(...) nemesis_utils.log_tag("COMPAT", ...) end
 
 ---------------------------------------------------------------------------
 -- GAMMA ballistics (grok_bo)
 ---------------------------------------------------------------------------
-
+-- grok_bo's module table when it is the GAMMA ballistics nemesis_damage works around (its hit
+-- function and its per-bone armour table, custom_bone_value, are there), else nil. nemesis_damage
+-- seeds that armour table for our hunters and reads its PBA_ohc; since round 139 it never
+-- replaces grok_bo's own hook. Its globals live in the grok_bo module, not in _G (EF-016).
 function grok_bo()
     local gbo = nil
     pcall(function() gbo = _G["grok_bo"] end)
@@ -16,13 +45,17 @@ end
 ---------------------------------------------------------------------------
 -- GAMMA psy rework (arszi_psy)
 ---------------------------------------------------------------------------
-
+-- "G.A.M.M.A. Psy rework" keeps its own psy health (the HUD psy bar, 0..1) and takes your full
+-- psy protection off every psy hit, so a small hit does nothing in good gear (EF-063). Its
+-- library when it can be used: change_psy_health (adds) and get_psy_health (returns a number).
+-- nil without it: the engine's own change_psy_health is used then (never the psy_health
+-- property, which SETS: round 95).
 function psy_rework()
     local lib = nil
     pcall(function() lib = _G["arszi_psy"] end)
     if type(lib) ~= "table" or type(lib.change_psy_health) ~= "function"
         or type(lib.get_psy_health) ~= "function" then return nil end
-
+    -- src: gamma arszi_psy.script (Psy rework) (lib.get_psy_health)
     local ok, v = pcall(lib.get_psy_health)
     if not ok or type(v) ~= "number" then return nil end
     return lib
@@ -31,13 +64,17 @@ end
 ---------------------------------------------------------------------------
 -- Wearable Devices (sulikz)
 ---------------------------------------------------------------------------
+-- Licence: never ship, copy or patch its files; calling these two functions is fine (EF-067).
+local wd_api, wd_api_file = nil, nil   -- false / nil until looked up
 
-local wd_api, wd_api_file = nil, nil
-
+-- Its wd_attach table when installed with both screen functions, else false; looked up once per
+-- load (forget_runtime). The check its author gave us (round 99), behind the file check: a
+-- missing global would make Anomaly try to load a script of that name. Called by nemesis_fx
+-- (the screen flicker on a hunt's arrival).
 function wearable()
     if wd_api == nil then
         wd_api = false
-        local file = nemesis_engine.file_exists("$game_scripts$", "wd_attach.script")
+        local file = nemesis_engine.file_exists("$game_scripts$", "wd_attach.script")   -- file_exists: nemesis_engine, whether the game has this file (loose or in its archives)
         if file then
             pcall(function() wd_api = wd_attach and wd_attach.hide_screens and wd_attach.show_screens and wd_attach or false end)
         end
@@ -45,14 +82,17 @@ function wearable()
     end
     return wd_api
 end
-
+-- True when its script file is there (for the debug line "found, but not its functions").
 function wearable_file() return wd_api_file == true end
 
 ---------------------------------------------------------------------------
 -- AlifePlus
 ---------------------------------------------------------------------------
-local ap_found, ap_next_try = nil, 0
+local ap_found, ap_next_try = nil, 0   -- the table once found; time_global of the next try while missing
 
+-- AlifePlus's API table (ap_api), or nil. Looked up once when present; while missing, again at
+-- most once a minute (a missing global makes Anomaly try to load a script of that name).
+-- Called by nemesis_core and nemesis_guard (owning our squads in AlifePlus, reserving kills).
 function alifeplus()
     if ap_found then return ap_found end
     local now = time_global()
@@ -67,32 +107,45 @@ end
 ---------------------------------------------------------------------------
 -- Obrien GAMMA Overhaul
 ---------------------------------------------------------------------------
-
+-- Its configs set hit_fraction_actor = 0.0 on every armour and add br_class (0.01..0.9, the same
+-- scale as ammo k_ap). Its damage balancer (get_protection_obrien) reads the player's armour
+-- class as br_class * condition and the bullet mitigation as hit_fraction_actor * condition, and
+-- its grok_bo hits NPCs with power * min(1, k_ap / bone armor), with no hit fraction. So the
+-- hunter copies exactly those two numbers (nemesis_utils.player_br_stats). The vanilla GAMMA
+-- reading (1 - hit_fraction_actor) would give every suit class ~1.0.
 function obrien_item_stats(sec, cond)
-
+    -- src: anomaly _g.script ini_file (r_float_ex)
     local br = ini_sys:r_float_ex(sec, "br_class") or 0
     local pct = ini_sys:r_float_ex(sec, "hit_fraction_actor") or 0
     return br * cond, pct * cond
 end
 
+-- Detected by itself (round 98, user: no MCM box any more): its armour carries br_class. A few
+-- stock suits are read once, and each suit or helmet you wear once.
 local obrien_found = false
-local obrien_checked = {}
+local obrien_checked = {}          -- [section] = true once read (it runs on every hit on a named hunter)
 local OBRIEN_PROBES = { "novice_outfit", "stalker_outfit", "helm_respirator" }
 
+-- Reads once whether item section sec carries Obrien's br_class line (system ini, line_exist);
+-- the first one that does marks Obrien as installed for the session (and logs it). Each section
+-- is read once (obrien_checked), because obrien_on runs on every hit on a named hunter.
 local function obrien_check(sec)
     if obrien_found or not sec or obrien_checked[sec] then return end
     obrien_checked[sec] = true
     local has = false
-
+    -- src: engine script_ini_file_script.cpp (line_exist)
     pcall(function() has = ini_sys:line_exist(sec, "br_class") == true end)
     if has then
         obrien_found = true
         dbg("Nemesis: Obrien GAMMA Overhaul detected (%s has br_class); hunters copy its armour.", tostring(sec))
     end
 end
-
+-- Forgets what obrien_check found, so Obrien is detected again at every load. Called by
+-- nemesis_core on its first update.
 function reset_obrien() obrien_found, obrien_checked = false, {} end
-
+-- Is Obrien installed? The stock probe sections and the suit and helmet you wear (their sections,
+-- or nil) are read through obrien_check. Called by nemesis_utils (player_br_stats, the armour a
+-- hunter copies) and nemesis_damage.
 function obrien_on(outfit_sec, helmet_sec)
     for _, sec in ipairs(OBRIEN_PROBES) do obrien_check(sec) end
     obrien_check(outfit_sec)
@@ -103,25 +156,31 @@ end
 ---------------------------------------------------------------------------
 -- Emissions: surge_manager and its ignore list
 ---------------------------------------------------------------------------
-
+-- Is an emission (or a psi storm) on? xlibs' xlevel.is_surge.
 function surge_on()
     local on = false
-
+    -- src: xlibs xlevel.script (xlevel.is_surge)
     pcall(function() on = xlevel.is_surge() == true end)
     return on
 end
 
+-- Which event is on: "psi_storm" when psi_storm_manager has started one, "emission" when
+-- surge_manager has, else nil. For the emission boss's own clock (nemesis_emission.event_tick),
+-- which waits a different time for each (round 146). xlibs' is_surge can't tell them apart: it is
+-- GAMMA's xr_conditions.surge_started, true for both ("G.A.M.M.A. Vices are free" copy). Asked the
+-- way surge_started asks: the psi storm first, and each manager only once it is loaded (is_loaded
+-- reads its state without creating the manager, as is_started would).
 function surge_kind()
     local kind = nil
     pcall(function()
         local p = _G["psi_storm_manager"]
-
+        -- src: gamma psi_storm_manager.script (Audio Expansion) (p.is_loaded, p.is_started)
         if type(p) == "table" and p.is_loaded and p.is_loaded() and p.is_started() then
             kind = "psi_storm"
             return
         end
         local m = _G["surge_manager"]
-
+        -- src: gamma surge_manager.script (Preblowout Murder) (m.is_loaded, m.is_started)
         if type(m) == "table" and m.is_loaded and m.is_loaded() and m.is_started() then
             kind = "emission"
         end
@@ -129,26 +188,39 @@ function surge_kind()
     return kind
 end
 
+-- The deadly part of an emission: from the first wave's sound, when its hit starts (surge_manager
+-- stage "1stwavesnd"; faster emissions move it, EF-064). A psi storm, or no surge_manager: true
+-- (no wait).
 function surge_deadly()
     local ok, on = pcall(function()
         local m = _G["surge_manager"]
-
+        -- src: gamma surge_manager.script (Preblowout Murder) (m.is_started)
         if type(m) ~= "table" or not (m.is_started and m.is_started()) then return true end
-
+        -- src: gamma surge_manager.script (Preblowout Murder) (m.get_surge_manager)
         local sm = m.get_surge_manager()
         return sm.effector_set == true or (sm.stages ~= nil and sm.stages["1stwavesnd"] == true)
     end)
     return not ok or on == true
 end
 
+-- Are you in emission cover, as the emission decides it (round 116, owner: a building that is no
+-- cover must not start the haunting)? actor_status (Anomaly; in GAMMA the HUD Icons Time copy) sets
+-- the event "current_safe_cover" every update: an underground level, inside one of the level's
+-- surge cover zones (the surge_covers space restrictors, the zones surge_manager spares NPCs in),
+-- or within 1.5 m of a tent; false otherwise. Not roof data: a roofed building with no cover zone
+-- does not shelter you. GetEvent is plain Lua (the EVENT STORAGE table in Anomaly's _g.script), not
+-- an engine call: reading it changes nothing. true / false; nil when this game has no GetEvent (then
+-- the caller goes by the indoor read alone).
 function actor_in_surge_cover()
     if type(GetEvent) ~= "function" then return nil end
-
+    -- src: anomaly _g.script event storage (GetEvent)
     local ok, v = pcall(GetEvent, "current_safe_cover")
     if not ok then return nil end
     return v ~= nil and v ~= false
 end
 
+-- GAMMA's emission kill spares Monolith, Zombified, story NPCs and every section on this list
+-- (surge_manager_ignore_npc.ignore_npc, keyed by section, EF-050). The table, or nil.
 function surge_ignore_list()
     local t = nil
     pcall(function() t = surge_manager_ignore_npc.ignore_npc end)
@@ -158,10 +230,10 @@ end
 ---------------------------------------------------------------------------
 -- Phantoms (vanilla phantom_manager)
 ---------------------------------------------------------------------------
-
+-- How many phantoms of this section phantom_manager counts alive (0 when unknown).
 function phantom_count(sec)
     local live = 0
-
+    -- src: anomaly phantom_manager.script (phantom_manager.dynamic_phantom_count)
     pcall(function() live = phantom_manager.dynamic_phantom_count(sec) or 0 end)
     return live
 end
@@ -169,43 +241,67 @@ end
 ---------------------------------------------------------------------------
 -- The downed state (xr_wounded; GAMMA's is Modular Tweaks')
 ---------------------------------------------------------------------------
-
+-- Never downed (the owner's play test, round 99): a named hunter was shot into the wounded state,
+-- then teleported out without running. Called by nemesis_core every tick for named hunters and bosses.
+-- xr_wounded lays a stalker down below 20% health for Monolith, 30% for the others in GAMMA
+-- (vanilla 20%), above our retreat line, and the run to cover never moves a wounded stalker.
+-- Its evaluator returns false while db.storage[id].wounded.wounded_set is not true, so that is
+-- switched off for named hunters and bosses every tick (a logic switch sets it again). Below
+-- that line it also saves wounded_fight = "false" (pstor), which blocks the combat planner; its
+-- manager stops updating once switched off, so the saved state is cleared at the switch (EF-040).
 function no_downed(id)
     local st = db.storage[id]
     local w = st and st.wounded
     if not (w and w.wounded_set) then return end
     w.wounded_set = false
     if w.wound_manager then w.wound_manager.state, w.wound_manager.sound = "nil", "nil" end
-    local o = nemesis_engine.obj(id)
+    local o = nemesis_engine.obj(id)   -- obj: nemesis_engine, the online object of an id, or nil
     if o then
-
-        nemesis_engine.save_var(o, "wounded_state", "nil")
+        -- Through the engine doorway: his own pstor, and he is ours (round 123).
+        nemesis_engine.save_var(o, "wounded_state", "nil")   -- save_var: nemesis_engine, writes one of our NPC's saved values (refuses anyone else's)
         nemesis_engine.save_var(o, "wounded_sound", "nil")
         nemesis_engine.save_var(o, "wounded_fight", "true")
         nemesis_engine.save_var(o, "wounded_victim", "nil")
     end
 end
 
+---------------------------------------------------------------------------
+-- Latest demonized exes (RC7MidAnalysis section 6). Every lever goes through xlibs or a
+-- feature check, so on older exes it does nothing and the mod's own way stays in use.
+---------------------------------------------------------------------------
+-- (These moved here from nemesis_utils in round 112; their old names there went in round 137.)
+-- Writes a debug line, through nemesis_utils.log_msg (the untagged logger, Debug logs only).
 local function log_msg(...) return nemesis_utils.log_msg(...) end
 
+-- MCM "Latest exe AI features" (default on): the engine levers for how hunters move and fight.
+-- Read by hold_still and apply_ai below. get_bool: nemesis_mcm, a menu checkbox (cached).
 function exe_ai_on() return nemesis_mcm.get_bool("exe_ai", true) end
 
+-- Registers fn for game callback name after every Normal subscriber (the Post tier of the modded
+-- exes' axr_main, there since 15 September 2026, demonized 0397a88, the history of _g_patches.script). Returns true when
+-- the Post tier was used; otherwise a normal registration and false. Called by nemesis_core for
+-- the two hit callbacks, so our hit rules see every other mod's changes first.
 function register_post(name, fn)
     if type(RegisterScriptCallbackPost) == "function" then
-
+        -- src: exes _g_patches.script (RegisterScriptCallbackPost)
         if pcall(RegisterScriptCallbackPost, name, fn) then return true end
     end
-
+    -- src: anomaly _g.script (RegisterScriptCallback)
     RegisterScriptCallback(name, fn)
     return false
 end
 
-local held = {}
-local hold_logged = false
+-- The engine's movement hold (xcombat.set_movement_hold): the mover stays in its stand branch,
+-- path kept. The caller owns clearing it: release_hold runs on every way out of the hunt.
+local held = {}                    -- [id] = true while we hold him
+local hold_logged = false          -- the "hold in use" line is written once per session
 
+-- Holds NPC obj in place through xlibs' xcombat.set_movement_hold (the engine's own hold, latest
+-- exes), when Latest exe AI features is on. Returns true when he is held (noted in held).
+-- Called by nemesis_core while a hunter waits for his teleport; release_hold lets him go.
 function hold_still(obj)
     if not obj or not exe_ai_on() then return false end
-
+    -- src: xlibs xcombat.script (xcombat.set_movement_hold)
     local ok, done = pcall(xcombat.set_movement_hold, obj, true)
     if not (ok and done) then return false end
     held[obj:id()] = true
@@ -215,30 +311,41 @@ function hold_still(obj)
     end
     return true
 end
-
+-- Whether hold_still holds NPC id now. Called by nemesis_core.
 function is_held(id) return id ~= nil and held[id] == true end
 
+-- Target bias and hit redirect (the owner's values; round 83, RC7MidAnalysis U2 + U3). Named hunters
+-- and the boss weigh you twice as heavily as vanilla when they pick a target (900 -> 1800; an
+-- NPC who sees them keeps the vanilla 300), and turn on whoever shot them within 60 m. The
+-- boss's pull toward an attacker is weaker, so he fights back but still prefers you. Regulars
+-- stay vanilla. The engine does not keep these over an offline switch, so they are applied
+-- again every AI_REFRESH_MS while he is online; switched off, they go back to vanilla.
 local BIAS_ACTOR = 1800
 local REDIRECT_FALLOFF_M = 60
-
+-- MCM "Attack pull" (the owner's sliders, round 84): how strongly a hunter turns on whoever shot him.
+-- The engine's own scale: an enemy who sees him pulls 900 for the player, 300 for an NPC. 0 hands
+-- the choice back to the engine (vanilla).
 local function attack_pull(boss)
-    local v = boss and nemesis_mcm.get_number("boss_attack_pull", 300) or nemesis_mcm.get_number("hunter_attack_pull", 600)
+    local v = boss and nemesis_mcm.get_number("boss_attack_pull", 300) or nemesis_mcm.get_number("hunter_attack_pull", 600)   -- get_number: nemesis_mcm, a menu number (cached)
     if v < 0 then v = 0 end
     if v > 1800 then v = 1800 end
     return v > 0 and v or -1
 end
-local AI_REFRESH_MS = 2000
-local ai_logged = false
+local AI_REFRESH_MS = 2000         -- milliseconds between two applications (the engine forgets them offline)
+local ai_logged = false            -- the "bias in use" line is written once per session
 
+-- Sets named hunter obj's (record r) target bias and hit redirect through xlibs' xcombat, again
+-- every AI_REFRESH_MS at game time gt, while Latest exe AI features is on; once it is off, puts
+-- both back to the engine's own (-1). Regulars are left alone. Called by nemesis_core every tick.
 function apply_ai(obj, r, gt)
     if not (obj and r and r.named) then return end
     if exe_ai_on() then
         if r.ai_at and gt - r.ai_at < AI_REFRESH_MS then return end
         r.ai_at = gt
         local boss = r.id == nemesis_state.S.boss_id
-
+        -- src: xlibs xcombat.script (xcombat.set_visible_enemy_bias)
         local ok1, b = pcall(xcombat.set_visible_enemy_bias, obj, BIAS_ACTOR, -1)
-
+        -- src: xlibs xcombat.script (xcombat.set_hit_redirect)
         local ok2, h = pcall(xcombat.set_hit_redirect, obj, attack_pull(boss), REDIRECT_FALLOFF_M)
         r.ai_set = ((ok1 and b) or (ok2 and h)) and true or nil
         if r.ai_set and not ai_logged then
@@ -251,18 +358,20 @@ function apply_ai(obj, r, gt)
         pcall(xcombat.set_hit_redirect, obj, -1, 0)
     end
 end
-
+-- Lets NPC id go from hold_still's hold (obj: his object, nil when he is offline). Called by
+-- nemesis_core on every way out of the hunt, so no hunter is left held.
 function release_hold(id, obj)
     if not (id and held[id]) then return end
     held[id] = nil
-
+    -- src: xlibs xcombat.script (xcombat.set_movement_hold)
     if obj then pcall(xcombat.set_movement_hold, obj, false) end
 end
 
 ---------------------------------------------------------------------------
 -- Runtime
 ---------------------------------------------------------------------------
-
+-- Forgets the Wearable Devices lookup, so it is looked up again after a load. Called by
+-- nemesis_fx.reset_runtime, from the core's first update (Obrien has its own, reset_obrien).
 function forget_runtime()
     wd_api, wd_api_file = nil, nil
 end

@@ -1,20 +1,36 @@
 -- Nemesis Guard
+-- Used by: nemesis_core (tick, apply_death_reset, forget_death_marker, and the actor's hit and
+-- death callbacks).
+-- Uses: nemesis_state, nemesis_engine, nemesis_spawn (the squad's members), nemesis_compat
+-- (AlifePlus), nemesis_mcm, nemesis_lines, nemesis_damage (grok_bo's hooks and seeds),
+-- nemesis_events, nemesis_config (the death record); Anomaly's safe_release_manager and
+-- get_object_story_id; MCM's ui_mcm.set.
+-- Hooks into other scripts and the safety nets around a hunt: the release guard, the
+-- exemption from GAMMA's south cleanup, AlifePlus ownership, the death reset, and the MCM
+-- action boxes (reset escalation, Force the next hunt).
+-- src (plain reads used throughout this file, round 121): engine script_game_object_script2.cpp (id)
 
 local S = nemesis_state.S
 
+-- A log line tagged GUARD (nemesis_utils.log_tag: Debug logs, or always when it starts with "!!").
 local function dbg(...) nemesis_utils.log_tag("GUARD", ...) end
 
 ---------------------------------------------------------------------------
 -- Release guard
 ---------------------------------------------------------------------------
-
+-- Releasing a LIVING NPC makes the engine report it as its own killer (the self-kill in the
+-- logs), and its inventory drop fails. Hooks safe_release_manager.release, which every engine
+-- release goes through. While a hunt runs it refuses any hunt member (online or offline) and
+-- the hunt squad. The mod drops a member from the hunt before removing it itself.
 local release_guard_installed = false
 local release_guard_warned = false
 local refused_count = 0
 
+-- Counts a refused release and, with Debug logs, logs the first 20 and every 25th after (what:
+-- "hunt member" or "hunt squad"; se_obj: the server object), with the caller's traceback.
 local function log_refusal(what, se_obj)
     refused_count = refused_count + 1
-    if not nemesis_utils.debug_on() then return end
+    if not nemesis_utils.debug_on() then return end   -- debug_on: nemesis_utils, the Debug logs box
     if refused_count <= 20 or refused_count % 25 == 0 then
         local tb = ""
         pcall(function() tb = debug.traceback("", 4) end)
@@ -23,16 +39,20 @@ local function log_refusal(what, se_obj)
     end
 end
 
+-- The engine's remove_npc takes the member out of the squad BEFORE it releases it. A refusal
+-- has to put the member back, or it is left unassigned and the engine deletes it as an orphan.
 local function restore_member(se_obj)
-    local sq = S.sim_squad_id and nemesis_engine.se(S.sim_squad_id)
+    local sq = S.sim_squad_id and nemesis_engine.se(S.sim_squad_id)   -- se: nemesis_engine, the server object by id
     if not sq or not sq.register_member then return end
-    for _, mid in ipairs(nemesis_spawn.member_ids(sq)) do
+    for _, mid in ipairs(nemesis_spawn.member_ids(sq)) do   -- member_ids: nemesis_spawn, the squad's member ids
         if mid == se_obj.id then return end
     end
-
+    -- src: engine xrserver_objects_alife_monsters_script3.cpp (register_member)
     pcall(function() sq:register_member(se_obj.id) end)
 end
 
+-- Wraps safe_release_manager.release once it is there (tick asks until then); an important
+-- error, once, when it is not a table with a release function.
 local function install_release_guard()
     if release_guard_installed then return end
     local ok, mgr = pcall(function() return safe_release_manager end)
@@ -44,10 +64,11 @@ local function install_release_guard()
         return
     end
     local orig = mgr.release
-
+    -- The wrapped release: refuses our members and our squad while a hunt runs; everything else
+    -- goes to the original unchanged.
     mgr.release = function(se_obj, ...)
         if se_obj and se_obj.id and S.phase ~= "idle" then
-            if nemesis_state.is_member(se_obj.id) then
+            if nemesis_state.is_member(se_obj.id) then   -- is_member: nemesis_state, is this id a hunt member
                 log_refusal("hunt member", se_obj)
                 restore_member(se_obj)
                 return
@@ -66,20 +87,27 @@ end
 ---------------------------------------------------------------------------
 -- GAMMA "No Exos in the South"
 ---------------------------------------------------------------------------
-
+-- grok_no_north_faction_in_south.script sets health to 0 and then alife():release()s any
+-- Monolith/Sin/ISG stalker that updates while the player is on a southern map. It skips NPCs
+-- with a story id; its artefact exemption never works (it sets a global but reads a local).
+-- get_object_story_id is a global in _g.script, read at call time, so a living hunt member
+-- reports "nemesis_hunter" while a hunt runs. It MUST be written to _G: a bare assignment here
+-- only creates nemesis_guard.get_object_story_id, which the other addon never sees (round 15).
+-- Nothing is registered in story_objects and nothing is saved.
 local south_exempt_installed = false
-
+-- Wraps the global get_object_story_id once it exists (see above).
 local function install_south_exemption()
     if south_exempt_installed then return end
     if type(_G.get_object_story_id) ~= "function" then return end
     local orig = _G.get_object_story_id
-
+    -- The wrapped read: a real story id first, else "nemesis_hunter" for a living member during
+    -- a hunt; every other object gets what the original said.
     _G.get_object_story_id = function(obj_id, ...)
         local sid = orig(obj_id, ...)
         if sid ~= nil then return sid end
         if obj_id and S.phase ~= "idle" and nemesis_state.is_member(obj_id) then
-            local obj = nemesis_engine.obj(obj_id)
-            if obj and nemesis_engine.alive(obj) then return "nemesis_hunter" end
+            local obj = nemesis_engine.obj(obj_id)   -- obj: nemesis_engine, the online object by id
+            if obj and nemesis_engine.alive(obj) then return "nemesis_hunter" end   -- alive: nemesis_engine, a safe life read
         end
         return sid
     end
@@ -91,10 +119,11 @@ end
 -- AlifePlus: this hunt's squad is ours
 ---------------------------------------------------------------------------
 local ap_owner_ready = false
-
+-- Registers "nemesis" as the owner of this hunt's squad with AlifePlus (when it is installed and
+-- has register_owner), so its routing leaves our squad alone. Asked every tick until it works.
 local function install_ap_owner()
     if ap_owner_ready then return end
-    local ap = nemesis_compat.alifeplus()
+    local ap = nemesis_compat.alifeplus()   -- alifeplus: nemesis_compat, AlifePlus's API table or nil
     if not (ap and ap.register_owner) then return end
     local ok, res = pcall(function()
         return ap.register_owner("nemesis", function(squad)
@@ -111,49 +140,52 @@ end
 -- MCM action boxes: each acts once when ticked (rising edge), then unticks itself.
 ---------------------------------------------------------------------------
 local box_was = {}
-
+-- Whether box id was ticked since the last look (it is unticked again at once).
 local function box(id)
-    local on = nemesis_mcm.get_bool(id, false)
+    local on = nemesis_mcm.get_bool(id, false)   -- get_bool: nemesis_mcm, a menu checkbox (cached)
     local fire = on and not box_was[id]
     box_was[id] = on
     if fire then
-
-        pcall(function() ui_mcm.set(nemesis_mcm.path(id), false) end)
-        nemesis_mcm.invalidate()
+        -- src: mcm ui_mcm.script (ui_mcm.set)
+        pcall(function() ui_mcm.set(nemesis_mcm.path(id), false) end)   -- path: nemesis_mcm, a setting's MCM path
+        nemesis_mcm.invalidate()   -- invalidate: nemesis_mcm, drops the cached settings
     end
     return fire
 end
 
+-- The menu's action boxes, once a tick: load the custom backup, reset the escalation, Force the
+-- next hunt (the module that owns the pick is asked).
 local function check_boxes()
     if box("load_custom_backup") then
-        local n = nemesis_mcm.load_custom_backup()
-
+        local n = nemesis_mcm.load_custom_backup()   -- load_custom_backup: nemesis_mcm, how many settings it loaded
+        -- send_news, text: nemesis_lines, a PDA message and a string table's text
         nemesis_lines.send_news(nemesis_lines.text(n > 0 and "st_nemesis_msg_backup_loaded" or "st_nemesis_msg_backup_none"), nemesis_lines.text("st_nemesis_caption"))
     end
     if box("reset_escalation_now") then
         dbg("Nemesis: escalation reset from cycle %s to 1 (MCM).", tostring(S.cycle))
         S.cycle = 1
-        nemesis_damage.unseed_br()
+        nemesis_damage.unseed_br()   -- unseed_br: nemesis_damage, drops the armour seeds in grok_bo
         nemesis_lines.send_news(nemesis_lines.text("st_nemesis_msg_escalation_reset"), nemesis_lines.text("st_nemesis_caption"))
     end
-
-    local f = nemesis_mcm.get_string("force_next", "none")
+    -- "Force the next hunt" (round 98: one list for the two old boxes): acts once, then None.
+    local f = nemesis_mcm.get_string("force_next", "none")   -- get_string: nemesis_mcm, a menu list's value
     if f == "boss" or f == "emission" then
-
+        -- src: mcm ui_mcm.script (ui_mcm.set)
         pcall(function() ui_mcm.set(nemesis_mcm.path("force_next"), "none") end)
         nemesis_mcm.invalidate()
-        if nemesis_events.ask("force", f) == nil then
-
+        if nemesis_events.ask("force", f) == nil then   -- ask: nemesis_events, the first module's answer, or nil
+            -- the module that owns this pick logs what it did (round 115; the boss's too since round 135)
             dbg("!Nemesis ERROR: Force the next hunt: nothing handles '%s'.", tostring(f))
         end
     end
 end
 
+-- Every tick: the hooks install themselves once their target exists.
 function tick()
     install_south_exemption()
     check_boxes()
-    nemesis_damage.install_br_hooks()
-    nemesis_damage.settle_stale()
+    nemesis_damage.install_br_hooks()   -- install_br_hooks: nemesis_damage, the hit hooks once grok_bo is there
+    nemesis_damage.settle_stale()   -- settle_stale: nemesis_damage, a hit GAMMA's chain left unsettled
     install_release_guard()
     install_ap_owner()
 end
@@ -161,13 +193,21 @@ end
 ---------------------------------------------------------------------------
 -- Death halving: killed by a hunter -> the next loaded save has half the escalation (cycle / 2, at least 1)
 ---------------------------------------------------------------------------
-
-local DEATH_HIT_WINDOW_MS = 30000
+-- A reload restores the cycle stored in that save, so the "he killed you" fact lives outside
+-- the save: death_reset_pending (script state survives a save load), and the [death] section of
+-- the player's own file (nemesis_config, gamedata/configs/nwss_player.ltx) for a game closed
+-- after the death. Round 117 (owner): a value that goes 1 -> 0, not a file that is deleted. The
+-- old marker (nemesis_death_reset.txt, removed with os.remove) was never removed under Mod
+-- Organizer, so every load halved the escalation again; it is no longer read. pending holds the
+-- game time of the death: only a save from before it is halved, once; then pending is 0, and the
+-- file is read back from disk to check it.
+local DEATH_HIT_WINDOW_MS = 30000 -- a hunter's hit this recent counts (bleeding, fall after a hit)
 local DEATH_SECTION = "death"
 local death_reset_pending = false
-local death_at = nil
+local death_at = nil              -- runtime: game seconds of the death (death_reset_pending)
 local last_hunter_hit = nil
 
+-- Write the [death] section and save it; log what the check says.
 local function write_death(pending, at, cycle)
     local C = nemesis_config
     C.set(DEATH_SECTION, "pending", pending and 1 or 0)
@@ -175,7 +215,8 @@ local function write_death(pending, at, cycle)
     C.set(DEATH_SECTION, "cycle", cycle or 0)
     local res, key = C.save_checked(DEATH_SECTION, { pending = pending and 1 or 0 })
     if res == "failed" then
-
+        -- Critical (an important error, shown without Debug logs): a pending that does not clear
+        -- halves every later load.
         dbg("!!Nemesis ERROR: the death record in %s did not save (%s): it may apply again on the next load.", nemesis_config.FILE, tostring(key))
     elseif res == "unverified" then
         dbg("Nemesis: death record %s written to %s (a new file: checked from the next game start).", pending and "1" or "0", nemesis_config.FILE)
@@ -184,17 +225,20 @@ local function write_death(pending, at, cycle)
     end
 end
 
+-- A pending death from the file: its game time, or nil.
 local function read_death()
     local C = nemesis_config
     if C.get(DEATH_SECTION, "pending", 2, 0) ~= 1 then return nil end
     return C.get(DEATH_SECTION, "at", 2, 0) or 0
 end
 
+-- Prepare for uninstall: nothing pending is left in the file.
 function forget_death_marker()
     death_reset_pending, death_at = false, nil
     if read_death() then write_death(false, 0, 0) end
 end
 
+-- actor_on_hit_callback (registered by nemesis_core): remembers when a hunt member last hit you.
 function on_actor_hit(actor, amount, dir, who, bone)
     if S.phase == "idle" or not who then return end
     local wid = nil
@@ -202,6 +246,8 @@ function on_actor_hit(actor, amount, dir, who, bone)
     if wid and nemesis_state.is_member(wid) then last_hunter_hit = time_global() end
 end
 
+-- actor_on_before_death (registered by nemesis_core): killed by a member, or within
+-- DEATH_HIT_WINDOW_MS of a member's hit, writes the death record (MCM Reset on death on).
 function on_actor_before_death(who_id, flags)
     if not nemesis_mcm.get_bool("reset_on_death", true) then return end
     if S.phase == "idle" then return end
@@ -211,11 +257,13 @@ function on_actor_before_death(who_id, flags)
     end
     if not by_hunter then return end
     death_reset_pending = true
-    death_at = nemesis_engine.game_seconds()
+    death_at = nemesis_engine.game_seconds()   -- game_seconds: nemesis_engine, in-game seconds (survive a load)
     write_death(true, death_at, S.cycle)
     dbg("Nemesis: killed by a hunter at cycle %s. The next loaded save has its escalation halved.", tostring(S.cycle))
 end
 
+-- Every game start/load, after the save is read. A pending death is always cleared here, so it
+-- never hits a later, unrelated load; and it applies only to a save from before that death.
 function apply_death_reset()
     local at = death_reset_pending and death_at or nil
     local filed = read_death()
@@ -230,7 +278,7 @@ function apply_death_reset()
         return
     end
     if not nemesis_mcm.get_bool("reset_on_death", true) then return end
-
+    -- Halved, not reset (user design): a long run keeps half of what it built up.
     local before = S.cycle or 1
     S.cycle = math.max(1, math.floor(before / 2))
     if before ~= S.cycle then

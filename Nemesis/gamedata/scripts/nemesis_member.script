@@ -1,25 +1,51 @@
 -- Nemesis Member: the one owner of a hunt member's life. It says which state a member is in and
+-- changes it, so no two scripts can disagree about whether he is alive (made in round 107).
+-- Used by: nemesis_core, nemesis_damage, nemesis_boss, nemesis_emission, nemesis_engine.
+-- Uses: nemesis_state (the records, S.m), nemesis_engine (alive), nemesis_utils (log_tag).
+-- Every hunt member is in exactly one state:
+--   active   in the hunt and alive
+--   leaving  breaking off: invulnerable, running away, teleporting (r.retreat_at)
+--   dead     killed; his record stays until the next tick handles the death (r.dead, r.death)
+--   gone     no record any more (teleported out, removed, or never one of ours)
+-- The other scripts ask here (state, is_body, hittable, is_boss) instead of reading the record's
+-- fields themselves, and every change of state goes through the set_* functions below, which
+-- log it ([MEMBER ...] lines with Debug logs on). Why: three scripts once each decided by
+-- themselves whether the boss was still alive, and their answers crashed the game (round 105).
+-- Not every fact about a member lives here: the retreat itself is nemesis_core's, the damage
+-- nemesis_damage's; this file only names his state.
+-- The records themselves stay in nemesis_state (S.m and the id lists), which is the save.
+-- src (a plain read used throughout this file, so noted once): engine script_game_object_script2.cpp (id)
 
-local S = nemesis_state.S
+local S = nemesis_state.S   -- S: nemesis_state, the mod's whole saved state (S.m = the member records)
 
+-- Writes a [MEMBER] debug line, through nemesis_utils.log_tag (the tagged logger, only with Debug logs on).
+-- For: every change of a member's state shows in the log, in order.
 local function dbg(...) nemesis_utils.log_tag("MEMBER", ...) end
 
 ACTIVE, LEAVING, DEAD, GONE = "active", "leaving", "dead", "gone"
 
+-- The state of member id (one of the four at the top), read from his record in nemesis_state.
+-- Used by every script that has to know whether a member is alive, leaving or a body.
 function state(id)
-    local r = nemesis_state.member(id)
+    local r = nemesis_state.member(id)   -- member: nemesis_state, his record or nil
     if not r then return GONE end
     if r.dead or r.death then return DEAD end
     if r.retreat_at then return LEAVING end
     return ACTIVE
 end
 
+-- Whether member r is a body, not a living member: killed (his death seen), or his object no
+-- longer alive (through nemesis_engine.alive). obj may be nil (he is offline).
+-- For: nothing may change a body's health or invulnerability; doing so crashed the game (round 105).
 function is_body(r, obj)
     if not r then return false end
     if r.dead or r.death then return true end
-    return obj ~= nil and not nemesis_engine.alive(obj)
+    return obj ~= nil and not nemesis_engine.alive(obj)   -- alive: nemesis_engine, the engine's alive() read safely
 end
 
+-- The record of a member a hit may be handled for: one of ours and not a body (is_body). Returns
+-- nil otherwise, and the hit is left to the engine. A leaving member is returned: nemesis_damage
+-- then blocks his hits. Used by nemesis_damage's hit handlers, the first step of every hit.
 function hittable(npc)
     if not npc then return nil end
     local r = nemesis_state.member(npc:id())
@@ -27,16 +53,30 @@ function hittable(npc)
     return r
 end
 
-ASSIST_MS = 2000
-
+-- Your assist: an NPC lands the killing blow, but you hit him within the last ASSIST_MS, so the
+-- kill is yours, as if your bullet had done it. His body stays for you (and is reserved, Reserve
+-- your kills), and the boss's stash reward is yours. Without it an NPC's kill teleports the body
+-- out, so NPCs can't loot what you fought for; before the assist, that also took the body when an
+-- NPC stole the last bullet (play: "dead body transport service"; added in round 110).
+ASSIST_MS = 2000                   -- milliseconds; 2 s, the owner's number
+-- Whether your last damaging hit on member r is within ASSIST_MS. r.player_hit_at is set by every
+-- hit of yours that carries damage (nemesis_damage.note_hit). Used by the death handling
+-- (nemesis_core) and the death mask (nemesis_damage), to decide whose kill it is.
 function assisted(r)
     return r ~= nil and r.player_hit_at ~= nil and time_global() - r.player_hit_at <= ASSIST_MS
 end
 
+-- Whether id is the boss of the running hunt (either boss: the Monolith or UNISG one, or the
+-- emission boss), from S.boss_id. For: the boss has his own rules (no floor, no retreat).
 function is_boss(id) return id ~= nil and id == S.boss_id end
 
+
+-- His name for the log lines: the record's name, else nemesis_state.name_of (the name kept for
+-- his id), else the id itself.
 local function name(id, r) return tostring((r and r.name) or nemesis_state.name_of(id) or id) end
 
+-- active -> leaving: marks member id as breaking off (r.retreat_at) and logs why. Returns false
+-- when he isn't active. The retreat itself (running, teleporting) is nemesis_core.begin_retreat.
 function set_leaving(id, why)
     local r = nemesis_state.member(id)
     if not r or r.retreat_at or r.dead or r.death then return false end
@@ -45,6 +85,9 @@ function set_leaving(id, why)
     return true
 end
 
+-- -> dead: marks member id as killed and queues him in S.dying, where nemesis_core handles the
+-- death on its next pass. teleport: his body teleports out (killed by an NPC, cloaked, a named
+-- hunter) or stays (killed by you). Returns false when his death was already seen.
 function set_dead(id, teleport, why)
     local r = nemesis_state.member(id)
     if not r or r.death then return false end
@@ -56,10 +99,12 @@ function set_dead(id, teleport, why)
     return true
 end
 
+-- -> gone: drops member id's record (teleported out, removed, or his body left behind) through
+-- nemesis_state.drop_member, and logs it.
 function forget(id, why)
     local r = nemesis_state.member(id)
     if not r then return end
     local from = state(id)
-    nemesis_state.drop_member(id)
+    nemesis_state.drop_member(id)   -- drop_member: nemesis_state, removes the record and his id from every list
     dbg("Nemesis: %s: %s -> %s (%s).", name(id, r), from, GONE, why or "?")
 end

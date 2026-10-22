@@ -1,25 +1,45 @@
 -- Nemesis Boss: the rare boss hunter; the mod's second module since round 135 (the emission boss is the first).
+-- Used by: nobody by name (a module, see the end of this file); the kit calls chance_now and set_sneak.
+-- Uses: nemesis_state (S), nemesis_events (his answers and listeners), nemesis_core (add_job),
+-- nemesis_engine, nemesis_utils (the boss names), nemesis_mcm, nemesis_lines (his lines),
+-- nemesis_combat (focus, sneak_over), nemesis_fx (his look), nemesis_siege (indoors),
+-- nemesis_member (is_boss); GAMMA's treasure_manager (the stash).
+-- A rare, tougher named hunter with the boss name, his own look, the cloak always on, his own
+-- messages, focus on the player only, and his own approach: he sneaks up behind a player who
+-- stands still and runs down a player who runs, then misses his first shots.
+-- Each named hunter who spawns rolls Boss chance. Only one boss can exist at a time, at most
+-- one per in-game day, and none until Boss days after grace have passed after the grace period.
+-- A module: the core, the spawn and the chase never call him by name. He registers himself in
+-- his own on_game_start (the end of this file) and they ask and announce through nemesis_events.
+-- His hunt record stays in the core's S (S.boss_id, S.boss_hunt, S.boss_sneak, his look, his
+-- shots ...), saved with the hunt, so a save is the same as before.
+-- src (plain reads used throughout this file, round 121): engine script_game_object_script3.cpp (character_name); engine script_game_object_script2.cpp (direction); engine script_game_object_script2.cpp (id); engine script_game_object_script2.cpp (position)
 
 local S = nemesis_state.S
 
+-- A log line tagged BOSS (nemesis_utils.log_tag: Debug logs, or always when it starts with "!!").
 local function dbg(...) nemesis_utils.log_tag("BOSS", ...) end
 
-local force_next = false
-local warned = false
+local force_next = false           -- "Force a boss in the next hunt" (MCM)
+local warned = false               -- the warned hunt's leader is the boss (rolled at the warning)
 
+-- The next hunt brings the boss (the force answer: Force the next hunt in the menu).
 function force() force_next = true end
 
-local function boss_day() return math.floor(nemesis_engine.game_seconds() / 86400) end
+-- The in-game day's number (one boss a day at most).
+local function boss_day() return math.floor(nemesis_engine.game_seconds() / 86400) end   -- game_seconds: nemesis_engine, in-game seconds
 
+-- HARD RULE: never two bosses. Not while one is in the hunt, and not while the last one
+-- (boss_ghost) still exists alive anywhere, even offline. Checked before "Force a boss" too.
 function exists()
     if S.boss_id then return true end
     local g = S.boss_ghost
     if not g then return false end
     local alive = false
     pcall(function()
-        local se = nemesis_engine.se(g)
+        local se = nemesis_engine.se(g)   -- se: nemesis_engine, the server object by id
         local n = se and se:alive() and se:character_name()
-
+        -- is_boss_name: nemesis_utils, either boss's name; ask: nemesis_events, a module's answer or nil
         alive = n ~= nil and n ~= false and (nemesis_utils.is_boss_name(n) or nemesis_events.ask("is_boss_name", n) == true)
     end)
     if alive then return true end
@@ -27,23 +47,31 @@ function exists()
     return false
 end
 
+-- One roll per hunt (the leader's). The chance climbs the longer he stays away (user design):
+-- Boss chance, plus BOSS_RAMP_PCT for every BOSS_RAMP_HUNTS hunts since the last boss
+-- (S.hunts_since_boss, every hunt counts, escaped ones too), and the BOSS_GUARANTEE_HUNT-th
+-- hunt without him brings him for sure. The day rules still apply first. Boss chance 0 turns
+-- him off altogether.
 local BOSS_RAMP_PCT = 2
 local BOSS_RAMP_HUNTS = 4
 local BOSS_GUARANTEE_HUNT = 30
 
+-- Boss chance now, in percent, with the ramp (see above).
 function chance_now()
-    local base = nemesis_mcm.get_number("boss_chance", 4)
+    local base = nemesis_mcm.get_number("boss_chance", 4)   -- get_number: nemesis_mcm, a menu number (cached)
     if base <= 0 then return 0 end
     local n = S.hunts_since_boss or 0
     if n + 1 >= BOSS_GUARANTEE_HUNT then return 100 end
     return math.min(100, base + BOSS_RAMP_PCT * math.floor(n / BOSS_RAMP_HUNTS))
 end
 
+-- A hunt spawned: counts toward the ramp, or resets it when the boss came.
 function count_hunt(had_boss)
     if had_boss then S.hunts_since_boss = 0
     else S.hunts_since_boss = (S.hunts_since_boss or 0) + 1 end
 end
 
+-- Whether this hunt's leader is the boss: Force first, then the day rules and the chance (see above).
 function roll()
     if exists() then return false end
     if force_next then
@@ -51,7 +79,7 @@ function roll()
         return true
     end
     if S.last_boss_day == boss_day() then return false end
-
+    -- The gate opens Boss days after grace (1..7) days AFTER the grace period ends.
     local grace = nemesis_mcm.get_number("grace_period", 18)
     if grace < 0 then grace = 0 end
     local min_days = nemesis_mcm.get_number("boss_min_day", 7)
@@ -64,65 +92,102 @@ function roll()
     return math.random() * 100 < chance
 end
 
+-- The leader's roll is made at the arrival warning, so a boss hunt gets its own warning.
 function roll_for_warning()
     warned = roll()
     return warned
 end
 
+-- At spawn: the warning's roll, or a fresh one when the warning is off. Clears it.
 function take_leader_roll(warning_on)
     local w = warned
     warned = false
-
+    -- "Force a boss" ticked after the warning went out: it applies to this hunt.
     if not warning_on or (force_next and not w) then return roll() end
     return w
 end
 
+-- His PDA message, under his name and with his portrait (nemesis_lines.boss_news, round 135).
 local function news(text) return nemesis_lines.boss_news(text) end
 
-local sneak = {}
+---------------------------------------------------------------------------
+-- His sneak, the owner's design since round 64 (one record for the running hunt's boss since round 136). He
+-- sneaks up behind a player who stands still and runs down one who runs. It runs while
+-- S.boss_sneak is set and he is S.boss_id: saved with the hunt (make sets it, end_sneak clears
+-- it), so only the running hunt's boss ever sneaks, and a load has nothing to re-arm. His
+-- runtime details are one record, fresh for each boss (make, set_sneak): hold (his line is out,
+-- he stands where he is until he opens fire), homing (he has been behind you once; from then on
+-- he homes in, crouched while you stand still), and the facing read. The chase and the combat
+-- hand-over ask through nemesis_events (sneak_move, sneak_target, sneak_closing).
+-- Until the change of round 136 it was a table per NPC id with its own "done" flag, kept in step with
+-- S.boss_sneak by hand: a re-arm after a load, and (round 135) a guard so an entry a hunt left
+-- behind never made a later hunter on a reused id sneak. One record needs neither.
+---------------------------------------------------------------------------
+local sneak = {}          -- runtime, the running hunt's boss: { hold, homing, face_at, face_back }
 
+-- The boss, sneaking: no combat hand-over at all while he is (he must not open fire).
 function sneak_active(id) return id ~= nil and id == S.boss_id and S.boss_sneak == true end
-
+-- On or off for the running hunt's boss (make does it for a new boss; the kit too). Either way
+-- his record starts fresh.
 function set_sneak(id, on)
     if not (id ~= nil and id == S.boss_id) then return end
     S.boss_sneak = on and true or nil
     sneak = {}
 end
-
+-- His line is out: he stands where he is until he opens fire (on), or not.
 function set_sneak_hold(id, on)
     if sneak_active(id) then sneak.hold = on and true or nil end
 end
-
+-- On the crouched last stretch: he has been behind you once (the chase asks while you stand still).
 function sneak_closing(id) return sneak_active(id) and sneak.homing == true end
 
-local MOVE_ANY, MOVE_CROUCH, MOVE_WALK, MOVE_SPRINT = 15, 16, 32, 4096
-
+-- Is the player running? Read from the engine's movement flags (level.actor_moving_state, the
+-- same read xlibs xcombat.is_actor_sprinting makes): moving, and neither crouched nor walking,
+-- or sprinting. Crouching and walking count as standing still (user design). The actor
+-- argument is unused; kept so callers read the same.
+local MOVE_ANY, MOVE_CROUCH, MOVE_WALK, MOVE_SPRINT = 15, 16, 32, 4096   -- actor_move_states
+-- Whether you run now (see above).
 function player_running(actor)
-
+    -- src: engine level_script.cpp (level.actor_moving_state)
     local ok, st = pcall(level.actor_moving_state)
     if not ok or type(st) ~= "number" then return false end
-
+    -- src: engine script_engine_script.cpp (bit_and)
     if bit_and(st, MOVE_SPRINT) ~= 0 then return true end
     return bit_and(st, MOVE_ANY) ~= 0 and bit_and(st, MOVE_CROUCH + MOVE_WALK) == 0
 end
-
+-- The sneak is over (fight: he opens fire now). nemesis_combat then starts his fight at once
+-- (the contact linger holds combat for its 8 s) and asks combat_owns again.
 function end_sneak(id, fight)
     if sneak_active(id) then S.boss_sneak = nil end
-    nemesis_combat.sneak_over(id, fight)
+    nemesis_combat.sneak_over(id, fight)   -- sneak_over: nemesis_combat, his fight starts or is asked again
 end
 
+-- Sneaking boss, while you stand still. Two phases, re-aimed every SNEAK_REFRESH_MS as you
+-- move and turn:
+--   circling: not yet behind you. He follows a curve on a SNEAK_RING_M ring around you: the
+--     target is the ring point SNEAK_STEP_DEG further round toward your back (the shorter way),
+--     so he never cuts across in front of you, and moves out to the ring if he is closer.
+--   homing: once he has been within SNEAK_CLOSE_DEG of straight behind you, he never circles
+--     again this sneak (user design: a player looks around a lot, and he kept going back out
+--     to the ring). Every SNEAK_FACING_MS he reads which way you face; until the next read
+--     he heads, crouched, for a spot SNEAK_BEHIND_M behind you on that heading, from wherever
+--     he is (re-aimed at your current position every SNEAK_REFRESH_MS).
+-- The engine paths each waypoint around walls; pick_dest takes the nearest reachable vertex.
 local SNEAK_RING_M = 70
 local SNEAK_STEP_DEG = 35
 local SNEAK_CLOSE_DEG = 30
 local SNEAK_BEHIND_M = 15
 local SNEAK_FACING_MS = 5000
 
+-- Angle a in radians, wrapped to -pi..pi.
 local function wrap_angle(a)
     while a > math.pi do a = a - 2 * math.pi end
     while a <= -math.pi do a = a + 2 * math.pi end
     return a
 end
 
+-- The target (chase_target in nemesis_chase asks while you are not running). Returns the
+-- target position and the phase name, or nil (no facing to work with).
 function target(npc, actor)
     local s = sneak
     local apos, npos, dir = actor:position(), npc:position(), nil
@@ -130,21 +195,21 @@ function target(npc, actor)
     if not dir then return nil end
     local l = math.sqrt(dir.x * dir.x + dir.z * dir.z)
     if l < 0.01 then return nil end
-    local back = math.atan2(-dir.z / l, -dir.x / l)
+    local back = math.atan2(-dir.z / l, -dir.x / l)            -- straight behind you
     local now = time_global()
     local p = vector()
-
-    if nemesis_siege.indoors_since() and not s.homing then s.homing = true end
+    -- Indoors there is no ring to circle on: he homes in at once (round 64).
+    if nemesis_siege.indoors_since() and not s.homing then s.homing = true end   -- indoors_since: nemesis_siege, you are indoors
     if s.homing then
         if not s.face_at or now - s.face_at >= SNEAK_FACING_MS or now < s.face_at then
-            s.face_at, s.face_back = now, back
+            s.face_at, s.face_back = now, back                  -- your facing, read every 5 s
         end
         local b = s.face_back
         p:set(apos.x + math.cos(b) * SNEAK_BEHIND_M, apos.y, apos.z + math.sin(b) * SNEAK_BEHIND_M)
         return p, "homing in behind you"
     end
     local vx, vz = npos.x - apos.x, npos.z - apos.z
-    local here = math.atan2(vz, vx)
+    local here = math.atan2(vz, vx)                             -- where he is around you
     local off = wrap_angle(back - here)
     local deg = math.abs(off) * 180 / math.pi
     if deg <= SNEAK_CLOSE_DEG then
@@ -158,6 +223,9 @@ function target(npc, actor)
     return p, "circling behind you"
 end
 
+-- How the sneaking boss moves now, for the chase and the combat hand-over (round 135): nil when
+-- he is not sneaking, "hold" once his line is out, "run" while you run, "still" while you
+-- stand, crouch or walk (crouched himself on the last stretch: sneak_closing).
 function sneak_move(id)
     if not sneak_active(id) then return nil end
     if sneak.hold then return "hold" end
@@ -165,6 +233,11 @@ function sneak_move(id)
     return "still"
 end
 
+
+-- His own look: a model GAMMA ships (grok_bo_models_capture.ltx), checked on disk. Monolith:
+-- the preacher or the preacher in ghillie, 50/50 (user request). UNISG: a commando model.
+-- Never a story id: a second copy of a story NPC is deleted (or crashes with
+-- duplicate_story_id_crash on). Applied to the LIVING boss only.
 local LOOKS = {
     monolith = { { "actors\\stalker_monolith\\stalker_monolith_preacher", "actors\\stalker_monolith\\stalker_monolith_preacher_ghillie" },
                  { "actors\\stalker_monolith\\stalker_monolith_skat9_ssp_mask" } },
@@ -172,24 +245,27 @@ local LOOKS = {
             { "actors\\stalker_isg\\light_isg_shades" } },
 }
 
+-- His look: a random model of the first group of LOOKS that has one on disk, or nil.
 local function roll_look()
     for _, group in ipairs(LOOKS[S.faction or "monolith"] or LOOKS.monolith) do
         local have = {}
         for _, p in ipairs(group) do
-            if nemesis_engine.mesh_exists(p) then have[#have + 1] = p end
+            if nemesis_engine.mesh_exists(p) then have[#have + 1] = p end   -- mesh_exists: nemesis_engine, a mesh on disk
         end
         if #have > 0 then return have[math.random(#have)] end
     end
     return nil
 end
 
+-- Member id becomes the running hunt's boss: his name, a fresh sneak, his look (the make_boss and
+-- follow_boss answers).
 function make(id)
-    local r = nemesis_state.member(id)
+    local r = nemesis_state.member(id)   -- member: nemesis_state, his member record
     S.boss_id = id
     S.boss_hunt = true
     S.last_boss_day = boss_day()
-    if r then r.name = nemesis_utils.get_npc_name() end
-
+    if r then r.name = nemesis_utils.get_npc_name() end   -- get_npc_name: nemesis_utils, the hunt's boss name
+    -- Every boss sneaks (user design: one boss, one way of hunting), with a fresh record.
     sneak = {}
     S.boss_sneak = true
     S.sneak_started, S.sneak_said, S.sneak_wait = nil, nil, nil
@@ -199,16 +275,19 @@ function make(id)
     dbg("Nemesis: '%s' is the BOSS of this hunt (look %s).", tostring(r and r.name), tostring(S.boss_look))
 end
 
-local stash_tried_level = nil
+local stash_tried_level = nil      -- runtime: the map where no stash was free (boss stash reward)
 
+-- He died (the boss fights to the death, since round 66). His body stays when you killed him (the
+-- core's death rule). He leaves the hunt as the boss; the hunt stays a boss hunt (beating it
+-- halves the escalation), and his escort fights on. A dead boss never blocks the next one.
 function on_killed(id, by_player, name)
     S.boss_ghost = id
     S.boss_id = nil
     S.boss_sneak = nil
     sneak = {}
-    nemesis_fx.forget_boss()
+    nemesis_fx.forget_boss()   -- forget_boss: nemesis_fx, nobody ignores him any more
     dbg("Nemesis: the boss '%s' is dead (%s).", tostring(name), by_player and "killed by you" or "not by you")
-    if by_player and nemesis_mcm.get_bool("boss_stash", true) then
+    if by_player and nemesis_mcm.get_bool("boss_stash", true) then   -- get_bool: nemesis_mcm, a menu checkbox (cached)
         S.stash_owed = name or nemesis_utils.get_npc_name()
         stash_tried_level = nil
     end
@@ -217,7 +296,11 @@ end
 ---------------------------------------------------------------------------
 -- Boss stash reward (MCM "Boss stash reward", on by default; user design)
 ---------------------------------------------------------------------------
-
+-- Kill the boss yourself and a rare (yellow) stash on the current map is marked for you, filled
+-- by the game's own treasure_manager (GAMMA's map-tiered loot), the same calls
+-- create_random_stash makes. A
+-- map with no free stash box left: owed (saved) and tried again on the next map. No
+-- treasure_manager at all: dropped, with a log line.
 local function stash_on_this_map(name)
     local tm = nil
     pcall(function() tm = treasure_manager end)
@@ -226,26 +309,31 @@ local function stash_on_this_map(name)
     end
     local label = name
     pcall(function()
-
+        -- src: engine level_script.cpp (game.translate_string)
         local st = game.translate_string("st_stash_of")
         if type(st) == "string" and st ~= "" and st ~= "st_stash_of" then label = st .. " " .. name end
     end)
-
+    -- 4th argument: only real, openable stash boxes, as the quest system asks (round 79).
+    -- src: gamma treasure_manager.script (Rare Stashes Balance) (tm.get_random_stash)
     local ok, id, sname, desc, hint = pcall(tm.get_random_stash, nil, label, true, true)
     if not ok or not id then return false end
     local str = sname or label
     if desc and hint then
         str = "%c[255,255,160,0]" .. str .. "\\n%c[default]" .. desc .. "\\n%c[160,100,100,200]" .. hint
     end
-
+    -- A rare (yellow) stash, the higher tier (round 89, user request). treasure_manager makes a
+    -- stash rare only by its own roll: the player's "toolkit_reward_count" (tasks done) against
+    -- completed_task_num and start_chance. For this one call the count is set high enough that
+    -- the roll always passes, then the player's own count and toolkit index are put back as
+    -- they were, so his toolkit progress is untouched. The yellow spot is saved by the engine.
     local cnt0, last0 = nil, nil
     pcall(function()
-
+        -- src: anomaly _g.script (load_var)
         cnt0 = load_var(db.actor, "toolkit_reward_count")
         last0 = load_var(db.actor, "toolkit_reward_last")
-        nemesis_engine.save_var(db.actor, "toolkit_reward_count", 1000000)
+        nemesis_engine.save_var(db.actor, "toolkit_reward_count", 1000000)   -- save_var: nemesis_engine, the lane register's keys only
     end)
-
+    -- src: gamma treasure_manager.script (Rare Stashes Balance) (tm.set_random_stash)
     local ok2, got = pcall(tm.set_random_stash, nil, str, nil, id)
     pcall(function()
         nemesis_engine.save_var(db.actor, "toolkit_reward_count", cnt0)
@@ -253,20 +341,21 @@ local function stash_on_this_map(name)
     end)
     if not ok2 then return false end
     if got then return true end
-
+    -- A treasure_manager that does not return the id: its map marker tells.
     local marked = false
     pcall(function()
-
+        -- src: engine level_script.cpp (level.map_has_object_spot)
         marked = level.map_has_object_spot(id, "treasure") ~= 0 or level.map_has_object_spot(id, "treasure_searched") ~= 0
     end)
     return marked
 end
 
+-- Every slow tick, hunt or not (the core).
 function stash_tick()
     local name = S.stash_owed
     if not name then return end
     local lname = nil
-    pcall(function() lname = nemesis_engine.level_name() end)
+    pcall(function() lname = nemesis_engine.level_name() end)   -- level_name: nemesis_engine, this map's name
     if stash_tried_level and stash_tried_level == lname then return end
     local got = stash_on_this_map(name)
     if got == nil then
@@ -275,7 +364,7 @@ function stash_tick()
     elseif got then
         S.stash_owed = nil
         stash_tried_level = nil
-
+        -- send_news, boss_stash_line, text: nemesis_lines (a PDA message, the stash line, a string's text)
         nemesis_lines.send_news(nemesis_lines.boss_stash_line(name), nemesis_lines.text("st_nemesis_caption_unknown"))
         dbg("Nemesis: the boss stash is marked on %s.", tostring(lname))
     else
@@ -287,7 +376,13 @@ end
 ---------------------------------------------------------------------------
 -- Per tick (online, alive, not retreating): focus, look, sneak, dread
 ---------------------------------------------------------------------------
-
+-- Only these end his sneak (user design; seeing him does nothing):
+--   you shoot him (NPC hits do not count);
+--   you stand still and he is within SNEAK_TRIGGER_M behind you: his line, fire SNEAK_ATTACK_MS later;
+--   you run and he is within RUSH_TRIGGER_M: his line, he stops, fire RUSH_ATTACK_MS later;
+--   you stand still and he is within CLOSE_TRIGGER_M, any side: his line, he stops, fire
+--   CLOSE_ATTACK_MS later.
+-- There is no time limit: he keeps at it until one of those happens.
 local SNEAK_TRIGGER_M = 20
 local SNEAK_ATTACK_MS = 5000
 local RUSH_TRIGGER_M = 20
@@ -297,6 +392,7 @@ local CLOSE_ATTACK_MS = 1500
 local PLAYER_HIT_MS = 1500
 local DREAD_M = 50
 
+-- Whether obj is behind you: more than about 120 degrees off the way you face.
 local function behind_player(obj, actor)
     local behind = false
     pcall(function()
@@ -304,23 +400,24 @@ local function behind_player(obj, actor)
         local bx, bz = obj:position().x - apos.x, obj:position().z - apos.z
         local lb = math.sqrt(bx * bx + bz * bz)
         local ld = math.sqrt(dir.x * dir.x + dir.z * dir.z)
-
+        -- More than ~120 degrees off the way you face.
         behind = lb > 0.01 and ld > 0.01 and (bx * dir.x + bz * dir.z) / (lb * ld) < -0.5
     end)
     return behind
 end
 
+-- Every tick for the boss (the boss_update answer): focus, look, the sneak and the dread lines.
 function update(obj, r, gt, actor)
     local id = r.id
-    nemesis_combat.set_focus(id, true)
-
+    nemesis_combat.set_focus(id, true)   -- set_focus: nemesis_combat, he knows where you are
+    -- Look, re-applied if anything put the old model back (an offline switch).
     local look = S.boss_look
     if look then
         if r.cloak_vis then
             r.cloak_vis = look
         else
-            local vis = nemesis_fx.get_visual(obj)
-
+            local vis = nemesis_fx.get_visual(obj)   -- get_visual: nemesis_fx, his model's name
+            -- set_visual: nemesis_fx, a model swap on a living stalker
             if vis ~= look and vis ~= nemesis_fx.INVISIBLE_VISUAL then nemesis_fx.set_visual(obj, look) end
         end
     end
@@ -340,62 +437,70 @@ function update(obj, r, gt, actor)
                 if d <= RUSH_TRIGGER_M then
                     S.sneak_said, S.sneak_wait = gt, RUSH_ATTACK_MS
                     set_sneak_hold(id, true)
-                    news(nemesis_lines.rush_line())
+                    news(nemesis_lines.rush_line())   -- rush_line: nemesis_lines, a random rush line
                     dbg("Nemesis: the boss has run you down; he opens fire in 1.5 s.")
                 end
             elseif d <= SNEAK_TRIGGER_M and behind_player(obj, actor) then
                 S.sneak_said, S.sneak_wait = gt, SNEAK_ATTACK_MS
-                news(nemesis_lines.sneak_line())
+                news(nemesis_lines.sneak_line())   -- sneak_line: nemesis_lines, a random sneak line
                 dbg("Nemesis: the boss is behind you; he attacks in 5 s.")
             elseif d <= CLOSE_TRIGGER_M then
                 S.sneak_said, S.sneak_wait = gt, CLOSE_ATTACK_MS
                 set_sneak_hold(id, true)
-                news(nemesis_lines.close_line())
+                news(nemesis_lines.close_line())   -- close_line: nemesis_lines, a random close line
                 dbg("Nemesis: the boss is within 10 m of you; he opens fire in 1.5 s.")
             end
         elseif gt - S.sneak_said >= (S.sneak_wait or SNEAK_ATTACK_MS) then
             end_sneak(id, true)
-            nemesis_fx.boss_jolt()
+            nemesis_fx.boss_jolt()   -- boss_jolt: nemesis_fx, the test switch's jolt (round 144)
             dbg("Nemesis: the boss attacks.")
         end
     end
-
+    -- Dread: while he is cloaked and close, now and then a line from nowhere.
     if r.cloak_vis and d <= DREAD_M and not S.sneak_said and gt >= (S.dread_next or 0) then
         S.dread_next = gt + math.random(45, 90) * 1000
-        news(nemesis_lines.dread_line())
+        news(nemesis_lines.dread_line())   -- dread_line: nemesis_lines, a random dread line
     end
 end
 
 ---------------------------------------------------------------------------
 -- Debug mode: his position on your PDA map
 ---------------------------------------------------------------------------
-
+-- A safety net for testing (user request): with Debug mode on, the boss carries a map marker.
+-- It is an object spot on his own id, so the map shows where he is now, online or offline.
+-- Checked every DEBUG_MARK_MS: put on when Debug mode is on and a boss exists, taken off when
+-- Debug mode goes off or he leaves. Map calls are guarded with level.present() (a C++ crash
+-- during a level change that pcall cannot catch, xlibs xpda notes). Spots are not saved.
 local DEBUG_MARK_MS = 3000
 local DEBUG_MARK_TYPE = "red_location"
 local debug_mark_id, debug_mark_at = nil, nil
 
+-- Takes the debug map marker off.
 local function drop_debug_mark()
-
+    -- src: engine level_script.cpp (level.present); engine level_script.cpp (level.map_remove_object_spot)
     if debug_mark_id and level.present() then level.map_remove_object_spot(debug_mark_id, DEBUG_MARK_TYPE) end
     debug_mark_id = nil
 end
 
+-- The core's tick job: the debug marker on or off (see above), every DEBUG_MARK_MS.
 function debug_mark_tick(gt)
     if debug_mark_at and gt - debug_mark_at < DEBUG_MARK_MS and gt >= debug_mark_at then return end
     debug_mark_at = gt
-
+    -- src: engine level_script.cpp (level.present)
     if not level.present() then return end
     local want = nemesis_mcm.get_bool("debug_mode", false) and S.boss_id or nil
     if debug_mark_id and debug_mark_id ~= want then drop_debug_mark() end
     if want and not debug_mark_id then
-
-        if level.map_has_object_spot(want, DEBUG_MARK_TYPE) ~= 0 then return end
-
+        -- src: engine level_script.cpp (level.map_has_object_spot)
+        if level.map_has_object_spot(want, DEBUG_MARK_TYPE) ~= 0 then return end   -- not ours
+        -- src: engine level_script.cpp (level.map_add_object_spot)
+        -- name_of: nemesis_state, his PDA name
         level.map_add_object_spot(want, DEBUG_MARK_TYPE, "Boss (debug): " .. tostring(nemesis_state.name_of(want) or "?"))
         if level.map_has_object_spot(want, DEBUG_MARK_TYPE) ~= 0 then debug_mark_id = want end
     end
 end
 
+-- A game start or load (the runtime_reset event): nothing of the last session is kept.
 function reset_runtime()
     debug_mark_id, debug_mark_at = nil, nil
     stash_tried_level = nil
@@ -403,30 +508,39 @@ function reset_runtime()
     sneak = {}
 end
 
+---------------------------------------------------------------------------
+-- "Reloading, %name%?" (the owner's design since round 93): once per hunt, the boss taunts you when you
+-- reload while he is near. Either boss: the emission boss's own line comes through
+-- nemesis_lines (own_line). Moved here from nemesis_emission in round 115 (it is the boss's).
+---------------------------------------------------------------------------
 local RELOAD_M = 50
-
+-- actor_on_weapon_reload (registered below): the reload line, once a hunt.
 function on_actor_reload(wpn)
     if S.phase ~= "hunting" or not S.boss_id or S.reload_said then return end
-    local obj = nemesis_engine.obj(S.boss_id)
-    if not (obj and nemesis_engine.alive(obj) and db.actor) then return end
+    local obj = nemesis_engine.obj(S.boss_id)   -- obj: nemesis_engine, the online object by id
+    if not (obj and nemesis_engine.alive(obj) and db.actor) then return end   -- alive: nemesis_engine, a safe life read
     local d = 9999
-
+    -- src: engine script_game_object_script2.cpp (actor) (db.actor.position)
     pcall(function() d = obj:position():distance_to(db.actor:position()) end)
     if d > RELOAD_M then return end
     S.reload_said = true
-    news(nemesis_lines.reload_line())
+    news(nemesis_lines.reload_line())   -- reload_line: nemesis_lines, a random reload line
     dbg("Nemesis: the boss saw you reload.")
 end
 
 ---------------------------------------------------------------------------
 -- Settings: this script declares the Boss page (since round 122, the restructure's step 7)
 ---------------------------------------------------------------------------
-
+-- nemesis_mcm puts the menu together from the scripts that own its pages, in a fixed order, and
+-- saves every value under the same path as before ("nemesis/boss/<id>"), so nothing a player set
+-- is lost. Labels and tooltips come from ui_mcm_nemesis_<id> (configs/text/<language>/ui_mcm_nemesis.xml).
+-- mcm_presets: this page's share of Easy, Medium and Hard (Medium = the defaults below; how they
+-- are made: nemesis_mcm, DIFFICULTY). Both are called when the menu is built, never at load.
 function mcm_page()
     return { id = "boss", sh = true, text = "ui_mcm_nemesis_page_boss", gr = {
             { id = "title", type = "slide", link = "ui_options_slider_player", text = "ui_mcm_nemesis_title", size = {512, 50}, spacing = 20 },
             { id = "head_names", type = "title", text = "ui_mcm_nemesis_head_names", align = "l", clr = nemesis_mcm.HEAD_CLR },
-
+            -- default_boss_name: nemesis_utils, the boss's default name in the game's language
             { id = "npc_name", type = "input", val = 0, def = nemesis_utils.default_boss_name("monolith"), hint = "nemesis_npc_name" },
             { id = "isg_boss_name", type = "input", val = 0, def = nemesis_utils.default_boss_name("isg"), hint = "nemesis_isg_boss_name" },
             { id = "line_appearance", type = "line" },
@@ -446,6 +560,7 @@ function mcm_page()
         } }
 end
 
+-- This page's share of the presets (see above).
 function mcm_presets()
     return {
         easy = { boss_chance = 3, boss_min_day = 7, boss_escort = 3, boss_dr = 20, boss_npc_damage = 150, boss_misses = 3 },
@@ -454,20 +569,28 @@ function mcm_presets()
     }
 end
 
+-- This script's choice in Debug & tools, Force the next hunt (round 122).
 function mcm_force_next() return { "boss", "ui_mcm_nemesis_force_next_boss" } end
 
+---------------------------------------------------------------------------
+-- The module: since round 135 the boss is the second module, as the emission boss has been since
+-- the restructure of round 115. Everything the core, the spawn and the chase ask him, and
+-- everything he listens to, is added here. They never call him by name (tools/module_check.py). An answer returns nil for
+-- "not mine" (the next one is asked); never false where nil is meant. Without this script there
+-- is no boss at all: nobody answers boss_roll, so no hunt brings one.
+---------------------------------------------------------------------------
 function on_game_start()
     local name = "the boss"
     local na, nl = 0, 0
-
+    -- Adds answer fn to question q under this module's name, counted for the line at the end.
     local function answer(q, fn, order)
         na = na + 1
-        nemesis_events.answer(q, name, fn, order)
+        nemesis_events.answer(q, name, fn, order)   -- answer: nemesis_events, a module's answer to a question
     end
-
+    -- Adds listener fn to event ev under this module's name, counted for the line at the end.
     local function on(ev, fn, order)
         nl = nl + 1
-        nemesis_events.on(ev, name, fn, order)
+        nemesis_events.on(ev, name, fn, order)   -- on: nemesis_events, a listener to an event
     end
     answer("boss_roll", function(when, warning_on)
         if when == "warning" then return roll_for_warning() end
@@ -478,7 +601,8 @@ function on_game_start()
         return true
     end)
     answer("boss_exists", function() return exists() or nil end)
-
+    -- A module's own hunt answers these first (the emission boss, order 100); order 200: every
+    -- other boss is this one.
     answer("follow_boss", function(id, follow)
         make(id)
         S.boss_look = follow and follow.boss_look or S.boss_look
@@ -501,20 +625,21 @@ function on_game_start()
         if p then return { pos = p, mode = mode } end
     end)
     answer("sneak_closing", function(id) return sneak_closing(id) or nil end)
-
+    -- Every hunt counts toward his chance, a boss hunt resets it; a module's own hunt (the
+    -- emission boss's) does not count, as before.
     on("hunt_started", function(faction, boss_hunt, emission_hunt)
         if not emission_hunt then count_hunt(boss_hunt == true) end
     end)
-
+    -- order 20, as before: after the emission boss's own (15) and the reserved body (10).
     on("member_died", function(id, r, yours)
-        if nemesis_member.is_boss(id) then on_killed(id, yours, r and r.name) end
+        if nemesis_member.is_boss(id) then on_killed(id, yours, r and r.name) end   -- is_boss: nemesis_member, the running hunt's boss
     end, 20)
     on("runtime_reset", function() reset_runtime() end)
-
+    -- add_job: nemesis_core, a job on the core's tick or slow tick
     nemesis_core.add_job("tick", "the boss's debug marker", function(gt) debug_mark_tick(gt) end, nil, true)
-
+    -- order 40: where the stash always ran, with the reserved bodies.
     nemesis_core.add_job("slow", "the boss stash", function() stash_tick() end, 40, true)
-
+    -- src: anomaly _g.script (RegisterScriptCallback)
     RegisterScriptCallback("actor_on_weapon_reload", on_actor_reload)
     dbg("Nemesis: the boss module is in (%s answers, %s listeners, 1 tick job, 1 slow job, 1 callback).", tostring(na), tostring(nl))
 end

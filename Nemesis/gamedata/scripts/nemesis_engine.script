@@ -1,67 +1,112 @@
 -- Nemesis Engine: the one doorway to the game engine and xlibs (made in round 109).
+-- Used by: every other Nemesis script (vertices, objects, health, names, removal, time, effects).
+-- Uses: xlibs (xcombat, xobject, xcreature, xsquad, xlevel), Anomaly's _g.script (save_var,
+-- alife_create, alife_release, IsStalker, IsMonster), the engine (level, alife, game objects),
+-- nemesis_state (member), nemesis_utils (log_tag).
+-- The one doorway to the game engine and xlibs for everything the mod's scripts share: level
+-- vertices and the indoor test, files and ini sections, game and server objects, alive and
+-- distance, health and relations, time, particle effects (one-shot sounds: nemesis_sound, round 126).
+--
+-- Why one doorway: an engine function that changes between exe versions, or is missing in
+-- an older one, is fixed here once instead of in every script that calls it. Every wrapper is
+-- safe: an engine call that fails returns the documented default (nil, false, 0) instead of an
+-- error, so a feature can never crash the game through it.
+--
+-- What stays outside: plain reads on a game object the caller already holds (obj:position(),
+-- obj:id(), npc:see(enemy) inside a pcall the caller owns) and the AI levers that are part of a
+-- feature (the chase's planner, xcombat cover searches). The other mods the mod talks to have
+-- their own doorway, nemesis_compat. The full list of engine calls, with their owner, is in
+-- Documents/Phase 0/Phase0_3a_call_inventory.md.
+--
+-- Every script calls these here; the older names that only passed calls on to them (in
+-- nemesis_utils and nemesis_fx) were removed in round 137.
+-- src (plain reads used throughout this file, round 121): engine script_game_object_script2.cpp (position)
 
 ---------------------------------------------------------------------------
 -- Level vertices and places
 ---------------------------------------------------------------------------
-NO_VERTEX = 4294967295
+NO_VERTEX = 4294967295          -- the engine's "no level vertex"
 
+-- A real level vertex (not nil, not NO_VERTEX).
 function valid_vertex(v) return v ~= nil and v < NO_VERTEX end
 
+-- A copy of vertex lv's position (the engine's vector is reused, so it is copied), or nil.
 function vertex_pos(lv)
     local p = nil
-
+    -- src: engine level_script.cpp (level.vertex_position)
     pcall(function() p = level.vertex_position(lv) end)
     if not p then return nil end
     return vector():set(p.x, p.y, p.z)
 end
 
+-- The level vertex at pos, or nil when pos is off the navmesh.
 function vertex_at(pos)
     local v = nil
-
+    -- src: engine level_script.cpp (level.vertex_id)
     pcall(function() v = level.vertex_id(pos) end)
     return valid_vertex(v) and v or nil
 end
 
+-- The vertex dist m from lv along dir (x, z), stopping at walls as the engine does (a short
+-- result means a wall), or nil.
 function vertex_toward(lv, dir, dist)
     local v = nil
-
+    -- src: engine level_script.cpp (level.vertex_in_direction)
     pcall(function() v = level.vertex_in_direction(lv, dir, dist) end)
     return valid_vertex(v) and v or nil
 end
 
+-- Is pos indoors? xlibs' test (xcombat.is_indoor: up to 5 ray picks, so a few per tick at
+-- most). False when it cannot be read.
 function is_indoor(pos)
     local yes = false
-
+    -- src: xlibs xcombat.script (xcombat.is_indoor)
     pcall(function() yes = xcombat.is_indoor(pos) == true end)
     return yes
 end
 
-local BUILDING_MIN_WALLS = 2
+local BUILDING_MIN_WALLS = 2       -- sides with a wall hit (of 4) for a building, with a roof hit
 
+-- The walls and roof around pos, through xlibs' xcombat.get_enclosure: a table with the roof's
+-- distance and the four walls' (nil where a ray hit nothing), or nil without that xlibs
+-- function. Used by is_building below and by nemesis_emission (the exit scan's map).
 function enclosure(pos)
     if not pos then return nil end
     local enc = nil
     if xcombat and xcombat.get_enclosure then
-
+        -- src: xlibs xcombat.script (xcombat.get_enclosure)
         pcall(function() enc = xcombat.get_enclosure(pos) end)
     end
     return type(enc) == "table" and enc or nil
 end
-local RQ_STATIC = 2
+local RQ_STATIC = 2   -- rqtStatic (xray-monolith xr_collide_defs.h): level geometry only, as xlibs' own
 
+-- Whether the straight line a -> b is blocked by the level's own geometry (walls, rocks, never
+-- NPCs or objects), y metres above both ends: true / false, nil when this xlibs has no such ray.
+-- Through xlibs' clearance ray (xcombat.is_line_blocked: one ray_pick, as get_enclosure's; a hit
+-- in its last metre counts as clear). For the emission boss's raycast burst, which finds a
+-- building's doors (nemesis_emission, round 132).
 function line_blocked(a, b, y)
     if not (a and b and xcombat and xcombat.is_line_blocked) then return nil end
     local r = nil
-
+    -- src: xlibs xcombat.script (xcombat.is_line_blocked)
     pcall(function() r = xcombat.is_line_blocked(a, b, { from_y = y, to_y = y, flags = RQ_STATIC }) end)
     return r
 end
-
+-- Inside a building, big halls too: the emission boss's ghosts never came in the Butcher's train
+-- hangar in Garbage (the owner's play test, round 127). xcombat.is_indoor wants a roof within 4 m
+-- of your chest and walls within 5 m on 2 of 4 sides: an ordinary room. A hangar's roof and walls
+-- are much farther, so it read as outdoors. This reads the same xlibs probe (enclosure above: one
+-- ray up, reaching 18 m, four along the ground, reaching 40 m) with wider limits: a roof hit and
+-- walls hit on at least BUILDING_MIN_WALLS sides. Every room that passes is_indoor passes this.
+-- A porch or a tree canopy can pass it too, so it is never used alone for a shelter (the
+-- emission boss also asks for emission cover). Underground levels count as indoors (xlibs'
+-- list). Without get_enclosure (an older xlibs) it is is_indoor. 5 rays a call: never per frame.
 function is_building(pos)
     if not pos then return false end
     if not (xcombat and xcombat.get_enclosure) then return is_indoor(pos) end
     local under = false
-    pcall(function() under = xcombat.INDOOR_LEVELS[level.name()] == true end)
+    pcall(function() under = xcombat.INDOOR_LEVELS[level.name()] == true end)   -- level.name: the engine, the current level's name
     if under then return true end
     local enc = enclosure(pos)
     if not (enc and enc.roof) then return false end
@@ -74,52 +119,64 @@ function is_building(pos)
     return walls >= BUILDING_MIN_WALLS
 end
 
+-- The current level's name, or nil (during a load).
 function level_name()
     local n = nil
-
+    -- src: engine level_script.cpp (level.name)
     pcall(function() n = level.name() end)
     return n
 end
 
+-- An underground map (user design: no hunts there): one of xlibs' underground levels, or the
+-- game's own "underground" weather flag (level_weathers sets it for every map without sky).
 function on_underground_map()
     local under = false
-
+    -- src: engine level_script.cpp (level.name)
     pcall(function() under = xcombat.INDOOR_LEVELS[level.name()] == true end)
     if under then return true end
-
+    -- src: anomaly _g.script event storage (GetEvent)
     pcall(function() under = GetEvent("underground") and true or false end)
     return under
 end
 
+-- Same-level test on two server objects, via the xlibs level helper.
+-- Returns true / false, or nil when the level cannot be read.
 function same_level(se_a, se_b)
     if not se_a or not se_b then return nil end
     local ok, a, b = pcall(function()
-
+        -- src: xlibs xlevel.script (xlevel.get_level_id)
         return xlevel.get_level_id(se_a), xlevel.get_level_id(se_b)
     end)
     if not ok or not a or not b then return nil end
     return a == b
 end
 
+-- Distance between two positions on the ground (height left out: a ghost floats 1 m up, a
+-- door sits on a step).
 function flat_dist(a, b) return math.sqrt((a.x - b.x) ^ 2 + (a.z - b.z) ^ 2) end
 
 ---------------------------------------------------------------------------
 -- Files and ini sections
 ---------------------------------------------------------------------------
-
+-- A file in one of the engine's roots ("$game_sounds$", "$game_meshes$", "$game_anims$",
+-- "$game_scripts$"), loose or in the game archives. A missing .ppe or mesh is an engine fatal
+-- error that pcall cannot catch, so those are always checked here first (round 76, 93).
 function file_exists(root, path)
-
+    -- src: engine fs_registrator_script.cpp (getFS().exist)
     local ok, res = pcall(function() return getFS():exist(root, path) end)
     return ok and res and true or false
 end
 
+-- A sound file present (path without ".ogg")?
 function sound_exists(path) return file_exists("$game_sounds$", path .. ".ogg") end
 
+-- A mesh present (path without ".ogf")?
 function mesh_exists(path) return file_exists("$game_meshes$", path .. ".ogf") end
 
+-- An ini section present in system.ltx (and its includes, DLTX additions included)?
 function section_exists(sec)
     local ok = false
-
+    -- src: engine script_ini_file_script.cpp (section_exist)
     pcall(function() ok = ini_sys:section_exist(sec) end)
     return ok
 end
@@ -127,80 +184,97 @@ end
 ---------------------------------------------------------------------------
 -- Objects
 ---------------------------------------------------------------------------
-
+-- The online game object with this id, or nil (offline or gone).
+-- The owner's rule is xlibs first (round 123): xobject.get_go is level.object_by_id behind a level.present() guard;
+-- the engine call is the fallback for an xlibs without it.
 function obj(id)
     if id == nil then return nil end
     local o = nil
     if xobject and xobject.get_go then
-
+        -- src: xlibs xobject.script (xobject.get_go)
         pcall(function() o = xobject.get_go(id) end)
         return o
     end
-
+    -- src: engine level_script.cpp (level.object_by_id)
     pcall(function() o = level.object_by_id(id) end)
     return o
 end
 
+-- A character's portrait (the icon GAMMA's companion UI shows): the online object's, else the
+-- server object's; nil without one. Moved here from nemesis_boss in round 135 (the boss module):
+-- the core and both bosses use it for the boss's PDA messages.
 function character_icon(id)
     local ic = nil
     pcall(function()
         local o = obj(id)
-
+        -- src: engine script_game_object_script3.cpp (character_icon)
         ic = o and o:character_icon() or se(id):character_icon()
     end)
     if type(ic) ~= "string" or ic == "" then return nil end
     return ic
 end
 
+-- The server object with this id, or nil.
+-- The owner's rule is xlibs first (round 123): xobject.get_se is Anomaly's guarded alife_object.
 function se(id)
     if id == nil then return nil end
     local s = nil
     if xobject and xobject.get_se then
-
+        -- src: xlibs xobject.script (xobject.get_se)
         pcall(function() s = xobject.get_se(id) end)
         return s
     end
-
+    -- src: engine alife_simulator_script.cpp (alife().object)
     pcall(function() s = alife():object(id) end)
     return s
 end
 
+-- A stalker / a mutant, by class (xlibs first: xcreature.is_stalker / is_mutant are Anomaly's
+-- IsStalker / IsMonster on the object's class id). False when it cannot be read.
 function is_stalker(o)
     if not o then return false end
     local yes = false
     if xcreature and xcreature.is_stalker then
-
+        -- src: xlibs xcreature.script (xcreature.is_stalker)
         pcall(function() yes = xcreature.is_stalker(o) == true end)
     else
-
+        -- src: anomaly _g.script (IsStalker)
         pcall(function() yes = IsStalker(o) == true end)
     end
     return yes
 end
-
+-- A mutant, by class (xlibs' xcreature.is_mutant, else Anomaly's IsMonster). False when it
+-- cannot be read. Called by nemesis_damage and nemesis_fx (mutant hits, the horde).
 function is_mutant(o)
     if not o then return false end
     local yes = false
     if xcreature and xcreature.is_mutant then
-
+        -- src: xlibs xcreature.script (xcreature.is_mutant)
         pcall(function() yes = xcreature.is_mutant(o) == true end)
     else
-
+        -- src: anomaly _g.script (IsMonster)
         pcall(function() yes = IsMonster(o) == true end)
     end
     return yes
 end
 
-local function _alive(o) return o:alive() end
+local function _alive(o) return o:alive() end   -- the engine's read, called inside a pcall below
 
+-- Whether object o is alive, the engine's own read made safe (false when it cannot be read).
+-- Note: the engine's alive() is health > 0, so a living stalker that a hit put at 0 for a
+-- moment reads as not alive (GAMMA's own ballistics can, before nemesis_damage's Post-tier step
+-- puts his health back, round 139); the mod's own death marks are in nemesis_member.
 function alive(o)
     if not o then return false end
     local ok, yes = pcall(_alive, o)
     return ok and yes == true
 end
 
-local function _dist(a, b) return a:position():distance_to(b:position()) end
+local function _dist(a, b) return a:position():distance_to(b:position()) end   -- called inside a pcall below
 
+-- Distance in metres between game objects a and b, or nil when either cannot be read. The one
+-- distance read of the mod: chase, combat and fx had their own copies of _dist (each in its own
+-- pcall) and call this since round 137 (a nil answer where their pcall failed).
 function dist(a, b)
     if not (a and b) then return nil end
     local ok, d = pcall(_dist, a, b)
@@ -210,20 +284,34 @@ end
 ---------------------------------------------------------------------------
 -- Ownership: ours to change is only what the mod creates (the owner's lane rule 1, round 123)
 ---------------------------------------------------------------------------
-
+-- Every call that changes an object in a lasting way (health, invulnerability, model, name,
+-- saved values, removal, creating squads and their members) goes through the functions below,
+-- and each refuses a target that is not ours, with an important error (critical_errors.md A17, A18):
+-- refusing is always safe, touching another mod's or the game's NPC is not. Ours:
+--   * a hunt member (nemesis_state);
+--   * a server object of one of the mod's own sections, all named "nemesis_..." (the hunt and
+--     emission squads, the horde squads, the emission boss, the phantoms);
+--   * a member of such a squad (a squad still filling, the horde);
+--   * an id this check has already found ours this session (a body teleported out is no longer a
+--     member when the vanish queue removes it).
+-- The player is never "ours": the documented effects on you (the ghosts' push and psy share,
+-- PDA lines, sounds) are separate calls, listed in lane_register.md.
 local OWN_PREFIX = "nemesis_"
-local known = {}
+local known = {}                   -- [id] = true: found ours this session
 
+-- Whether server object se_obj is of one of the mod's own sections (its name starts "nemesis_").
 local function own_section(se_obj)
     local sec = nil
     pcall(function() sec = se_obj:section_name() end)
     return type(sec) == "string" and sec:sub(1, #OWN_PREFIX) == OWN_PREFIX
 end
-
+-- Whether the object with this id is ours to change (see the list above): a hunt member
+-- (nemesis_state.member), a server object of our own sections or a member of one, or an id found
+-- ours earlier this session (known). Every changing function below asks this first.
 function ours(id)
     if id == nil then return false end
     if known[id] then return true end
-    local yes = nemesis_state ~= nil and nemesis_state.member(id) ~= nil
+    local yes = nemesis_state ~= nil and nemesis_state.member(id) ~= nil   -- member: nemesis_state, a hunt member's record or nil
     if not yes then
         local s = se(id)
         if s then
@@ -239,125 +327,155 @@ function ours(id)
     if yes then known[id] = true end
     return yes
 end
-
+-- The id of a game or server object, or nil. A server object keeps its id as a number field
+-- (se.id); a game object has the method id() (round 125: the kit's first run found the method
+-- alone refused every server object: a squad's members, a name, a removal).
 local function _oid(o)
     local v = o.id
     if type(v) == "number" then return v end
     return o:id()
 end
-
+-- The id of game or server object o through _oid, made safe; nil when it cannot be read.
 local function id_of(o)
     if o == nil then return nil end
     local ok, i = pcall(_oid, o)
     if ok and type(i) == "number" then return i end
     return nil
 end
-
+-- Refused: one important line (at most once a minute per message), false back to the caller.
 local function refuse(what, o)
     local i = id_of(o)
     local name = nil
     pcall(function() name = o:name() end)
-    nemesis_utils.log_tag("ENGINE", "!!Nemesis ERROR: refused to %s on %s (id %s): not one of ours.", what, tostring(name or "?"), tostring(i))
+    nemesis_utils.log_tag("ENGINE", "!!Nemesis ERROR: refused to %s on %s (id %s): not one of ours.", what, tostring(name or "?"), tostring(i))   -- log_tag: nemesis_utils, the tagged logger (a !! line always shows)
     return false
 end
-
+-- A load: the session memory starts again (the ids in a save are new objects to it).
 function forget_owned() known = {} end
 
+-- Health set directly (set_health_ex), held to 0..1. Callers make sure it is never a dead NPC:
+-- health written back onto a body crashed the game (round 105). It brings the body back as a "living" stalker
+-- whose AI memory was cleared at its death, and the engine's next AI update of it reads that
+-- memory (CHitMemoryManager::update, null read). Not checked here with alive(): that is only
+-- health > 0, and GAMMA's own ballistics can leave a living hunter at 0 for a moment before
+-- nemesis_damage's Post-tier step puts his health back (round 139). The health property would SET as well (every Anomaly engine
+-- since 1.5.1), but set_health_ex says so plainly. Ours only (round 123).
 function set_health(o, v)
     if not o or not v then return false end
     if not ours(id_of(o)) then return refuse("set health", o) end
     if v < 0 then v = 0 end
     if v > 1 then v = 1 end
-
+    -- src: engine script_game_object_script3.cpp (set_health_ex)
     return pcall(function() o:set_health_ex(v) end)
 end
 
+-- Invulnerable on or off (a retreating named hunter, the smart cover guard). Ours only.
 function set_invulnerable(o, on)
     if not o then return false end
     if not ours(id_of(o)) then return refuse("set invulnerable", o) end
-
+    -- src: engine script_game_object_script2.cpp (invulnerable)
     return pcall(function() o:invulnerable(on and true or false) end)
 end
 
+-- The object's model (the cloak, the lethal-hit mask, the teleport). Ours only. Callers never
+-- change a dead stalker's model (nemesis_fx.set_visual checks that first).
 function set_visual(o, vis)
     if not (o and vis) then return false end
     if not ours(id_of(o)) then return refuse("change the model", o) end
-
+    -- src: engine script_game_object_script2.cpp (set_visual_name)
     return pcall(function() o:set_visual_name(vis) end)
 end
 
+-- A server object's character name (a hunter's name, kept on his server object). Ours only.
 function set_character_name(s, name)
     if not (s and name) then return false end
     if not ours(id_of(s)) then return refuse("rename", s) end
-
+    -- src: engine xrServer_Objects_ALife_Monsters_script.cpp (set_character_name)
     return pcall(function() s:set_character_name(name) end)
 end
 
-local PLAYER_KEYS = { toolkit_reward_count = true, toolkit_reward_last = true }
+local PLAYER_KEYS = { toolkit_reward_count = true, toolkit_reward_last = true }   -- the player's keys we may write
 
+-- Writes value val under key into object o's own saved values (pstor), through Anomaly's
+-- save_var. Ours only, or the player for the keys the lane register lists (the boss stash:
+-- GAMMA's toolkit counters, put back right after, lane_register B). Refused otherwise.
 function save_var(o, key, val)
     if not (o and key) then return false end
     local i = id_of(o)
     local player = db.actor ~= nil and i == id_of(db.actor)
     if not ((player and PLAYER_KEYS[key]) or (not player and ours(i))) then return refuse("save " .. tostring(key), o) end
-
+    -- src: anomaly _g.script (save_var)
     return pcall(function() _G.save_var(o, key, val) end)
 end
 
+-- Removal of one of our NPCs or squads. Goes through _g.alife_release, the dispatcher every
+-- Anomaly script uses: a squad member is taken out with squad:remove_npc(id, true) (the squad
+-- forgets it first, then it is released), a squad with remove_squad (map spot, board,
+-- release). A raw alife():release on a member left the squad listing an id that no longer
+-- exists. Ours only.
 function release(s)
     if not s then return false end
     if not ours(id_of(s)) then return refuse("remove", s) end
     return pcall(function()
         if xobject and xobject.release then
-
+            -- src: xlibs xobject.script (xobject.release): Anomaly's alife_release dispatcher
             xobject.release(s)
         elseif type(alife_release) == "function" then
-
+            -- src: anomaly _g.script (alife_release)
             alife_release(s)
         else
-
+            -- src: engine alife_simulator_script.cpp (alife().release)
             alife():release(s, true)
         end
     end)
 end
 
+-- Hand a squad of ours back to the simulation (xsquad.release_squad: its scripted target
+-- dropped). Ours only.
 function release_squad(squad)
     if not squad then return false end
     if not ours(id_of(squad)) then return refuse("release the squad", squad) end
-
+    -- src: xlibs xsquad.script (xsquad.release_squad)
     return pcall(xsquad.release_squad, squad)
 end
 
+-- A new squad of one of the mod's own sections ("nemesis_..."), as SIMBOARD:create_squad does
+-- minus the smart; nil when refused or failed. Its first member is made by the caller.
 function create_squad(section, pos, lv, gv)
     if type(section) ~= "string" or section:sub(1, #OWN_PREFIX) ~= OWN_PREFIX then
         nemesis_utils.log_tag("ENGINE", "!!Nemesis ERROR: refused to create a squad of section %s: not one of ours.", tostring(section))
         return nil
     end
-
+    -- src: anomaly _g.script (alife_create)
     local squad = alife_create(section, pos, lv, gv)
     if squad then known[id_of(squad) or -1] = true end
     return squad
 end
 
+-- One member added to a squad of ours (sim_squad_scripted:add_squad_member). Returns what it
+-- returns (the new member's id), or nil when refused.
 function add_squad_member(squad, section, pos, lv, gv)
     if not squad then return nil end
     if not ours(id_of(squad)) then
         refuse("add a member to a squad", squad)
         return nil
     end
-
+    -- src: anomaly sim_squad_scripted.script (add_squad_member)
     return squad:add_squad_member(section, pos, lv, gv)
 end
 
+-- An item of one of the mod's own sections at pos (the emission boss's phantoms). True when it
+-- went out.
 function spawn_own_item(section, pos)
     if type(section) ~= "string" or section:sub(1, #OWN_PREFIX) ~= OWN_PREFIX then
         nemesis_utils.log_tag("ENGINE", "!!Nemesis ERROR: refused to spawn %s: not one of ours.", tostring(section))
         return false
     end
-
+    -- src: engine level_script.cpp (level.spawn_item)
     return pcall(function() level.spawn_item(section, pos, 4294967295, 65535, false) end)
 end
 
+-- a's relation toward b (game_object.enemy / neutral / friend). False when it fails.
 function set_relation(a, rel, b)
     if not (a and b) then return false end
     return pcall(function() a:set_relation(rel, b) end)
@@ -366,36 +484,50 @@ end
 ---------------------------------------------------------------------------
 -- Time
 ---------------------------------------------------------------------------
-local epoch = nil
+local epoch = nil                  -- 1 January 2000 as a game time, made on first use
 
+-- Game seconds since a fixed epoch (1 January 2000, in-game). Survives save/load and follows the
+-- in-game clock (days and hours in the MCM are therefore real in-game days and hours).
+-- time_global(), by contrast, restarts at every load: never save it as it is (round 93).
 function game_seconds()
     if not epoch then
-
+        -- src: engine level_script.cpp (game.CTime)
         epoch = game.CTime()
         epoch:set(2000, 1, 1, 0, 0, 0, 0)
     end
-
+    -- src: engine level_script.cpp (game.get_game_time); engine level_script.cpp CTime (diffSec)
     return game.get_game_time():diffSec(epoch)
 end
 
+-- The world's two runtime volume factors, sound effects and music (0..1), or nil when they
+-- cannot be read: level.get_snd_volume and get_music_volume (round 145, a new engine call; owner
+-- OK, 22 October). The official MT source, level_script.cpp 1070-1094: psSoundVFactor and
+-- psSoundVMusicFactor, kept in memory only (never saved, so a crash cannot leave a player's
+-- volume low). Every effect sound and every music track is scaled by them (xrSound
+-- SoundRender_Emitter_FSM.cpp 394). xlibs has no wrapper for them (checked).
 function sound_factors()
     local ok, fx, mu = pcall(function()
-
+        -- src: engine level_script.cpp (level.get_snd_volume); engine level_script.cpp (level.get_music_volume)
         return level.get_snd_volume(), level.get_music_volume()
     end)
     if not ok then return nil, nil end
     return tonumber(fx), tonumber(mu)
 end
 
+-- Sets the two factors (nil leaves that one as it is; the engine clamps both to 0..1). Returns
+-- true when the calls went through. The mod's one global write: only nemesis_sound's silence
+-- uses it, and it always puts them back (level.set_snd_volume, set_music_volume, round 145).
 function set_sound_factors(fx, mu)
     return pcall(function()
-
+        -- src: engine level_script.cpp (level.set_snd_volume)
         if fx then level.set_snd_volume(fx) end
-
+        -- src: engine level_script.cpp (level.set_music_volume)
         if mu then level.set_music_volume(mu) end
     end) == true
 end
 
+-- Milliseconds of CPU time (os.clock), 0 if the call fails. For the PERF lines and the
+-- Wearable Devices timings only.
 function clock_ms()
     local ok, c = pcall(os.clock)
     return ok and type(c) == "number" and c * 1000 or 0
@@ -404,14 +536,15 @@ end
 ---------------------------------------------------------------------------
 -- Particle effects (one-shot sounds are nemesis_sound's since round 126: xsound.play)
 ---------------------------------------------------------------------------
-
+-- A particle effect played once at pos (particles.xr name). The object is returned: the caller
+-- keeps it while it plays. nil when it fails.
 function particle_at(name, pos)
     if not (name and pos) then return nil end
     local p = nil
     local ok = pcall(function()
-
+        -- src: engine script_particles_script.cpp (particles_object)
         p = particles_object(name)
-
+        -- src: engine script_sound_script.cpp / script_particles_script.cpp (play_at_pos)
         p:play_at_pos(pos)
     end)
     return ok and p or nil

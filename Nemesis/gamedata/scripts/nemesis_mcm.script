@@ -1,14 +1,49 @@
 -- Nemesis MCM Configuration
+-- Registers the settings in the Anomaly MCM framework and exposes cached getters.
+-- Used by: every Nemesis script (get_number, get_bool, get_string, path, invalidate); MCM itself
+-- (on_mcm_load, the apply and selection callbacks); nemesis_core (on_game_start, sync_difficulty);
+-- nemesis_guard (load_custom_backup); nemesis_damage (settings_version).
+-- Uses: MCM's ui_mcm, Anomaly's axr_main.config, nemesis_engine (file_exists), nemesis_config
+-- (the backup), nemesis_utils (log_tag), and each page script's mcm_page and mcm_presets.
+--
+-- Six pages under "Nemesis Wave Spawn System" (round 98 layout, user design): General, Hunts,
+-- Combat, Boss, Emission boss, Debug & tools. The Hunts page keeps the id "spawning" (its old
+-- name), so its settings keep their saved values; a setting moved to another page starts from
+-- its default once (user: no migration). MCM stores each value in
+-- axr_options, section "mcm", under its path "nemesis/<page>/<id>" (ui_mcm.script: the ids of
+-- the nested tables down to the option). Every option carries hint = "nemesis_<id>", so its
+-- label and tooltip still come from the same strings as before (ui_mcm.script uses
+-- "ui_mcm_" .. hint and "ui_mcm_" .. hint .. "_desc"):
+--   ui_mcm_nemesis_<id>        label
+--   ui_mcm_nemesis_<id>_desc   tooltip
+--   ui_mcm_nemesis_page_<page> page name in the tree
+-- The rest of the mod asks by id only; PAGE_OF maps an id to its page, built from the same
+-- table MCM reads, so the two cannot drift apart.
+--
+-- Each page is declared by the script that owns it (round 122, the restructure's step 7). This
+-- script keeps General (the difficulty, warnings, every sound, effects) and Debug & tools, and puts
+-- the menu together from PAGES: the other scripts each define mcm_page() and mcm_presets(). A
+-- script that is not installed has no page and no share of the presets (the emission boss has
+-- been a module since round 115). The paths stay "nemesis/<page>/<id>", so every saved value keeps its place.
+-- MCM value types (val): 0 = string, 1 = boolean, 2 = number.
 
+-- Section headings inside a page (MCM "line" and "title" support elements; they carry no value,
+-- so PAGE_OF skips them).
 HEAD_CLR = { 255, 250, 150, 75 }
 
-local provider
+local provider                     -- below
 
+-- The menu's pages, in order. "general" and "debug" are this script's; every other entry is the
+-- script that declares that page (mcm_page, mcm_presets). A name here is only a place in the menu:
+-- nothing is called on a script that is not installed (round 122).
 local PAGES = { "general", "nemesis_spawn", "nemesis_damage", "nemesis_boss", "nemesis_emission", "debug" }
 
+-- A page's script, when it is installed and declares a page. Looked up without loading anything
+-- that is not there: a script already loaded, else one whose file exists (a global that does not
+-- exist makes Anomaly try to load a script of that name, EF-048).
 provider = function(name)
     local m = rawget(_G, name)
-
+    -- file_exists: nemesis_engine, a file in one of the engine's roots, loose or archived
     if m == nil and nemesis_engine and nemesis_engine.file_exists("$game_scripts$", name .. ".script") then
         pcall(function() m = _G[name] end)
     end
@@ -16,6 +51,8 @@ provider = function(name)
     return nil
 end
 
+-- Force the next hunt's choices: None, then each installed page script's own (mcm_force_next:
+-- the boss, the emission boss), in page order (round 122).
 local function force_next_choices()
     local list = { { "none", "ui_mcm_nemesis_force_next_none" } }
     for _, name in ipairs(PAGES) do
@@ -28,6 +65,7 @@ local function force_next_choices()
     return list
 end
 
+-- The sound section of the General page: nemesis_sound's (round 126), placed where it always was.
 local function sound_section()
     local m = rawget(_G, "nemesis_sound")
     if m == nil and nemesis_engine and nemesis_engine.file_exists("$game_scripts$", "nemesis_sound.script") then
@@ -37,7 +75,7 @@ local function sound_section()
     local ok, t = pcall(m.mcm_sound_section)
     return ok and type(t) == "table" and t or {}
 end
-
+-- items, with nemesis_sound's section put in just before the effects line.
 local function with_sound(items)
     local out = {}
     for _, o in ipairs(items) do
@@ -49,6 +87,7 @@ local function with_sound(items)
     return out
 end
 
+-- This script's own pages.
 local function general_page()
     return { id = "general", sh = true, text = "ui_mcm_nemesis_page_general", gr = with_sound({
             { id = "title", type = "slide", link = "ui_options_slider_player", text = "ui_mcm_nemesis_title", size = {512, 50}, spacing = 20 },
@@ -68,6 +107,7 @@ local function general_page()
         }) }
 end
 
+-- The Debug & tools page: the debug boxes, Force the next hunt and the tools.
 local function debug_page()
     return { id = "debug", sh = true, text = "ui_mcm_nemesis_page_debug", gr = {
             { id = "title", type = "slide", link = "ui_options_slider_player", text = "ui_mcm_nemesis_title", size = {512, 50}, spacing = 20 },
@@ -83,6 +123,7 @@ local function debug_page()
         } }
 end
 
+-- Every page in PAGES order, and whether a loaded page script did not answer yet (mid-load).
 local function pages()
     local out, missing = {}, false
     for _, name in ipairs(PAGES) do
@@ -95,7 +136,7 @@ local function pages()
                 local ok, t = pcall(m.mcm_page)
                 if ok and type(t) == "table" then page = t else missing = true end
             elseif rawget(_G, name) ~= nil then
-                missing = true
+                missing = true             -- loaded, but its page is not there yet (mid-load)
             end
         end
         if page then out[#out + 1] = page end
@@ -103,17 +144,23 @@ local function pages()
     return out, missing
 end
 
+-- The menu tree MCM reads: the "nemesis" root holding the pages.
 local function options() return { id = "nemesis", gr = (pages()) } end
 
+-- MCM builds its menu (main menu or in game): from here on our apply handler is registered, so
+-- a difficulty picked in the main menu applies at once.
 function on_mcm_load()
     register_apply_handler()
     build()
     return options()
 end
 
+-- [id] = page id, and the presets (DIFFICULTY, below), both filled from the pages the first time
+-- they are needed (not at load: the other scripts may not be loaded yet). Filled again until
+-- every installed page has answered.
 local PAGE_OF = {}
 local built = false
-
+-- Fills PAGE_OF and DIFFICULTY from the pages (see above); asked again until every installed page answered.
 function build()
     if built then return end
     local list, missing = pages()
@@ -138,47 +185,70 @@ function build()
     built = not missing
 end
 
+-- MCM path of a setting, e.g. "nemesis/boss/boss_chance".
 function path(id)
     build()
     local page = PAGE_OF[id]
     return page and ("nemesis/" .. page .. "/" .. id) or ("nemesis/" .. id)
 end
 
-DIFFICULTY = { easy = {}, medium = {}, hard = {} }
+---------------------------------------------------------------------------
+-- Difficulty presets (General page). Medium is the defaults above, the owner's own settings
+-- as chosen in round 113. Every slider that makes the game easier or harder is in them, no
+-- check box (the owner's rule in round 113); the volumes, the screen wave, spawn distances,
+-- fight range and the attack pulls stay out (how it sounds, looks or the AI behaves, not how
+-- hard it is). Easy is 20% easier
+-- than Medium, rounded down, Hard 20% harder, rounded up, each on its slider's step (presets113.py
+-- in the dev kit's tools). Where that leaves the slider's range it stops at the end (Easy boss
+-- days 7, Hard escort 4, Hard emission boss chance 100), and where rounding would undo the change
+-- it moves one step (boss misses: Easy 3, Hard 1). The squad weights shift toward smaller squads
+-- on Easy (1 and 2 up, 4 and 5 down, 3 kept) and larger ones on Hard. Since round 122 each page's
+-- script brings its own share (mcm_presets); build() puts them together here. Picking a
+-- preset writes its values into these settings; changing one of them by hand afterwards shows
+-- "custom". Checked on every MCM apply (mcm_option_change, also in the main menu, and
+-- on_option_change in game) and on every game load. The last preset applied is kept in
+-- axr_options (section "nemesis"), so a choice made in the main menu applies on the next load.
+---------------------------------------------------------------------------
+DIFFICULTY = { easy = {}, medium = {}, hard = {} }   -- filled by build() from each page's mcm_presets
 
 local APPLIED_SECTION, APPLIED_KEY = "nemesis", "difficulty_applied"
-local applied_mem = nil
+local applied_mem = nil            -- fallback when axr_options cannot be read
 
+-- The last preset applied, from axr_options (applied_mem when it cannot be read), or nil.
 local function read_applied()
-
+    -- src: anomaly axr_main.script config (ini_file_ex) (axr_main.config.r_value)
     local ok, v = pcall(function() return axr_main.config:r_value(APPLIED_SECTION, APPLIED_KEY, 0) end)
     if not ok then return applied_mem end
     if type(v) == "string" and v ~= "" then return v end
     return nil
 end
 
+-- Keeps level as the last preset applied, in axr_options and in memory.
 local function write_applied(level)
     applied_mem = level
     pcall(function()
-
+        -- src: anomaly axr_main.script config (ini_file_ex) (axr_main.config.w_value)
         axr_main.config:w_value(APPLIED_SECTION, APPLIED_KEY, level)
-
+        -- src: anomaly axr_main.script config (ini_file_ex) (axr_main.config.save)
         axr_main.config:save()
     end)
 end
 
+-- Writes setting id in MCM (its saved value).
 local function set_value(id, v)
-
+    -- src: mcm ui_mcm.script (ui_mcm.set)
     pcall(function() ui_mcm.set(path(id), v) end)
 end
 
+-- Setting id as MCM holds it now, as a number, uncached; nil when it cannot be read.
 local function raw_number(id)
     local v = nil
-
+    -- src: mcm ui_mcm.script (ui_mcm.get)
     pcall(function() v = tonumber(ui_mcm.get(path(id))) end)
     return v
 end
 
+-- True when every setting the preset controls has the preset's value.
 local function matches(level)
     build()
     local preset = DIFFICULTY[level]
@@ -190,26 +260,39 @@ local function matches(level)
     return true
 end
 
+-- The difficulty list's value now (uncached); "medium" when it reads as anything else.
 local function current_difficulty()
     local v = nil
-
+    -- src: mcm ui_mcm.script (ui_mcm.get)
     pcall(function() v = ui_mcm.get(path("difficulty")) end)
     if v == "easy" or v == "medium" or v == "hard" or v == "custom" then return v end
     return "medium"
 end
 
+-- A log line tagged MCM; plain printf with Debug logs while nemesis_utils is not loaded yet.
 local function log(...)
-
+    -- log_tag: nemesis_utils, a tagged log line
     if nemesis_utils and nemesis_utils.log_tag then nemesis_utils.log_tag("MCM", ...)
     elseif printf and get_bool("debug_logs", false) then printf(...) end
 end
 
+-- The automatic backup (round 119, owner): your own values of every setting a difficulty
+-- controls, kept in the player's file (nemesis_config: [custom_backup] in nwss_player.ltx) just
+-- before a difficulty replaces them. Only when they are yours, that is when they match none of
+-- Easy, Medium and Hard, so a backup is never overwritten with a preset's values. Taken at the
+-- two moments a difficulty can replace them: picked in the dropdown (before MCM stages and saves
+-- the preset's values, on_difficulty_selected), and applied by sync_difficulty (a pick in the
+-- main menu applies at the next load). "Load settings from Automatic Backup" (a one-shot box,
+-- nemesis_guard) puts them back and shows Custom; the backup itself is never deleted.
 local BACKUP_SECTION = "custom_backup"
 
+-- Whether the settings now match none of the three presets (they are your own).
 local function values_are_yours()
     return not (matches("easy") or matches("medium") or matches("hard"))
 end
 
+-- Takes the automatic backup (see above) when the values are yours; why is logged and kept as
+-- the backup's "from".
 local function backup_custom(why)
     build()
     if not (nemesis_config and values_are_yours()) then return end
@@ -217,14 +300,14 @@ local function backup_custom(why)
     for id in pairs(DIFFICULTY.medium) do
         local v = raw_number(id)
         if v ~= nil then
-            nemesis_config.set(BACKUP_SECTION, id, v)
+            nemesis_config.set(BACKUP_SECTION, id, v)   -- set: nemesis_config, a value into the player's file (in memory)
             want[id] = v
             n = n + 1
         end
     end
     if n == 0 then return end
     nemesis_config.set(BACKUP_SECTION, "from", why)
-    local res, key = nemesis_config.save_checked(BACKUP_SECTION, want)
+    local res, key = nemesis_config.save_checked(BACKUP_SECTION, want)   -- save_checked: nemesis_config, saves and reads back
     if res == "failed" then
         log("!Nemesis ERROR: the automatic backup of your settings did not save (%s).", tostring(key))
     else
@@ -233,12 +316,13 @@ local function backup_custom(why)
     end
 end
 
+-- The one-shot box (nemesis_guard). Returns how many settings were loaded (0: no backup yet).
 function load_custom_backup()
     build()
     if not nemesis_config then return 0 end
     local n = 0
     for id in pairs(DIFFICULTY.medium) do
-        local v = nemesis_config.get(BACKUP_SECTION, id, 2, nil)
+        local v = nemesis_config.get(BACKUP_SECTION, id, 2, nil)   -- get: nemesis_config, a value from the player's file
         if v ~= nil then
             set_value(id, v)
             n = n + 1
@@ -256,6 +340,10 @@ function load_custom_backup()
     return n
 end
 
+-- The one rule. A preset is applied when it was just picked: MCM says the dropdown changed
+-- (picked = true), or it differs from the last one applied, or (no record yet) it is not the
+-- default. Otherwise a preset whose values were changed by hand turns into "custom"; a first
+-- run with hand-made settings and the default Medium shows "custom", nothing is overwritten.
 function sync_difficulty(picked)
     build()
     if not ui_mcm then return end
@@ -280,29 +368,46 @@ function sync_difficulty(picked)
     if last ~= cur then write_applied(cur) end
 end
 
+-- Values are cached: the mod reads settings in its hot paths. The cache is dropped when MCM
+-- applies a change (on_option_change), when the mod writes a setting itself, on game load,
+-- and at the latest every CACHE_MS. A value MCM does not have yet is never cached.
 local cache = {}
 local cache_at = nil
 local CACHE_MS = 5000
 
 local version = 0
 
+-- Drops the cached settings and moves settings_version on.
 function invalidate()
     cache = {}
     cache_at = nil
     version = version + 1
 end
 
+-- Goes up every time the settings may have changed (MCM apply, load, the mod's own writes), so
+-- values derived from settings can be kept until it moves.
 function settings_version() return version end
 
+-- Anomaly's on_option_change (registered in on_game_start): MCM applied in game.
 function on_option_change()
     invalidate()
     sync_difficulty()
 end
 
+-- Live preview (MCM on_selection_functor): the moment a difficulty is picked in the dropdown,
+-- before Apply, its values are staged in MCM as pending changes on their own pages (CacheValue,
+-- what MCM's own "preset" element does on one page) and the open page is redrawn (Reset_opt).
+-- Apply saves them through MCM, Cancel drops them. Older MCM versions ignore the functor; the
+-- apply-time sync below still applies the preset.
+-- The open MCM window. The main menu creates it on the MCM button (main_menu.mcm_dlg), and
+-- every new main menu announces itself with main_menu_on_init (MCM's own open_to uses the
+-- same callback). ui_mcm.get_gui() is not used: it only knows the window once MCM has been
+-- opened before with a page selected, so on the first open of a session it returns nothing.
 local main_menu_ref = nil
-
+-- main_menu_on_init: keeps the newest main menu (see above).
 local function remember_main_menu(mm) main_menu_ref = mm end
 
+-- The open MCM window, or nil when it is not open (or lacks CacheValue and Reset_opt).
 local function mcm_window()
     local w = nil
     pcall(function() w = main_menu_ref and main_menu_ref.mcm_dlg end)
@@ -310,11 +415,13 @@ local function mcm_window()
     return nil
 end
 
+-- The difficulty list's on_selection_functor: the live preview (see above); value is the
+-- level picked.
 function on_difficulty_selected(opt_path, opt, value, v)
     build()
     local preset = DIFFICULTY[value]
-    if not preset then return end
-    backup_custom("picked " .. tostring(value) .. " in the menu")
+    if not preset then return end            -- "custom": nothing to stage
+    backup_custom("picked " .. tostring(value) .. " in the menu")   -- before the preset is staged
     local gui = mcm_window()
     if not gui then return end
     for id, val in pairs(preset) do
@@ -322,36 +429,43 @@ function on_difficulty_selected(opt_path, opt, value, v)
         if page then
             pcall(function()
                 local p = "nemesis/" .. page
-
+                -- src: mcm ui_mcm.script (ui_mcm.get_opt_table); mcm ui_mcm.script (CacheValue)
                 gui:CacheValue(p, id, val, ui_mcm.get_opt_table(p .. "/" .. id))
             end)
         end
     end
-
+    -- src: mcm ui_mcm.script (Reset_opt)
     pcall(function() gui:Reset_opt(gui.last_curr_tree, gui.last_path) end)
-
+    -- src: mcm ui_mcm.script (UpdatePending)
     pcall(function() gui:UpdatePending() end)
 end
 
+-- MCM's own apply callback, sent in the main menu too, with the set of option paths changed.
 function on_mcm_option_change(changes)
     invalidate()
     local picked = type(changes) == "table" and changes[path("difficulty")] ~= nil
     sync_difficulty(picked)
 end
 
+-- Registered once MCM exists (touching ui_mcm loads it, and it adds the callback). From
+-- on_mcm_load (main menu) and on_game_start; registering the same function again only
+-- replaces its own entry (axr_main.callback_set). on_mcm_load runs inside the first
+-- main_menu:__init, before it sends main_menu_on_init, so that first menu is caught too.
 function register_apply_handler()
     if not (ui_mcm and ui_mcm.get) then return end
-
+    -- src: anomaly _g.script (RegisterScriptCallback)
     RegisterScriptCallback("mcm_option_change", on_mcm_option_change)
     RegisterScriptCallback("main_menu_on_init", remember_main_menu)
 end
 
+-- Called by nemesis_core's on_game_start: the in-game apply callback and the MCM handlers.
 function on_game_start()
-
+    -- src: anomaly _g.script (RegisterScriptCallback)
     RegisterScriptCallback("on_option_change", on_option_change)
     register_apply_handler()
 end
 
+-- Raw getter: returns the MCM value or the default when MCM is not ready.
 function get_setting(id, default)
     local now = time_global and time_global() or 0
     if cache_at == nil or now - cache_at > CACHE_MS or now < cache_at then
@@ -361,7 +475,7 @@ function get_setting(id, default)
     local v = cache[id]
     if v ~= nil then return v end
     if ui_mcm then
-
+        -- src: mcm ui_mcm.script (ui_mcm.get)
         v = ui_mcm.get(path(id))
         if v ~= nil then
             cache[id] = v
@@ -371,12 +485,14 @@ function get_setting(id, default)
     return default
 end
 
+-- Number getter: always returns a number (guards against wrong-typed values).
 function get_number(id, default)
     local v = tonumber(get_setting(id, default))
     if v == nil then return default end
     return v
 end
 
+-- Boolean getter.
 function get_bool(id, default)
     local v = get_setting(id, default)
     if type(v) == "boolean" then return v end
@@ -385,8 +501,9 @@ function get_bool(id, default)
     return default
 end
 
-NAME_MAX = 48
-
+NAME_MAX = 48   -- characters a menu text keeps
+-- String getter: returns a trimmed, non-empty string or the default.
+-- ":" is removed because the engine splits names containing ":lname_" and asserts.
 function get_string(id, default)
     local v = get_setting(id, default)
     if type(v) ~= "string" then return default end
@@ -394,7 +511,7 @@ function get_string(id, default)
     v = string.gsub(v, "^%s+", "")
     v = string.gsub(v, "%s+$", "")
     if v == "" then return default end
-
+    -- At most NAME_MAX characters (round 103: a name goes into PDA lines and map hints).
     if #v > NAME_MAX then v = string.sub(v, 1, NAME_MAX) end
     return v
 end

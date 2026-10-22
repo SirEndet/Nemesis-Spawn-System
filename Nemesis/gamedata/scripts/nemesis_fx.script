@@ -1,67 +1,97 @@
 -- Nemesis FX
+-- Everything the player sees or hears that is not a PDA line: the teleport burst, the invisible
+-- model, removal after a teleport (vanish queue), empty-squad cleanup, the cloak, the masks,
+-- the psy hum, the boss distortion and the reserved bodies.
+-- Used by: nemesis_core (most of it: the queues, the cloak, the masks, the distortion, the
+-- reserved bodies, on_enemy_eval and the zoom callbacks), nemesis_damage (the death mask, the
+-- reveal), nemesis_spawn and nemesis_emission (the burst, squad cleanup, the screen flicker),
+-- nemesis_boss (models, forget_boss), nemesis_sound (measure).
+-- Uses: nemesis_engine (the doorway: models, releases, reads), nemesis_sound (the teleport sound,
+-- the hum), nemesis_compat (Wearable Devices), nemesis_combat, nemesis_events, nemesis_mcm,
+-- nemesis_state, nemesis_utils; xlibs xpp and xevent; Anomaly's xr_corpse_detection.
+-- src (plain reads used throughout this file, round 121): engine script_game_object_script2.cpp (clsid); engine script_game_object_script2.cpp (id); engine script_game_object_script2.cpp (position); engine script_game_object_script2.cpp (section)
 
 local S = nemesis_state.S
 
+-- A log line tagged FX (nemesis_utils.log_tag: Debug logs, or always when it starts with "!!").
 local function dbg(...) nemesis_utils.log_tag("FX", ...) end
 
 ---------------------------------------------------------------------------
 -- Teleport burst
 ---------------------------------------------------------------------------
-
+-- Teleport burst and sound at pos: retreats, teleport deaths and members leaving the hunt.
+-- The same burst the Zone uses when Monolith step out of a teleport; it carries a smoke puff.
+-- The objects are kept in S.fx so they are not collected while they play; only the last
+-- FX_KEEP are kept (a burst lasts about two seconds).
 local FX_KEEP = 16
-
+-- Keeps effect object o in S.fx (see above).
 local function keep_fx(o)
     S.fx[#S.fx + 1] = o
     if #S.fx > FX_KEEP then table.remove(S.fx, 1) end
 end
 
+-- The burst and the teleport sound at pos, 1 m up (see above).
 function play_retreat_fx(pos)
     if not pos or not db.actor then return end
     local spot = vector()
     spot:set(pos.x, pos.y + 1, pos.z)
-    local parti = nemesis_engine.particle_at("anomaly2\\teleport_out_00", spot)
+    local parti = nemesis_engine.particle_at("anomaly2\\teleport_out_00", spot)   -- particle_at: nemesis_engine, a particle once at a spot
     if parti then keep_fx(parti) else dbg("Nemesis: retreat particle failed") end
-
-    nemesis_sound.teleport(spot)
+    -- At Teleport volume (MCM), through nemesis_sound (xsound: the engine keeps it while it plays).
+    nemesis_sound.teleport(spot)   -- teleport: nemesis_sound, the teleport sound
 end
 
 ---------------------------------------------------------------------------
 -- Invisible model
 ---------------------------------------------------------------------------
-
+-- The invisible stalker model GAMMA already ships (listed in grok_bo_models_capture.ltx, the
+-- one the "invisible" Monolith use). set_visual_name -> CAI_Stalker::ChangeVisual.
+-- LIVING stalkers only. On a dead one ChangeVisual calls in_Die(false), which builds a second
+-- ragdoll over the existing one, then in_ChangeVisual hits VERIFY(m_eType != etStalker)
+-- (xray-monolith ai_stalker.cpp, CharacterPhysicsSupport.cpp): a stalker is never expected to
+-- have a ragdoll there, and the release build carries on with a dangling shell. The round 32
+-- log crashed (empty stack trace) right after a hunt member was killed by an NPC, the frame
+-- its corpse got this swap. The mesh is checked on disk first: a missing model would be a
+-- crash, so then the swap is skipped and only the burst plays.
 INVISIBLE_VISUAL  = "actors\\stalker_invisible\\stalker_invisible"
-DEAD_BODY_DELAY_MS = 0
-RETREAT_VANISH_MS  = 1000
+DEAD_BODY_DELAY_MS = 0      -- teleport death: burst and removal in the same frame
+RETREAT_VANISH_MS  = 1000   -- retreat: invisible with the burst, removed after this
 
 local invisible_ok = nil
 
+-- Whether the invisible model is on disk, looked at once and logged.
 function invisible_model_exists()
     if invisible_ok == nil then
         invisible_ok = false
-        invisible_ok = nemesis_engine.mesh_exists(INVISIBLE_VISUAL)
+        invisible_ok = nemesis_engine.mesh_exists(INVISIBLE_VISUAL)   -- mesh_exists: nemesis_engine, a mesh on disk
         dbg("Nemesis: invisible model %s.", invisible_ok and "found" or "NOT found, teleports use the burst only")
     end
     return invisible_ok
 end
 
-local function _set_visual(obj, vis)
 
+-- The model swap itself goes through the engine doorway, which checks the object is ours (round 123).
+local function _set_visual(obj, vis)
+    -- set_visual: nemesis_engine, the model swap (ours only)
     if not nemesis_engine.set_visual(obj, vis) then error("refused or failed") end
 end
-
+-- src: engine script_game_object_script2.cpp (get_visual_name)
 local function _get_visual(obj) return obj:get_visual_name() end
 
+-- Never on a dead stalker (see above).
 function set_visual(obj, vis)
-    if not nemesis_engine.alive(obj) then return false end
+    if not nemesis_engine.alive(obj) then return false end   -- alive: nemesis_engine, a safe life read
     return pcall(_set_visual, obj, vis)
 end
 
+-- obj's model name, or nil.
 function get_visual(obj)
     local ok, vis = pcall(_get_visual, obj)
     if ok and type(vis) == "string" then return vis end
     return nil
 end
 
+-- Swaps living obj to the invisible model; false when he is dead, the model is missing or it fails.
 function make_invisible(obj)
     if not obj or not nemesis_engine.alive(obj) or not invisible_model_exists() then return false end
     local ok, err = pcall(_set_visual, obj, INVISIBLE_VISUAL)
@@ -72,38 +102,50 @@ end
 ---------------------------------------------------------------------------
 -- Removal: vanish queue, offline members, empty squads
 ---------------------------------------------------------------------------
-local vanish_queue = {}
-local squad_cleanup = {}
-local SQUAD_CLEANUP_MS = 3000
+local vanish_queue = {}            -- [id] = time_global() at which the object is released
+local squad_cleanup = {}           -- [squad id] = time_global() of the check
+local SQUAD_CLEANUP_MS = 3000      -- after the last vanish of the hunt
 
+-- The id must already be out of the hunt (drop_member), or the release guard refuses it.
 function queue_vanish(id, delay_ms)
     if not id then return end
     vanish_queue[id] = time_global() + (delay_ms or 0)
 end
 
+-- The ids in the vanish queue (nemesis_core saves them with the hunt).
 function vanish_ids()
     local ids = {}
     for id in pairs(vanish_queue) do ids[#ids + 1] = id end
     return ids
 end
 
+-- Removal of one of our NPCs or squads. Goes through _g.alife_release, the dispatcher every
+-- Anomaly script uses: a squad member is taken out with squad:remove_npc(id, true) (the squad
+-- forgets it first, then it is released), a squad with remove_squad (map spot, board,
+-- release). A raw alife():release on a member left the squad listing an id that no longer
+-- exists.
+-- It goes through the engine doorway since round 123, which refuses an object that is not ours.
 function remove_object(se)
     if not se then return false end
-    return nemesis_engine.release(se)
+    return nemesis_engine.release(se)   -- release: nemesis_engine, alife_release for ours only
 end
 
+-- Hunt squads are deleted once empty. The release guard refuses the engine's own release of
+-- the hunt squad while a hunt runs, and nothing released it later, so every hunt left an empty
+-- squad in A-Life. A squad that still has members is left alone.
 function queue_squad_cleanup(id)
     if id then squad_cleanup[id] = time_global() + SQUAD_CLEANUP_MS end
 end
 
+-- Removes each queued squad whose time has come, if it is empty and not the running hunt's.
 local function process_squad_cleanup(gt)
     for id, at in pairs(squad_cleanup) do
         if gt >= at then
             squad_cleanup[id] = nil
-            local sq = nemesis_engine.se(id)
+            local sq = nemesis_engine.se(id)   -- se: nemesis_engine, the server object by id
             local n, is_squad = 1, false
             pcall(function()
-
+                -- src: engine xrserver_objects_alife_monsters_script3.cpp (npc_count)
                 n = sq:npc_count()
                 is_squad = sq:clsid() == clsid.online_offline_group_s
             end)
@@ -114,13 +156,15 @@ local function process_squad_cleanup(gt)
     end
 end
 
+-- Only a stalker is ever removed here (a recycled id after a load is skipped). A living hunter
+-- removed this way is reported as its own killer by DFRC; that is expected for a teleport.
 local function process_vanish(gt)
     for id, at in pairs(vanish_queue) do
         if gt >= at then
             vanish_queue[id] = nil
             local se = nemesis_engine.se(id)
             local is_npc = false
-            is_npc = nemesis_engine.is_stalker(se)
+            is_npc = nemesis_engine.is_stalker(se)   -- is_stalker: nemesis_engine, by class id, a server object too (round 123)
             if se and is_npc then
                 local ok, err = remove_object(se)
                 if ok then
@@ -136,34 +180,44 @@ end
 ---------------------------------------------------------------------------
 -- Wearable Devices malfunction (rounds 90-92, user design; MCM General, Effects, default on)
 ---------------------------------------------------------------------------
-
+-- A hunt spawns: the screens of sulikz's Wearable Devices flicker for about 2.5 s, off and on
+-- at random gaps of 30 to 150 ms, and end on. Since round 92 a boss spawn adds 2 s of black after
+-- the flicker. Only with that mod installed: its file is looked up first, then the two functions it
+-- uses itself for binoculars (wd_attach.hide_screens / show_screens). Nothing of it is changed
+-- or shipped; without it this does nothing. While binoculars are zoomed its zoom owns the
+-- screens, so the effect is skipped or stops there (its zoom out turns them back on).
 local WD_FLICKER_MS, WD_BLACK_MS, WD_GAP_MIN, WD_GAP_MAX = 2500, 2000, 30, 150
-local wd_api = nil
+local wd_api = nil          -- wd_attach, or false without it (looked up once per load)
 local wd_start, wd_step = nil, 1
-local wd_plan = {}
+local wd_plan = {}          -- [i] = { ms from the start, screens off }; [1] is off at 0
 local binoc = false
-local wd_cost = 0
+local wd_cost = 0           -- ms spent in its two functions this malfunction (Debug logs)
 
+-- Debug logs: a line for every step (round 91). Strings are only built with the logs on.
+-- A message starting with "!" is an error line, as everywhere in the mod.
 local function wd_dbg(fmt, ...)
-    if not nemesis_utils.debug_on() then return end
+    if not nemesis_utils.debug_on() then return end   -- debug_on: nemesis_utils, the Debug logs box
     local msg = string.format(fmt, ...)
     local bang = msg:sub(1, 1) == "!"
     dbg("%s", (bang and "!" or "") .. "Nemesis WD: " .. (bang and msg:sub(2) or msg))
 end
+-- Milliseconds of CPU time: the time spent in Wearable Devices' functions, for its debug lines.
+local function clock_ms() return nemesis_engine.clock_ms() end   -- clock_ms: nemesis_engine, CPU milliseconds
 
-local function clock_ms() return nemesis_engine.clock_ms() end
-
+-- Wearable Devices' wd_attach (nemesis_compat.wearable: its author's check, behind the file
+-- check), or false. Looked up once per load; the result is logged once.
 local function wd()
     if wd_api == nil then
-        wd_api = nemesis_compat.wearable()
+        wd_api = nemesis_compat.wearable()   -- wearable: nemesis_compat, wd_attach or false
         if wd_api then wd_dbg("Wearable Devices found (wd_attach.hide_screens and show_screens).")
-
+        -- wearable_file: nemesis_compat, its script file is there
         elseif nemesis_compat.wearable_file() then wd_dbg("!wd_attach.script found but not its functions; the malfunction is off.")
         else wd_dbg("Wearable Devices not installed; the malfunction is off.") end
     end
     return wd_api
 end
 
+-- Wearable Devices' screens off (on true) or back on; returns the call's CPU milliseconds.
 local function wd_hide(on)
     local c = clock_ms()
     local ok, err = pcall(on and wd_api.hide_screens or wd_api.show_screens)
@@ -173,6 +227,8 @@ local function wd_hide(on)
     return c
 end
 
+-- The switches of one malfunction. Every gap is 30 to 150 ms, so the flicker ends within a
+-- gap of 2.5 s: on for a hunt, off for a boss, whose black then lasts 2 s.
 local function make_plan(boss)
     local plan, t, off = { { 0, true } }, 0, true
     while true do
@@ -189,11 +245,12 @@ local function make_plan(boss)
     return plan
 end
 
+-- At every hunt spawn, followed arrivals too. boss: the boss is in it.
 function wd_malfunction(boss)
     if not wd() then return end
     if wd_start then wd_dbg("spawn during a malfunction: not restarted.") return end
     if binoc then wd_dbg("skipped: binoculars zoomed, its zoom owns the screens.") return end
-
+    -- get_bool: nemesis_mcm, a menu checkbox (cached)
     if not nemesis_mcm.get_bool("wd_malfunction", true) then wd_dbg("skipped: MCM box off.") return end
     wd_plan = make_plan(boss and true or false)
     wd_start, wd_step, wd_cost = time_global(), 1, 0
@@ -202,6 +259,7 @@ function wd_malfunction(boss)
         boss and "boss: flicker, then 2 s black" or "hunt: flicker", #wd_plan, wd_plan[#wd_plan][1], #wd_plan, c)
 end
 
+-- One frame of a running malfunction: every switch whose time has come, as one.
 local function wd_tick(gt)
     local s = wd_step
     while wd_plan[s + 1] and gt - wd_start >= wd_plan[s + 1][1] do s = s + 1 end
@@ -217,12 +275,13 @@ local function wd_tick(gt)
     end
 end
 
+-- actor_on_weapon_zoom_in (registered by nemesis_core): binoculars zoomed stop a malfunction.
 function wd_on_zoom_in()
     if not wd() then return end
     pcall(function()
-
+        -- src: engine script_game_object_script2.cpp (actor) (db.actor.active_item)
         local w = db.actor:active_item()
-
+        -- src: anomaly _g.script ini_file (r_string_ex)
         binoc = w ~= nil and ini_sys:r_string_ex(w:section(), "class") == "WP_BINOC"
     end)
     if binoc and wd_start then
@@ -231,18 +290,26 @@ function wd_on_zoom_in()
     end
 end
 
+-- actor_on_weapon_zoom_out (registered by nemesis_core).
 function wd_on_zoom_out() binoc = false end
 
-local swell = nil
-local swell_tick
+-- The arrival swell's state and its frame step (round 144), defined with it further down. They
+-- are declared here, before process_queues, which reads them: declared after it, they were
+-- globals to it (always nil), so round 144's swell was never let go (found in round 145).
+local swell = nil                  -- { h = xpp handle, release_at = ms } while it swells
+local swell_tick                   -- the swell's frame step (below)
 
+-- Every frame (cheap when both queues are empty).
 function process_queues(gt)
     if next(vanish_queue) ~= nil then process_vanish(gt) end
     if next(squad_cleanup) ~= nil then process_squad_cleanup(gt) end
     if wd_start then wd_tick(gt) end
-    if swell then swell_tick(gt) end
+    if swell then swell_tick(gt) end   -- the arrival swell's release (round 144)
 end
 
+-- Members that are offline when the hunt ends or is called off. Nobody can see them, so they
+-- are removed outright instead of being left in the world carrying Nemesis names. Living only:
+-- an offline corpse is left to the normal corpse cleanup.
 function remove_offline(ids)
     for _, id in ipairs(ids) do
         local se = nemesis_engine.se(id)
@@ -260,37 +327,62 @@ end
 ---------------------------------------------------------------------------
 -- Cloak (MCM, on by default; always on for the boss)
 ---------------------------------------------------------------------------
-
+-- A named hunter switches to the invisible model while he chases (not fights) more than
+-- CLOAK_MIN_M away, at most once every CLOAK_COOLDOWN_MS. He reappears when he fights, gets
+-- within REVEAL_M (not while the boss sneaks), takes a hit, or the option is off. His own
+-- model is kept in his record (and saved), so it is put back after a load and when the hunt
+-- ends with him alive.
 local CLOAK_MIN_M = 30
 local REVEAL_M = 15
 local CLOAK_COOLDOWN_MS = 20000
 local HIT_REVEAL_MS = 1500
 
+---------------------------------------------------------------------------
+-- A cloaked hunter is no one's enemy (user design: the boss since round 59, every
+-- cloaked hunter since round 68)
+---------------------------------------------------------------------------
+-- From the moment he cloaks until he reappears, he and every NPC ignore each other:
+-- on_enemy_eval (the callback GAMMA's combat-ignore, peace-zone and "Sin and Mutants are
+-- Allies" scripts use; sent from xr_combat_ignore for stalkers) answers "not an enemy" for any
+-- pair with him in it. Nobody's faction or relations change, so the moment he reappears
+-- everyone's normal relations apply again. The player is never part of it. He reappears when
+-- a hostile stalker or mutant comes within BUMP_M of him (checked every BUMP_MS: one 2 m
+-- search), or by the usual cloak rules. A hit only counts when it does damage; while the boss
+-- sneaks, only the player's hits count.
 local BUMP_M = 2
 local BUMP_MS = 500
-local neutral = {}
+local neutral = {}                -- [id] = true while that hunter is no one's enemy
 local neutral_any = false
 
+-- Hunter id is no one's enemy (on) or a normal enemy again.
 local function set_neutral(id, on)
     if on then neutral[id] = true else neutral[id] = nil end
     neutral_any = next(neutral) ~= nil
 end
 
+-- The boss's targets are his combat AI's (owner, 22 October 2026): the "you first" window (5 s
+-- after your hit he counted no NPC as his enemy; added in round 84) is gone, so he answers whoever is
+-- hurting him, you or an NPC, with his Boss damage against NPCs. Only his cloaked sneak still
+-- keeps him off everyone (the neutral list below).
+
+-- on_enemy_eval (registered by nemesis_core): "not an enemy" (flags.override, flags.result
+-- false) for the pairs above; everything else is left to the other scripts.
 function on_enemy_eval(npc, enemy, flags)
     if not npc or not enemy or not flags then return end
-
-    if nemesis_events.ask("no_fight", npc:id(), enemy:id()) then
+    -- A module's allies leave each other alone (the emission boss and his horde, round 93).
+    if nemesis_events.ask("no_fight", npc:id(), enemy:id()) then   -- ask: nemesis_events, the first module's answer, or nil
         flags.override = true
         flags.result = false
         return
     end
-
+    -- A module's own NPCs fight what they see (the emission boss's horde, round 147): "an enemy"
+    -- for their side of the question only.
     if nemesis_events.ask("sees_enemy", npc, enemy) then
         flags.override = true
         flags.result = true
         return
     end
-
+    -- A hunter who dropped a capped NPC fight (round 96, nemesis_combat.drops_enemy).
     if enemy:id() ~= 0 and nemesis_combat.drops_enemy(npc:id(), enemy:id()) then
         flags.override = true
         flags.result = false
@@ -299,23 +391,26 @@ function on_enemy_eval(npc, enemy, flags)
     if not neutral_any then return end
     local a, e = npc:id(), enemy:id()
     if not neutral[a] and not neutral[e] then return end
-    if a == 0 or e == 0 then return end
+    if a == 0 or e == 0 then return end              -- the player: never
     flags.override = true
     flags.result = false
 end
 
+-- A living hostile stalker or mutant within BUMP_M (not the player, not the hunt).
 local function hostile_bump(obj)
     local found = false
     pcall(function()
-
+        -- src: engine level_script.cpp (level.iterate_nearest)
         level.iterate_nearest(obj:position(), BUMP_M, function(o)
             if found or not o or o:id() == 0 or o:id() == obj:id() then return end
-            if nemesis_state.member(o:id()) then return end
-
+            if nemesis_state.member(o:id()) then return end   -- member: nemesis_state, his member record
+            -- Only creatures: asking a zone or a bolt alive() raises an engine error line.
+            -- src: anomaly _g.script (IsMonster); anomaly _g.script (IsStalker)
+            -- is_mutant: nemesis_engine, by class
             if not (nemesis_engine.is_mutant(o) or nemesis_engine.is_stalker(o)) or not nemesis_engine.alive(o) then return end
             if nemesis_engine.is_mutant(o) then found = true
             elseif nemesis_engine.is_stalker(o) then
-
+                -- src: engine script_game_object_script2.cpp (relation)
                 local ok, rel = pcall(function() return obj:relation(o) end)
                 local ok2, rel2 = pcall(function() return o:relation(obj) end)
                 if (ok and rel == game_object.enemy) or (ok2 and rel2 == game_object.enemy) then found = true end
@@ -326,6 +421,7 @@ local function hostile_bump(obj)
     return found
 end
 
+-- A cloaked hunter shows again: his own model back, a normal enemy again (why goes in the log).
 function reveal(obj, r, gt, why)
     if not r or not r.cloak_vis then return end
     set_neutral(r.id, false)
@@ -335,6 +431,7 @@ function reveal(obj, r, gt, why)
     dbg("Nemesis: %s reappears (%s).", r.name or "A hunter", why or "?")
 end
 
+-- He cloaks: his model kept in r.cloak_vis, the invisible one on.
 local function cloak(obj, r)
     local vis = get_visual(obj)
     if not vis or vis == "" or vis == INVISIBLE_VISUAL then return end
@@ -346,19 +443,22 @@ local function cloak(obj, r)
     dbg("Nemesis: %s cloaks.", r.name or "A hunter")
 end
 
+
+-- Every tick for each online named hunter (nemesis_core): cloak or reveal him by the rules above.
 function cloak_update(obj, r, gt, actor)
     local id = r.id
-
+    -- The boss cloaks until you have shot him; after that he stays visible and fights to
+    -- the death, as he has since round 66, so the body you earn is never one that teleports for being cloaked.
     local enabled
     if id == S.boss_id then enabled = not r.player_struck and not nemesis_events.ask("boss_no_cloak")
     else enabled = nemesis_mcm.get_bool("hunter_cloak", true) end
     enabled = enabled and invisible_model_exists()
     local hit = r.hit_at and gt - r.hit_at < HIT_REVEAL_MS
-    if id == S.boss_id and nemesis_events.ask("sneak_move", id) then
+    if id == S.boss_id and nemesis_events.ask("sneak_move", id) then   -- sneaking (his module, round 135)
         hit = r.player_hit_at and gt - r.player_hit_at < HIT_REVEAL_MS
     end
-    local d = nemesis_engine.dist(obj, actor) or 9999
-    local fighting = nemesis_combat.combat_owns(obj) == true
+    local d = nemesis_engine.dist(obj, actor) or 9999   -- dist: nemesis_engine, metres between two objects or nil
+    local fighting = nemesis_combat.combat_owns(obj) == true   -- combat_owns: nemesis_combat, combat AI has him
     if r.cloak_vis then
         if not enabled then reveal(obj, r, gt, "option off")
         elseif fighting then reveal(obj, r, gt, "fighting")
@@ -379,26 +479,31 @@ function cloak_update(obj, r, gt, actor)
     end
 end
 
+-- The boss died: nobody is told to ignore him any more.
 function forget_boss()
     if S.boss_ghost then set_neutral(S.boss_ghost, false) end
 end
-
+-- He left the hunt (nemesis_core's release_id): nobody is told to ignore him any more.
 function forget_neutral(id)
     if id then set_neutral(id, false) end
 end
 
-local masked = {}
+local masked = {}                  -- [id] = true: masked for a possibly lethal hit, not yet back
 
+-- A member masked for a hit that might have killed him (nemesis_damage) and lived: his own
+-- model comes back on the next frame. Never on a dead one: that body teleports out.
 function unmask(obj, r)
     if not (r and r.mask_vis) or not nemesis_engine.alive(obj) then return end
     local ok, hp = pcall(function() return obj.health end)
-    if not ok or not hp or hp <= 0 then return end
+    if not ok or not hp or hp <= 0 then return end   -- dying: the body teleports out masked
     local vis = r.mask_vis
     r.mask_vis = nil
     masked[r.id] = nil
     set_visual(obj, vis)
 end
 
+-- Called every frame since round 79 (it was the 250 ms tick, so a survivor stayed invisible that long,
+-- and your kill inside that window counted as a masked death).
 function unmask_survivors()
     if next(masked) == nil then return end
     for id in pairs(masked) do
@@ -406,16 +511,18 @@ function unmask_survivors()
         if not (r and r.mask_vis) then
             masked[id] = nil
         elseif not r.death then
-            local obj = nemesis_engine.obj(id)
+            local obj = nemesis_engine.obj(id)   -- obj: nemesis_engine, the online object by id
             if obj then unmask(obj, r) end
         end
     end
 end
 
+-- id was masked for a possibly lethal hit (nemesis_damage; nemesis_core again after a load).
 function note_masked(id)
     if id then masked[id] = true end
 end
 
+-- Everyone still cloaked or masked gets their own model back (the hunt ends with them alive).
 function reveal_all()
     neutral, neutral_any = {}, false
     for id, r in pairs(S.m) do
@@ -434,7 +541,11 @@ end
 ---------------------------------------------------------------------------
 -- Psy hum
 ---------------------------------------------------------------------------
+-- The psy hum itself is nemesis_sound's since round 126 (hum_update, hum_stop; round 137: called
+-- there directly).
 
+-- One pass over the named hunters for both the hum and the distortion (round 80): the nearest
+-- one not leaving, and the boss. Either is nil when there is none.
 function measure(actor)
     local nearest, boss_d, near_id, hum_d = nil, nil, nil, nil
     if not (actor and S.phase == "hunting") then return nil, nil, nil, nil end
@@ -445,7 +556,7 @@ function measure(actor)
             local d = nemesis_engine.dist(obj, actor)
             if d then
                 if not r.retreat_at and (not nearest or d < nearest) then nearest, near_id = d, id end
-                if not r.retreat_at and nemesis_sound.hum_id() == id then hum_d = d end
+                if not r.retreat_at and nemesis_sound.hum_id() == id then hum_d = d end   -- hum_id: nemesis_sound, the hunter the hum is on
                 if id == S.boss_id then boss_d = d end
             end
         end
@@ -453,36 +564,44 @@ function measure(actor)
     return nearest, boss_d, near_id, hum_d
 end
 
+
 ---------------------------------------------------------------------------
 -- Boss distortion (MCM "Boss presence distortion", round 76)
 ---------------------------------------------------------------------------
-
+-- A gentle wave over the screen while the boss is near, through xlibs xpp (the post-process
+-- primitive the xlibs author pointed us to): nothing at 60 m, rising with the square of
+-- closeness to the slider's strength at 5 m. alcohol.ppe is the vodka and GAMMA psy-rework
+-- wave, live in GAMMA. A missing .ppe is an engine fatal error that pcall cannot catch, so the
+-- file is checked the way the engine looks for it ($game_anims$) before the first use.
 local DISTORT_PPE = "alcohol.ppe"
 local DISTORT_RANGE_M = 60
 local DISTORT_FULL_M = 5
-local DISTORT_KEEP_M = 70
-local DISTORT_SPEED = 0.5
-local distort = nil
+local DISTORT_KEEP_M = 70          -- the effector is kept (at 0) up to here, so the edge never flickers
+local DISTORT_SPEED = 0.5          -- engine smoothing, factor units per second
+local distort = nil                -- xpp handle while it exists
 local distort_ok = nil
 
+-- Whether alcohol.ppe is there, looked at once (an important error when it is not).
 local function distort_file_ok()
     if distort_ok == nil then
         distort_ok = false
-        distort_ok = nemesis_engine.file_exists("$game_anims$", DISTORT_PPE)
+        distort_ok = nemesis_engine.file_exists("$game_anims$", DISTORT_PPE)   -- file_exists: nemesis_engine, a file in an engine root
         if not distort_ok then dbg("!Nemesis ERROR: %s not found; the boss distortion stays off.", DISTORT_PPE) end
     end
     return distort_ok
 end
 
+-- The distortion ends (its xpp effector released).
 function distort_stop()
     if not distort then return end
-
+    -- src: xlibs xpp.script (xpp.release)
     pcall(function() xpp.release(distort) end)
     distort = nil
 end
 
+-- d: the boss's distance from measure() (nil: no living boss on this map).
 function distort_update(d)
-    local slider = nemesis_mcm.get_number("boss_distortion", 40)
+    local slider = nemesis_mcm.get_number("boss_distortion", 40)   -- get_number: nemesis_mcm, a menu number (cached)
     if slider < 0 then slider = 0 end
     if slider > 100 then slider = 100 end
     if not d or d > DISTORT_KEEP_M or slider <= 0 then
@@ -498,26 +617,33 @@ function distort_update(d)
     if not distort then
         if strength <= 0.001 or not distort_file_ok() then return end
         local h = nil
-
+        -- src: xlibs xpp.script (xpp.create_effector)
         pcall(function() h = xpp.create_effector(DISTORT_PPE, { cyclic = true, smoothing = DISTORT_SPEED }) end)
         if not h then return end
-
+        -- A new effector starts at full strength: down to nothing in the same frame, then it fades in.
+        -- src: engine level_script.cpp (level.set_pp_effector_factor)
         pcall(function() level.set_pp_effector_factor(h, 0.0001) end)
         distort = h
         dbg("Nemesis: boss distortion starts (he is within %s m).", DISTORT_RANGE_M)
     end
-
+    -- src: xlibs xpp.script (xpp.set_target)
     pcall(function() xpp.set_target(distort, strength) end)
 end
 
 ---------------------------------------------------------------------------
 -- The arrival swell and the boss's jolt (round 144)
 ---------------------------------------------------------------------------
-
+-- The arrival swell, the owner's design of round 144: once per hunt arrival, the screen breathes
+-- a psy swell, psy_antenna.ppe through xlibs xpp, gentle: up over SWELL_UP_MS, held SWELL_HOLD_MS,
+-- out over about SWELL_DOWN_MS (xpp.release fades it at the effector's own smoothing, then removes
+-- it). Arrival screen effect raised by the cycle's share, at most full. No blink (owner). One at a
+-- time: a second arrival while one swells adds nothing. The file is checked on disk first (a
+-- missing .ppe is an engine fatal error that pcall cannot catch).
 local SWELL_PPE = "psy_antenna.ppe"
 local SWELL_UP_MS, SWELL_HOLD_MS, SWELL_DOWN_MS = 500, 500, 1500
-local ppe_seen = {}
+local ppe_seen = {}                -- [file] = true / false once looked at
 
+-- Whether .ppe file name is in the game's anims (looked at once, an important error when not).
 local function ppe_ok(name)
     if ppe_seen[name] == nil then
         ppe_seen[name] = nemesis_engine.file_exists("$game_anims$", name) == true
@@ -526,6 +652,8 @@ local function ppe_ok(name)
     return ppe_seen[name]
 end
 
+-- The share a hunt's arrival is raised by at cycle: min(Arrival escalation per cycle x
+-- (cycle - 1), Arrival maximum increase), as 0..1. Used for the call's volume and the swell.
 function arrival_boost(cycle)
     local per = nemesis_mcm.get_number("arrival_escalation", 10)
     if per < 0 then per = 0 end
@@ -536,36 +664,42 @@ function arrival_boost(cycle)
     return math.min(per * math.max(0, (cycle or 1) - 1), top) / 100
 end
 
+-- The swell starts (see above); boost: arrival_boost's share. Called by nemesis_spawn's arrival.
 function arrival_swell(boost)
     if swell then return end
     local strength = nemesis_mcm.get_number("arrival_ppe", 40) / 100 * (1 + (boost or 0))
     if strength > 1 then strength = 1 end
     if strength <= 0.001 or not ppe_ok(SWELL_PPE) then return end
     local h = nil
-
+    -- src: xlibs xpp.script (xpp.create_effector)
     pcall(function() h = xpp.create_effector(SWELL_PPE, { cyclic = true, smoothing = strength / (SWELL_DOWN_MS / 1000) }) end)
     if not h then return end
-
+    -- A new effector starts at full strength: down to nothing in the same frame, then it rises.
+    -- src: engine level_script.cpp (level.set_pp_effector_factor)
     pcall(function() level.set_pp_effector_factor(h, 0.0001) end)
-
+    -- src: xlibs xpp.script (xpp.set_target)
     pcall(function() xpp.set_target(h, strength, strength / (SWELL_UP_MS / 1000)) end)
     swell = { h = h, release_at = time_global() + SWELL_UP_MS + SWELL_HOLD_MS }
     dbg("Nemesis: the arrival swell (strength %s).", string.format("%.2f", strength))
 end
 
+-- Every frame (process_queues): the swell lets go once its hold is over.
 swell_tick = function(gt)
     if gt < swell.release_at then return end
-
+    -- src: xlibs xpp.script (xpp.release)
     pcall(function() xpp.release(swell.h) end)
     swell = nil
 end
 
 local JOLT_PPE = "controller_hit.ppe"
-
+-- The jolt when the boss strikes, a test switch for the owner (round 144, off by default):
+-- controller_hit.ppe once, as it is (not cyclic: the engine ends it with its animation), the
+-- moment his sneak ends and he opens fire (owner, 22 October). A picture effect, no sound.
+-- Called by nemesis_boss.
 function boss_jolt()
     if not nemesis_mcm.get_bool("boss_jolt", false) or not ppe_ok(JOLT_PPE) then return end
     local h = nil
-
+    -- src: xlibs xpp.script (xpp.create_effector)
     pcall(function() h = xpp.create_effector(JOLT_PPE, { cyclic = false }) end)
     dbg("Nemesis: the boss's jolt%s.", h and "" or " failed")
 end
@@ -573,15 +707,22 @@ end
 ---------------------------------------------------------------------------
 -- Reserved bodies (MCM "Reserve your kills", round 76, user design)
 ---------------------------------------------------------------------------
-
+-- A Nemesis member you killed is not looted by NPCs. With AlifePlus installed its own "reserve
+-- own kills" governs (it records every kill of yours, its radius and time apply), and nothing
+-- is reserved while that option is off. Without AlifePlus the mod reserves the body itself:
+-- 2 in-game hours, or until you have been more than 150 m away for 3 real minutes. The gate is
+-- the vanilla per-corpse check every NPC's loot scan calls (xr_corpse_detection.near_actor,
+-- true = not for this looter), the seam AlifePlus uses.
 local RESERVE_S = 2 * 3600
 local RESERVE_AWAY_M = 150
 local RESERVE_AWAY_MS = 180000
-local reserve_away = {}
+local reserve_away = {}            -- [id] = time_global() you went out of range (runtime)
 local reserve_hooked = false
 
+-- MCM Reserve your kills.
 local function reserve_on() return nemesis_mcm.get_bool("reserve_kills", true) end
 
+-- present: AlifePlus's loot claim is installed; on: its "reserve own kills" is ticked.
 function alifeplus_reserve()
     local present, on = false, false
     pcall(function()
@@ -593,22 +734,25 @@ function alifeplus_reserve()
     return present, on
 end
 
+-- Whether body id is reserved for you now (the option on, within RESERVE_S).
 local function is_reserved(id)
     local v = id and S.reserved[id]
     if not v or not reserve_on() then return false end
-    return nemesis_engine.game_seconds() - v.t <= RESERVE_S
+    return nemesis_engine.game_seconds() - v.t <= RESERVE_S   -- game_seconds: nemesis_engine, in-game seconds
 end
 
+-- Whether body obj is reserved (called in a pcall).
 local function _reserved_obj(obj) return obj and is_reserved(obj:id()) end
-
+-- near_actor in our place: true (not for this looter) for a reserved body, else orig's answer.
 local function near_actor_wrap(orig, obj, ...)
-
+    -- Every corpse of every NPC's loot scan comes through here: nothing reserved, no work.
     if next(S.reserved) == nil then return orig(obj, ...) end
     local ok, yes = pcall(_reserved_obj, obj)
     if ok and yes then return true end
     return orig(obj, ...)
 end
 
+-- Puts near_actor_wrap on xr_corpse_detection.near_actor once (see below); false when it is not there.
 local function install_reserve_hook()
     if reserve_hooked then return true end
     local cd = nil
@@ -617,22 +761,25 @@ local function install_reserve_hook()
         dbg("!Nemesis ERROR: xr_corpse_detection.near_actor not found; bodies cannot be reserved.")
         return false
     end
-
+    -- xlibs' official hook first (round 118, owner: xlibs first; lane register A6). xevent keeps
+    -- one hook per function: when another mod already holds it, or xlibs has no xevent, the
+    -- function as it is now (their hook included) is wrapped, so both keep working. Logged
+    -- either way.
     local how = nil
     local have_xevent = type(xevent) == "table" and type(xevent.register_hook) == "function"
     local taken = false
     if have_xevent then
-
+        -- src: xlibs xevent.script (xevent.is_hooked)
         pcall(function() taken = xevent.is_hooked("xr_corpse_detection", "near_actor") == true end)
         if not taken then
-
+            -- src: xlibs xevent.script (xevent.register_hook)
             local ok, done = pcall(xevent.register_hook, "xr_corpse_detection", "near_actor", near_actor_wrap)
             if ok and done then how = "xlibs xevent hook" end
         end
     end
     if not how then
         local orig = cd.near_actor
-
+        -- The wrapped near_actor: our check, then the function as it was.
         cd.near_actor = function(obj, ...) return near_actor_wrap(orig, obj, ...) end
         how = (taken and "wrapped on top of another mod's xevent hook")
             or (have_xevent and "wrapped (xevent refused the hook)")
@@ -643,6 +790,7 @@ local function install_reserve_hook()
     return true
 end
 
+-- The player killed a hunt member and his body stays.
 function reserve_body(id)
     if not id or not reserve_on() then return end
     local present, on = alifeplus_reserve()
@@ -653,13 +801,14 @@ function reserve_body(id)
     end
     if not install_reserve_hook() then return end
     local sec = nil
-
+    -- src: engine xrServer_Objects_script.cpp (section_name)
     pcall(function() sec = nemesis_engine.se(id):section_name() end)
     S.reserved[id] = { t = nemesis_engine.game_seconds(), sec = sec }
     reserve_away[id] = nil
     dbg("Nemesis: body %s reserved for you (2 in-game hours, or 3 min more than 150 m away).", tostring(id))
 end
 
+-- Slow tick: claims run out by time, by distance, or when the body is gone.
 function reserve_tick(gt, actor)
     if next(S.reserved) == nil then return end
     if not reserve_on() or alifeplus_reserve() then
@@ -672,7 +821,7 @@ function reserve_tick(gt, actor)
         local why = nil
         local se = nemesis_engine.se(id)
         local sec = nil
-
+        -- src: engine xrServer_Objects_script.cpp (section_name)
         if se then pcall(function() sec = se:section_name() end) end
         if now - v.t > RESERVE_S or now < v.t then why = "2 in-game hours passed"
         elseif not se then why = "the body is gone"
@@ -680,7 +829,8 @@ function reserve_tick(gt, actor)
         else
             local far = true
             pcall(function()
-
+                -- src: engine alife_simulator_script.cpp (alife().actor)
+                -- same_level: nemesis_engine, two server objects on one map (nil: unknown)
                 if nemesis_engine.same_level(se, alife():actor()) ~= false then
                     far = se.position:distance_to(actor:position()) > RESERVE_AWAY_M
                 end
@@ -699,17 +849,19 @@ function reserve_tick(gt, actor)
     end
 end
 
+-- Game start or load: the queues belong to the session that was running (a loaded save brings
+-- its own vanish ids), and xsound drops every handle.
 function reset_runtime()
     distort = nil
-    swell = nil
+    swell = nil   -- a load: the engine dropped the effector with the level (round 144)
     masked = {}
     reserve_away = {}
     neutral, neutral_any = {}, false
-    nemesis_sound.reset_runtime()
+    nemesis_sound.reset_runtime()             -- reset_runtime: nemesis_sound, the hum stops (its own since round 126)
     vanish_queue = {}
     squad_cleanup = {}
     if wd_start then wd_dbg("a load dropped the malfunction at step %d/%d (its first update turns the screens on).", wd_step, #wd_plan) end
     wd_api, wd_start, binoc = nil, nil, false
-    nemesis_compat.forget_runtime()
-    nemesis_engine.forget_owned()
+    nemesis_compat.forget_runtime()   -- forget_runtime: nemesis_compat, Wearable Devices looked up again
+    nemesis_engine.forget_owned()             -- forget_owned: nemesis_engine, the ids found ours this session (round 123)
 end

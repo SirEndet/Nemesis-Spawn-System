@@ -1,11 +1,83 @@
 -- Nemesis Events: the mod's small event bus (made in round 111; questions added in round 115).
+-- Used by: nemesis_core, nemesis_spawn, nemesis_guard, nemesis_chase, nemesis_combat,
+-- nemesis_damage, nemesis_fx, nemesis_lines (they announce and ask), and the two modules,
+-- nemesis_emission and nemesis_boss (they listen and answer).
+-- Uses: nemesis_utils (log_tag) only.
+-- A few moments that several parts of the mod react to are announced here, instead of the
+-- script where they happen calling every part by name. Kept small on purpose (the owner's wish):
+-- only the moments where more than one part reacts, everything else stays a direct call through
+-- nemesis_member and the doorways (nemesis_engine, nemesis_compat).
+--
+-- The modules plug in here (the owner's design: features as modules inside the one download; the
+-- emission boss became the first in round 115, the boss the second in round 135).
+-- The core announces what happens and asks its questions; the module
+-- listens and answers. The core never calls a module by name, so a module is self-contained: its
+-- own script adds its listeners and answers in its own on_game_start (axr_main calls every
+-- script's on_game_start; the order between scripts is not fixed, and nothing here depends on it).
+--
+-- Announcements (arguments in order):
+--   hunt_started     (faction, boss_hunt, emission_hunt)   a new hunt's squad is in the world (not a follow)
+--   hunt_ended       (reason, escaped)                     a hunt is over (beaten, escaped, time up)
+--   member_died      (id, r, yours, teleport)              a member was killed; yours: your bullet
+--                                                           or your assist (nemesis_member)
+--   map_changed      (follows, follow_max)                 you changed maps during a hunt
+--   runtime_reset    (loaded)                              the first update after a load (loaded true)
+--                                                           or of a new game (false): start clean
+--   saving           (mdata)                               the game saves; the core's data is written,
+--                                                           a module writes its own key into mdata
+--   loaded           (mdata)                               the game loaded; the core's data is read
+--   uninstall        ()                                    Prepare for uninstall: leave nothing running
+--   offline_too_long ()                                    the hunt is called off, it stayed offline
+--                                                           (the hunters' respawn)
+--
+-- Questions (ask): the first answer that is not nil wins; nil means "not mine, ask the next".
+--   take_hunt     (gt)                  true: a module brings its own hunt instead (spawn holds back)
+--   take_tick     (gt, actor, slow)     "call_off": call the running hunt off, the module comes;
+--                                       true: the module has the tick (no hunt work this tick)
+--   fast_tick     ()                    true: tick at the hunt's rate though no hunt runs
+--   boss_update   (obj, r, gt, actor)   true: the module ran the boss's per-tick rules
+--   boss_dr       ()                    0..0.85: the running hunt's boss damage reduction
+--   boss_npc_cut  (id)                  0..0.95: NPC and mutant hits on the boss cut by this
+--   boss_no_cloak ()                    true: the running hunt's boss never cloaks
+--   walks         (id)                  true: this member walks, never runs
+--   no_fight      (a, e)                true: these two leave each other alone (on_enemy_eval: hot)
+--   sees_enemy    (npc, enemy)          true: npc (a module's own) counts enemy as his enemy (on_enemy_eval: hot; round 147)
+--   own_line      (kind, boss)          a line of this kind for the running hunt, or nil
+--   is_boss_name  (name)                true: a module's boss has this name
+--   follow_boss   (id, follow)          true: the module made him the boss of the followed hunt
+--   squad_section (faction, follow)     the squad section a followed hunt comes back in, or nil
+--   force         (kind)                true or false: the module handled this Force the next hunt pick
+--   The boss module's questions (nemesis_boss; added in round 135):
+--   boss_roll     (when, warning_on)    true: the hunt's leader is the boss ("warning": rolled at the
+--                                       arrival warning; "spawn": at spawn, the warning's roll or a new one)
+--   make_boss     (id)                  true: the module made this member the boss
+--   boss_exists   ()                    true: a boss exists (in the hunt, or the last one still alive)
+--   sneak_move    (id)                  "hold", "run" or "still": the boss sneaking up on you, and how
+--                                       he moves now (nil: he is not sneaking; he never hands over to
+--                                       combat while he is)
+--   sneak_target  (npc, actor)          { pos, mode }: where the sneaking boss goes while you stand still
+--   sneak_closing (id)                  true: he is on the crouched last stretch behind you
+--
+-- Rules:
+--   * Listeners and answers run in a fixed order: by their order number (lower first), then by
+--     when they were added. Nothing depends on chance (round 105's crash came from things
+--     happening in an order nobody planned).
+--   * Each runs guarded (pcall). One that fails writes an error line with its name and the event,
+--     and the others still run (an answer that fails counts as no answer).
+--   * With Debug logs on, every announcement writes one [EVENT ...] line with its listener count.
+--     A question writes nothing: some are asked many times a second (no_fight). The module logs
+--     the decisions it answers.
+--   * A listener never returns anything: announcements are not questions.
 
+-- Writes an [EVENT] debug line, through nemesis_utils.log_tag (the tagged logger, only with Debug logs on).
 local function dbg(...) nemesis_utils.log_tag("EVENT", ...) end
 
-local listeners = {}
-local answers = {}
-local seq = 0
+local listeners = {}               -- [event] = { { name, fn, order, seq }, ... } sorted
+local answers = {}                 -- [question] = { { name, fn, order, seq }, ... } sorted
+local seq = 0                      -- counts every entry ever added, so equal orders keep their adding order
 
+-- Sort rule for a list: lower order number first, then the one added first (seq).
+-- For: listeners and answers always run in one fixed order (see the rules above).
 local function by_order(a, b)
     if a.order ~= b.order then
         return a.order < b.order
@@ -13,6 +85,8 @@ local function by_order(a, b)
     return a.seq < b.seq
 end
 
+-- Add fn (named name, for the logs) to the list for key in book, at order (default 100). The
+-- same name again replaces its entry (a script restart adds everything again).
 local function add(book, key, name, fn, order)
     if type(fn) ~= "function" then return end
     local list = book[key] or {}
@@ -30,10 +104,16 @@ local function add(book, key, name, fn, order)
     table.sort(list, by_order)
 end
 
+-- Adds listener fn (named name, for the error lines) to event, at order (default 100). Called by
+-- each script's own on_game_start for the moments it reacts to.
 function on(event, name, fn, order) add(listeners, event, name, fn, order) end
 
+-- Adds answer fn (named name) to question, at order (default 100). A module answers here; nil
+-- from fn means "not mine, ask the next one".
 function answer(question, name, fn, order) add(answers, question, name, fn, order) end
 
+-- Announces event to its listeners, in order, each with the arguments given; a listener that
+-- fails writes an important error line naming it, and the rest still run.
 function emit(event, ...)
     local list = listeners[event]
     local n = list and #list or 0
@@ -45,6 +125,9 @@ function emit(event, ...)
     end
 end
 
+-- Asks question with the arguments given: returns the first answer that is not nil, or nil when
+-- nobody answers (the caller then uses its own rule). A failing answer writes an error line
+-- (Debug logs only) and counts as no answer.
 function ask(question, ...)
     local list = answers[question]
     if not list then return nil end
@@ -60,6 +143,7 @@ function ask(question, ...)
     return nil
 end
 
+-- How many listeners event has. For the test kit (its module steps); the mod itself never calls it.
 function count(event) return listeners[event] and #listeners[event] or 0 end
-
+-- How many answers question has. For the test kit, like count.
 function count_answers(question) return answers[question] and #answers[question] or 0 end

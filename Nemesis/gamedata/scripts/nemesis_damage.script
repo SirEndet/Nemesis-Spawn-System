@@ -1,20 +1,55 @@
 -- Nemesis Damage
+-- Used by: nemesis_core (every hit callback, the frame count, absorb, the bypass guard),
+-- nemesis_guard (install_br_hooks, settle_stale, unseed_br), nemesis_mcm (the Combat page).
+-- Uses: nemesis_state, nemesis_member (hittable, is_boss, assisted), nemesis_utils (settings,
+-- the armour copy), nemesis_compat (grok_bo, Obrien), nemesis_engine (health, invulnerable),
+-- nemesis_fx (the death mask, the reveal), nemesis_siege (break_siege), nemesis_events (a
+-- module's boss values), nemesis_core (hit_runs_last), nemesis_lines (the old-exes message);
+-- the exes' RegisterScriptCallbackPre.
+-- How much a hunt member is hurt, and when a named hunter breaks off. One formula for every
+-- mod NPC and every way in (round 100, user design):
+--   landed = damage x M,  M = max(1 - Max damage reduction, (1 - BR%) x (1 - DR) x (1 - E))
+--   BR%: the hunter's mitigation for the bone hit (your armour's, copied, plus Hunter BR% bonus;
+--        regulars keep their own armour and get the bonus only).
+--   DR:  the type's damage reduction (MCM): regular stalkers, named hunters, the boss, the
+--        emission boss.
+--   E:   escalation, linear per cycle (nemesis_utils.escalation); named hunters and bosses.
+-- The armour class (BR) works through GAMMA ballistics on your bullets, outside M.
+--   * The player's hits with GAMMA ballistics (grok_bo): GAMMA's own chain of hooks deals the
+--     damage, as for anyone; around it, for hunt members only, pre_hit (Pre tier) seeds his
+--     armour and sets him to full health, and settle_chain (Post tier) puts the damage, times M,
+--     on his real health (round 139: the old wrap took grok_bo's place, see install_br_hooks).
+--   * Every other hit (NPCs, mutants, the player without grok_bo): on_before_hit takes M off the
+--     hit before it lands, and refuses a hit that could take a named hunter below the floor in
+--     the worst case for the bone; on_hunter_hit keeps the health record and asks for the
+--     retreat.
+--   * Damage without a hit (bleeding, a smart cover hit): the tick gives part of it back
+--     (absorb). Never for a hit that was cut already (round 100: NPC hits were cut twice).
+-- All three ask for the retreat (record.pending); the tick starts it.
+-- The three share one pipeline since round 107 (see "The damage pipeline" below): whether the
+-- member may be hit at all (nemesis_member), the contact record, the formula and the floor are
+-- written once.
+-- src (plain reads used throughout this file, round 121): engine script_game_object_script2.cpp (id)
 
 local S = nemesis_state.S
 
+-- A log line tagged DAMAGE (nemesis_utils.log_tag: Debug logs, or always when it starts with "!!").
 local function dbg(...) nemesis_utils.log_tag("DAMAGE", ...) end
 
-LETHAL_FLOOR = 0.05
+LETHAL_FLOOR = 0.05                -- health is never allowed below this
 
+-- Max damage reduction (MCM, user design): however BR%, the type's reduction and escalation
+-- stack, a hunt member never takes less than (1 - this) of a hit. Default 70% (round 113; was 80%).
 local function damage_floor()
-    return 1 - nemesis_utils.clamped("max_damage_reduction", 70, 50, 95) / 100
+    return 1 - nemesis_utils.clamped("max_damage_reduction", 70, 50, 95) / 100   -- clamped: nemesis_utils, a menu number held to a range
 end
 
+-- The type's damage reduction (0..0.85). r: the member's record.
 local function type_dr(id, r)
     local U = nemesis_utils
     if id ~= nil and id == S.boss_id then
-
-        local own = nemesis_events.ask("boss_dr")
+        -- A module's boss has his own (the emission boss: Emission boss damage reduction, round 115).
+        local own = nemesis_events.ask("boss_dr")   -- ask: nemesis_events, the first module's answer, or nil
         if own then return own end
         return U.clamped("boss_dr", 30, 0, 85) / 100
     end
@@ -22,37 +57,47 @@ local function type_dr(id, r)
     return U.clamped("named_dr", 25, 0, 80) / 100
 end
 
+-- M for a hit on this member with mitigation pct (0 when unknown: bleeding, the tick).
 function damage_mult(id, pct)
-    local r = nemesis_state.member(id)
-    local e = (r and not r.named) and 0 or nemesis_utils.escalation(S.cycle)
+    local r = nemesis_state.member(id)   -- member: nemesis_state, his member record
+    local e = (r and not r.named) and 0 or nemesis_utils.escalation(S.cycle)   -- escalation: nemesis_utils, E for the cycle
     local m = (1 - (pct or 0)) * (1 - type_dr(id, r)) * (1 - e)
     return math.max(damage_floor(), math.min(1, m))
 end
 
+-- Give back part of a drop from prev to hp (bleeding, a smart cover hit). Returns his health
+-- afterwards.
 function absorb(obj, r, prev, hp)
     local mult = damage_mult(r.id, 0)
     if r.hp_armed and prev and mult < 1 and hp < prev and hp > LETHAL_FLOOR then
         hp = math.min(1, prev - (prev - hp) * mult)
-        nemesis_engine.set_health(obj, hp)
+        nemesis_engine.set_health(obj, hp)   -- set_health: nemesis_engine, health on one of ours
     end
     return hp
 end
 
+-- A hit asks him to break off: back to full health at once (he turns invulnerable and leaves on
+-- the next tick, so it no longer matters). Left at his low health even for that tick, the
+-- vanilla wounded state could lay him down, and the run to cover never moves a wounded stalker
+-- (seen in play in round 78: they dropped and vanished without running).
 local function ask_retreat(npc, r)
-    if r.dead or r.death then return end
+    if r.dead or r.death then return end    -- never on a body (round 105; nemesis_member)
     r.pending = true
     nemesis_engine.set_health(npc, 1)
 end
 
+-- Not yet armed (no real health reading) or inside the retreat grace after coming online.
 local function in_grace(r)
     return (not r.hp_armed) or (r.grace_until ~= nil and time_global() < r.grace_until)
 end
 
+-- A named hunter's or boss's armour: yours (nemesis_utils.player_br_stats), copied, plus the
+-- Hunter armour class bonus and Hunter BR% bonus. Flat: the same in every cycle (round 100).
 function hunter_br_now(id)
-    local add_br, add_pct = nemesis_utils.br_bonus()
-
+    local add_br, add_pct = nemesis_utils.br_bonus()   -- br_bonus: nemesis_utils, the two Hunter bonuses
+    -- player_br_stats: nemesis_utils, your suit's and helmet's armour (cached)
     local body, head, body_pct, head_pct, body_hf, head_hf = nemesis_utils.player_br_stats()
-
+    -- A mitigation plus the Hunter BR% bonus, held to 0..0.90.
     local function cap_pct(v)
         v = (v or 0) + add_pct
         if v > 0.90 then v = 0.90 end
@@ -63,54 +108,89 @@ function hunter_br_now(id)
         body_hf or 1, head_hf or 1
 end
 
+-- Whether bone_id is a head bone: 14 to 19, neck to jaw, what grok_bo counts as a headshot.
 local function is_head(bone_id)
     local bid = tonumber(bone_id) or 0
     return bid >= 14 and bid <= 19
 end
 
+-- The most health a hit of this power can take on this bone. The engine multiplies the power by
+-- the bone's damage scale (GAMMA's stalker_damage: head 4, neck 2, torso 1, limbs less) before
+-- armour. So the worst case is 4x on the head and 2x anywhere else (round 76: NPC hits killed
+-- named hunters through the 5% floor, which had compared the plain power).
 local function worst_loss(power, bone_id)
     return (power or 0) * (is_head(bone_id) and 4 or 2)
 end
 
-local function _from_player(shit) return shit.draftsman:id() == db.actor:id() end
 
+-- src: engine script_game_object_script2.cpp (actor) (db.actor.id)
+local function _from_player(shit) return shit.draftsman:id() == db.actor:id() end
+-- Whether hit shit is yours (false when it cannot be read).
 local function from_player(shit)
     local ok, yes = pcall(_from_player, shit)
     return ok and yes == true
 end
 
+-- A hit not from the player that may kill: the model goes invisible before it lands, so the
+-- ragdoll is never seen (the body teleports out). If he lives, the next tick puts it back.
+-- Not when you hit him within the assist time (nemesis_member.assisted, round 110): the kill is
+-- yours then, and his body must stay visible where he falls.
 local function mask_if_lethal(npc, r, shit, bone_id)
     if r.cloak_vis or r.mask_vis or not shit or from_player(shit) then return end
-    if nemesis_member.assisted(r) then return end
+    if nemesis_member.assisted(r) then return end   -- assisted: nemesis_member, you hit him within the assist time
     local hp = tonumber(npc.health)
     if not hp or hp - worst_loss(shit.power, bone_id) > 0 then return end
-    local vis = nemesis_fx.get_visual(npc)
-    if vis and nemesis_fx.make_invisible(npc) then
+    local vis = nemesis_fx.get_visual(npc)   -- get_visual: nemesis_fx, his model's name
+    if vis and nemesis_fx.make_invisible(npc) then   -- make_invisible: nemesis_fx, the invisible model swap
         r.mask_vis = vis
-        nemesis_fx.note_masked(r.id)
+        nemesis_fx.note_masked(r.id)   -- note_masked: nemesis_fx, remembers the masked id
     end
 end
 
 ---------------------------------------------------------------------------
 -- Engine hits
 ---------------------------------------------------------------------------
-
+-- GAMMA ballistics around the chain (install_br_hooks): nil until looked at, then "hooked"
+-- (the Pre tier hook stands), "none" (no grok_bo) or "old_exes" (no callback tiers).
 local gbo_state = nil
-local settle_chain
+local settle_chain                 -- defined with the GAMMA ballistics hooks below; on_before_hit calls it
 
 ---------------------------------------------------------------------------
 -- One bullet, one hit (round 118, owner: a hunter hit twice by one bullet skews the difficulty)
 ---------------------------------------------------------------------------
-
+-- The engine can register one bullet more than once on the same NPC. GAMMA's momo_multihit_fix
+-- filters that inside GAMMA's ballistics chain, so only for your hits. Your hits on our hunters
+-- go through that chain (round 139: install_br_hooks), so momo filters them as anyone's. Every
+-- other hit on a member (NPCs, and yours without GAMMA ballistics) gets the same rule here, for
+-- hunt members only, with what momo lacks: the bullet is remembered per
+-- target (bullet_on_impact's target_id, modded exes), not as one global "last bullet", and a hit
+-- is a repeat only when it carries the same bullet id as the member's last hit AND comes within
+-- SAME_BULLET_FRAMES game frames of it. The id tells bullets apart, whatever the fire rate (each
+-- bullet has its own id; a Glock 18's come about 50 ms apart, 3 frames at 60 fps). The frames are
+-- a guard: a new bullet whose impact was somehow missed would carry the old id, and it is never
+-- dropped once a frame has gone by. Frames, not milliseconds: the engine does not say whether a
+-- hit lands in its impact's frame or the next, so this frame or the one before. Shotguns (buck_shot
+-- above 1) are left alone: each pellet hits on its own, as momo does it. Fire wounds only.
+-- The engine's order (round 120, checked in xray-monolith): CBulletManager::CommitEvents
+-- (Level_Bullet_Manager.cpp, at the start of a frame) walks every impact of the last frame and,
+-- for each, fires bullet_on_impact and then sends its hit (DynamicObjectHit, u_EventSend). The
+-- server does not apply a hit then: it queues it (xrServer_process_event.cpp, GE_HIT:
+-- AddDelayedEvent). So every impact of a frame comes before any of its hits, in the same order.
+-- One remembered impact per member (round 118) lost a bullet when two hit him in one frame (you
+-- and an NPC, or two NPCs): the first hit took the second bullet's id, and the second bullet's
+-- own hit was then dropped as a repeat (review of round 120). Now each member keeps his impacts
+-- in order, and each hit uses up the oldest one.
 local SAME_BULLET_FRAMES = 1
-local IMPACTS_KEPT = 16
-local frame_no = 0
-
+local IMPACTS_KEPT = 16            -- per member; more in one frame than this is not a real burst
+local frame_no = 0                 -- counted by the core's frame job (count_frame)
+-- One more game frame (nemesis_core's frame job).
 function count_frame() frame_no = frame_no + 1 end
-local impact = {}
-local buck_cache = {}
+local impact = {}                  -- [member id] = { { id = bullet id, sec = ammo section, frame = frame_no }, ... } oldest first
+local buck_cache = {}              -- [ammo section] = true when it is buckshot
 local same_logged_at = -1000000
 
+-- bullet_on_impact (nemesis_core.on_game_start): every bullet's hit on anything. Only a hunt
+-- member's is kept: one table lookup for the rest.
 function on_bullet_impact(bullet)
     if not bullet then return end
     local tid = bullet.target_id
@@ -124,6 +204,9 @@ function on_bullet_impact(bullet)
     list[#list + 1] = { id = bullet.bullet_id, sec = bullet.section, frame = frame_no }
 end
 
+-- The oldest impact on member id that is still fresh (this frame or SAME_BULLET_FRAMES before),
+-- taken off his list. Older ones are dropped: their hit never came to us (a body, a leaving
+-- hunter, a hit the engine refused).
 local function next_impact(id)
     local list = impact[id]
     if not list then return nil end
@@ -133,12 +216,13 @@ local function next_impact(id)
     return b
 end
 
+-- Whether ammo section sec fires buckshot (buck_shot above 1), cached per section.
 local function buckshot(sec)
     if not sec then return false end
     local b = buck_cache[sec]
     if b == nil then
         local n = 0
-
+        -- src: anomaly _g.script ini_file (r_float_ex)
         pcall(function() n = ini_sys:r_float_ex(sec, "buck_shot") or 0 end)
         b = (tonumber(n) or 0) > 1
         buck_cache[sec] = b
@@ -146,6 +230,8 @@ local function buckshot(sec)
     return b
 end
 
+-- True when this hit on member r is the same bullet's second one: the hit is then dropped
+-- (power 0, the engine told not to apply it, as momo does).
 local function same_bullet(r, shit, flags)
     if not (r and shit) then return false end
     local ok, fire = pcall(function() return shit.type == hit.fire_wound end)
@@ -167,24 +253,32 @@ local function same_bullet(r, shit, flags)
     return false
 end
 
+-- A hit that momo's filter already judged (your settled hit, round 139) uses up its impact, so
+-- the next hit on him in this frame takes its own (next_impact, oldest first).
 local function skip_impact(r, shit)
     local ok, fire = pcall(function() return shit.type == hit.fire_wound end)
     if ok and fire then next_impact(r.id) end
 end
 
+-- Hunt over or a load: nothing is remembered.
 function forget_bullets() impact = {} end
 
+-- Before the engine applies a hit. Writes only the hit and the engine-provided flags table.
+-- The boss against NPCs and mutants (round 83, user design: he wipes the floor with them). His
+-- hits on anyone but you and his own squad are multiplied by Boss damage against NPCs.
 local function _draft_id(shit) return shit.draftsman and shit.draftsman:id() end
-
+-- Multiplies hit shit by Boss damage against NPCs (100..400 %) when the boss dealt it.
 local function boss_npc_hit(shit)
     local ok, did = pcall(_draft_id, shit)
     if not (ok and did == S.boss_id) then return end
-    local p = nemesis_mcm.get_number("boss_npc_damage", 200)
+    local p = nemesis_mcm.get_number("boss_npc_damage", 200)   -- get_number: nemesis_mcm, a menu number (cached)
     if p < 100 then p = 100 end
     if p > 400 then p = 400 end
     shit.power = (shit.power or 0) * p / 100
 end
 
+-- monster_on_before_hit (nemesis_core, Post tier through nemesis_compat.register_post): the
+-- boss's hits on mutants.
 function on_monster_before_hit(monster, shit, bone_id, flags)
     if S.boss_id and shit and monster then boss_npc_hit(shit) end
 end
@@ -192,7 +286,19 @@ end
 ---------------------------------------------------------------------------
 -- The damage pipeline (round 107, restructure step 2)
 ---------------------------------------------------------------------------
+-- A hit on a member comes in one of three ways: npc_on_before_hit (NPCs, mutants, and the
+-- player without GAMMA ballistics), your bullets with grok_bo (GAMMA's chain deals them, then
+-- settle_chain in on_before_hit, round 139), or a hit callback with no before-hit (a smart
+-- cover, handled since round 88). All three use the same steps:
+--   1. hittable: one of ours and not a body (nemesis_member), else the engine alone (round 105)
+--   2. note_hit: the hit is contact (combat takes over, a cloaked hunter shows, the boss's sneak
+--      ends; only a hit that carries damage counts, user rule round 68)
+--   3. leaving: no damage at all
+--   4. hit_mult: the emission boss's NPC cut, then the formula M (damage_mult)
+--   5. would_floor / refuse: a hit that could take a named hunter under the floor, in the worst
+--      case for the bone, is refused and he breaks off; the boss has no floor
 
+-- Step 2. by_player: the shooter is you. siege: a hit from you breaks the siege (the normal path).
 local function note_hit(r, power, hit_from, by_player, siege)
     if S.phase ~= "hunting" or r.retreat_at or (power or 0) <= 0 then return end
     local now = time_global()
@@ -200,13 +306,16 @@ local function note_hit(r, power, hit_from, by_player, siege)
     r.hit_by_player = by_player and true or false
     r.hit_from = hit_from
     if by_player then
-        r.player_struck = true
-        r.player_hit_at = now
-
-        if siege then nemesis_siege.break_siege() end
+        r.player_struck = true          -- the boss stays a normal enemy from now on
+        r.player_hit_at = now           -- only your hits end his sneak and his cloak
+        -- break_siege: nemesis_siege, ends the wait outside
+        if siege then nemesis_siege.break_siege() end   -- shot from inside: they storm in
     end
 end
 
+-- Step 4: the share of a hit that lands. Named hunters and bosses: their BR% for the bone (yours,
+-- copied, plus the bonus); regulars: the bonus only. The emission boss's NPC cut comes first,
+-- for hits from NPCs and mutants (round 93, user design: they are little help against him).
 function hit_mult(id, bone_id, by_player)
     local r = nemesis_state.member(id)
     if r and not r.named then
@@ -215,24 +324,29 @@ function hit_mult(id, bone_id, by_player)
     end
     local _, _, body_pct, head_pct = hunter_br_now(id)
     local m = damage_mult(id, (is_head(bone_id) and head_pct or body_pct) or 0)
-    if not by_player and nemesis_member.is_boss(id) then
-        local cut = nemesis_events.ask("boss_npc_cut", id)
+    if not by_player and nemesis_member.is_boss(id) then   -- is_boss: nemesis_member, the running hunt's boss
+        local cut = nemesis_events.ask("boss_npc_cut", id)   -- the emission boss's NPC cut (his module)
         if cut then m = m * (1 - cut) end
     end
     return m
 end
 
+-- Step 5: could a hit of this power take him under the floor, in the worst case for the bone?
 local function would_floor(npc, power, bone_id)
     local hp = tonumber(npc.health)
     return hp ~= nil and hp - worst_loss(power, bone_id) <= LETHAL_FLOOR
 end
 
+-- The shooter's id, safely.
 local function shooter_id(who)
     local id = nil
     pcall(function() id = who and who:id() end)
     return id
 end
 
+-- npc_on_before_hit, for every stalker (Post tier on the latest exes, so it sees the hit's final
+-- power). A non-member: only the boss's damage against NPCs (boss_npc_hit). A member: the
+-- pipeline, steps 1 to 5 above; a regular gets the cut and the death mask only.
 function on_before_hit(npc, shit, bone_id, flags)
     if not npc then return end
     local id = npc:id()
@@ -242,30 +356,44 @@ function on_before_hit(npc, shit, bone_id, flags)
         return
     end
     local by_player = shit ~= nil and from_player(shit)
-
+    -- Your hit, made ready in the Pre tier and dealt by GAMMA's chain of hooks, is settled first:
+    -- his real health from the damage the chain dealt (settle_chain). The number is that damage.
+    -- Before the body check since round 153: grok_bo writes its damage straight into health
+    -- (set_health_ex; Obrien's grok_bo.script 816-822, vanilla GAMMA's 563-566), so a shot of 1.0
+    -- or more takes him from the Pre tier's full health to 0. The body check then read a living
+    -- hunter as a body and left him to the engine's kill (the owner's log, 22 October: a named
+    -- hunter died to your shot). Only a hunter alive at the start of this same hit is armed
+    -- (pre_hit), so a real body is never settled here.
     local settled = nil
     if by_player then settled = settle_chain(npc, r, bone_id) end
-
-    if not nemesis_member.hittable(npc) then
-
+    -- hittable: nemesis_member, his record when he may be hit at all
+    if not nemesis_member.hittable(npc) then                                     -- 1
+        -- A settled hit that killed (the boss or a regular at 0) was yours: noted, so his death
+        -- names you even when the tick sees it before the death callback.
         if settled and shit then note_hit(r, settled, shooter_id(shit.draftsman), by_player, true) end
         return
     end
-
+    -- One bullet, one hit (round 118). A settled hit went through momo's bullet filter in the
+    -- chain, as anyone's does.
     if settled then
         skip_impact(r, shit)
     elseif same_bullet(r, shit, flags) then
         return
     end
-    r.bh_frame = time_global()
-
-    if shit then note_hit(r, settled or shit.power, shooter_id(shit.draftsman), by_player, true) end
-
+    r.bh_frame = time_global()   -- this hit came through here (see on_hunter_hit, round 88)
+    -- The chain leaves the hit almost empty (grok_bo zeroes it), so a settled hit's contact is the
+    -- damage it dealt. Before round 139, Obrien's zeroed power meant your shots never counted.
+    if shit then note_hit(r, settled or shit.power, shooter_id(shit.draftsman), by_player, true) end   -- 2
+    -- Your damaging hit on the cloaked boss shows him here, before it lands (round 114). The tick's
+    -- reveal (cloak_update) comes up to 250 ms later: a death in between (your one shot, or an
+    -- NPC's kill inside your assist) found him still cloaked, and a cloaked body always teleports.
+    -- The same living-stalker model swap as mask_if_lethal, at the same point of the hit.
     if by_player and r.cloak_vis and r.player_hit_at == time_global() and nemesis_member.is_boss(id) then
-        nemesis_fx.reveal(npc, r, time_global(), "hit")
+        nemesis_fx.reveal(npc, r, time_global(), "hit")   -- reveal: nemesis_fx, shows a cloaked hunter
     end
     if not r.named then
-
+        -- A regular: the same cut for every hit. Your hits under GAMMA ballistics got it in
+        -- settle_chain; what the chain left on the hit (nothing, normally) gets it here.
         if S.phase == "hunting" and shit then
             local m = hit_mult(id, bone_id, by_player)
             if m < 1 then shit.power = (shit.power or 0) * m end
@@ -273,59 +401,83 @@ function on_before_hit(npc, shit, bone_id, flags)
         if S.phase == "hunting" then mask_if_lethal(npc, r, shit, bone_id) end
         return
     end
-    if r.retreat_at then
+    if r.retreat_at then                                                       -- 3
         if flags then flags.ret_value = false end
         return
     end
     if S.phase ~= "hunting" then return end
-
+    -- Exes without callback tiers: your hits under GAMMA ballistics are GAMMA's alone (the
+    -- player was told once: install_br_hooks).
     if by_player and gbo_state == "old_exes" then return end
-
+    -- A settled hit: the chain dealt it. grok_bo leaves 0 (Obrien's) or 0.0001 (vanilla GAMMA's)
+    -- on the hit; anything more was put back by a hook after grok_bo (Artefacts Reinvention's
+    -- Dragon's Eye sets 1000), and goes through steps 4 and 5 like any hit.
     if settled then
         if (shit and shit.power or 0) <= 0.001 then return end
         dbg("Nemesis: a hook after GAMMA ballistics left %.3f power on your hit on '%s'; checked against the floor.", shit.power, r.name or "?")
     end
-
-    if shit then shit.power = (shit.power or 0) * hit_mult(id, bone_id, by_player) end
+    -- Every other hit (NPCs, mutants, and the player's hits when GAMMA ballistics are absent)
+    -- gets the same M as the player's (user rule, round 74: one calculation for every shot).
+    -- The whole reduction comes off the hit before it lands (round 76; it used to be given back
+    -- after the hit, so the engine applied the uncut power and a big hit could kill).
+    if shit then shit.power = (shit.power or 0) * hit_mult(id, bone_id, by_player) end   -- 4
     r.hit_cut = true
     r.hit_pre = tonumber(npc.health)
-
+    -- The boss fights to the death (user design): no floor, no retreat, so the engine's own hit
+    -- can kill him and name the killer.
     if nemesis_member.is_boss(id) then
         mask_if_lethal(npc, r, shit, bone_id)
         return
     end
-    if would_floor(npc, shit and shit.power, bone_id) then
+    if would_floor(npc, shit and shit.power, bone_id) then                     -- 5
         if flags then flags.ret_value = false end
         r.hit_cut = nil
         if not in_grace(r) then ask_retreat(npc, r) end
     end
 end
 
-local bypass_logged = {}
-
+-- A hit that skipped npc_on_before_hit (round 88, play: a named hunter killed by NPCs now and
+-- then, with no retreat). While a stalker occupies a smart cover, the engine's smart cover
+-- planner takes the hit: it fires the hit callback and the "before hit" callback never runs
+-- (xray-monolith ai_stalker_fire.cpp, smart_cover_animation_planner.cpp). That hit lands uncut,
+-- with no floor, and GAMMA ballistics do not see your shots either. The hit callback still
+-- comes before the damage, and CCustomMonster::Hit reads invulnerable() after it, so a hit that
+-- could take a named hunter under the floor is blocked here and he breaks off. A smaller one
+-- lands; the health tick gives back his protection (absorb), as for bleeding. amount on this
+-- path is the hit's power itself (the normal path passes 100x). Named hunters only: the boss
+-- fights to the death and the regulars have no floor. A body never gets here (on_hunter_hit;
+-- the fix of round 105: the dead boss's body was "guarded" back to health 1, and the engine crashed).
+local bypass_logged = {}            -- [id] = true once the smart cover line was logged for him
+-- The hit that skipped "before hit" (see above): contact, and a guard against a lethal one.
 local function bypass_hit(npc, r, amount, who, bone)
     if S.phase ~= "hunting" or r.retreat_at or not r.named or nemesis_member.is_boss(r.id) then return end
     local wid = shooter_id(who)
-
+    -- src: engine script_game_object_script2.cpp (actor) (db.actor.id)
     note_hit(r, amount, wid, wid ~= nil and db.actor ~= nil and wid == db.actor:id(), false)
     if not bypass_logged[r.id] then
         bypass_logged[r.id] = true
         dbg("Nemesis: a hit on '%s' skipped the damage check (smart cover); guarded here.", r.name or "?")
     end
     if would_floor(npc, amount, bone) then
-        nemesis_engine.set_invulnerable(npc, true)
+        nemesis_engine.set_invulnerable(npc, true)   -- set_invulnerable: nemesis_engine, on one of ours
         r.bypass_guard = true
         dbg("Nemesis: '%s' blocked a lethal hit that skipped the damage check.", r.name or "?")
         if not in_grace(r) then ask_retreat(npc, r) end
     end
 end
 
+-- The tick lifts the guard of a hunter who did not break off (in his grace).
 function lift_bypass_guard(obj, r)
     if not r.bypass_guard or r.retreat_at then return end
     r.bypass_guard = nil
     nemesis_engine.set_invulnerable(obj, false)
 end
 
+-- npc_on_hit_callback. The engine calls it after "before hit" and before it applies the damage
+-- (hit_memory_manager.cpp: CAI_Stalker::Hit adds the hit to memory, then calls the parent
+-- Hit), so health here is still the health before this hit. Not for the player's hits with
+-- GAMMA ballistics: settle_chain handled those and set no hit_cut. Writes no health, except on a
+-- hit that skipped "before hit" (bypass_hit).
 function on_hunter_hit(npc, amount, dir, who, bone)
     local r = nemesis_member.hittable(npc)
     if not r then return end
@@ -334,7 +486,9 @@ function on_hunter_hit(npc, amount, dir, who, bone)
         return
     end
     if not r.hit_cut then return end
-
+    -- The hit was cut before it lands. Health here is from before it, so the retreat check
+    -- below rarely fires in the game; the health tick takes the drop right after (manage),
+    -- without giving any of it back (cut_drop): it was cut already (round 100).
     r.hit_cut = nil
     r.cut_drop = true
     local pre = r.hit_pre or r.last_hp
@@ -342,7 +496,7 @@ function on_hunter_hit(npc, amount, dir, who, bone)
     local hp = tonumber(npc.health)
     if not hp or hp <= 0 then return end
     if not nemesis_member.is_boss(r.id) and S.phase == "hunting" and not r.retreat_at and not in_grace(r)
-        and pre and hp < pre - 0.02 and hp <= nemesis_utils.get_retreat_health(S.cycle) then
+        and pre and hp < pre - 0.02 and hp <= nemesis_utils.get_retreat_health(S.cycle) then   -- get_retreat_health: nemesis_utils, MCM Retreat health
         ask_retreat(npc, r)
     end
     if hp > 0.05 then r.last_hp = hp end
@@ -351,15 +505,24 @@ end
 ---------------------------------------------------------------------------
 -- Accuracy boost
 ---------------------------------------------------------------------------
-
+-- MCM "Accuracy boost (%)": roughly how many more of their shots hit you at range. Named
+-- hunters get the slider value, regular squad members half of it, the boss the slider plus
+-- BOSS_ACCURACY_EXTRA (user design). 0 turns it off for everyone.
+-- The engine passes every stalker's shot spread through npc_shot_dispersion (modded exes,
+-- _g.script; the same callback AlifeTactics uses); each subscriber multiplies the shared value,
+-- so other mods' changes stack. At range the hits follow the area of the spread cone, so p %
+-- more hits is a cone 1 / sqrt(1 + p / 100) as wide.
+-- The three cone multipliers are worked out once per settings change, not on every shot.
 local BOSS_ACCURACY_EXTRA = 15
 local cone_version = nil
-local cone = nil
+local cone = nil                   -- { regular, named, boss } multipliers, or false when off
 
+-- The cone multiplier for p % more hits (see above).
 local function cone_for(p) return 1 / math.sqrt(1 + p / 100) end
 
+-- The three multipliers (cone), worked out again when the settings change; false when off.
 local function accuracy_cones()
-    local v = nemesis_mcm.settings_version()
+    local v = nemesis_mcm.settings_version()   -- settings_version: nemesis_mcm, moves when settings may change
     if v ~= cone_version then
         cone_version = v
         local p = nemesis_mcm.get_number("accuracy_boost", 10)
@@ -373,6 +536,13 @@ local function accuracy_cones()
     return cone
 end
 
+-- The boss's first boss_misses() shots at the player in a hunt miss (user design: a moment to react, not a
+-- death you never saw coming). Their spread is widened BOSS_MISS_SPREAD times, so they fly
+-- wide where you can see and hear them, and on_actor_before_hit cancels any of his hits
+-- that still land in that window, so the miss is guaranteed. His shots are counted here; if
+-- this callback never runs (older exes), the frames his hits land in count instead, so he
+-- is never left harmless.
+-- MCM Boss guaranteed misses (round 99, user: 0..4, default 2; it was 3, fixed).
 local function boss_misses()
     local n = math.floor(nemesis_mcm.get_number("boss_misses", 2))
     if n < 0 then n = 0 end
@@ -381,24 +551,29 @@ local function boss_misses()
 end
 local BOSS_MISS_SPREAD = 10
 
+-- Every shot any stalker fires: a phase check, then one id lookup and one multiplication.
+-- The boss's target is you (or cannot be read). A file-level helper: this runs on every shot.
 local function _aims_at_player(obj)
-
+    -- src: engine script_game_object_script2.cpp (best_enemy)
     local be = obj:best_enemy()
     return not be or be:id() == 0
 end
 
+-- npc_shot_dispersion (registered by nemesis_core): t.dispersion is the shot's spread (see above).
 function on_shot_dispersion(obj, wpn, body_state, move_type, t)
     if S.phase ~= "hunting" or not obj or type(t) ~= "table" then return end
     local r = S.m[obj:id()]
     if not r or r.retreat_at or type(t.dispersion) ~= "number" then return end
-
+    -- His first sure misses are only for shots at the player; his boss accuracy applies to
+    -- every target (since round 83: he is a killer against NPCs too). His target is the engine's pick
+    -- (best_enemy); if it cannot be read, it counts as you.
     local at_player = true
     if r.id == S.boss_id then
         local ok, yes = pcall(_aims_at_player, obj)
         if ok then at_player = yes end
     end
     if r.id == S.boss_id and at_player then
-        S.boss_shots = (S.boss_shots or 0) + 1
+        S.boss_shots = (S.boss_shots or 0) + 1   -- every shot at you counts, so the window closes
         if math.max(S.boss_shots, S.boss_hit_frames or 0) <= boss_misses() then
             t.dispersion = t.dispersion * BOSS_MISS_SPREAD
             return
@@ -410,6 +585,9 @@ function on_shot_dispersion(obj, wpn, body_state, move_type, t)
     t.dispersion = t.dispersion * k
 end
 
+-- A hit on the player. Cancels the boss's hits while his first shots are still to miss
+-- (pellets of one shot arrive in one frame and count once). Shots fired so far include the
+-- one this hit came from, so the window closes with the hit of his last missing shot.
 function on_actor_before_hit(shit, bone_id, flags)
     if S.phase ~= "hunting" or not S.boss_id or not shit then return end
     local from = nil
@@ -429,13 +607,19 @@ end
 ---------------------------------------------------------------------------
 -- GAMMA ballistics (grok_bo)
 ---------------------------------------------------------------------------
-
+-- grok_bo loads bone armour on the first hit, applies the damage itself and zeroes the engine
+-- hit. It groups bones as legs 2, torso/arms 11, head 15 and keys its tables
+-- "<npc id>_<group>"; its globals live in the grok_bo module, not in _G. Seeding those keys
+-- makes the player's hit use the player's own armour plus Hunter armour class bonus (named
+-- hunters and bosses; regulars: add_native_br). A stored 0 would
+-- look empty to grok_bo, so the floor is a hair above zero.
 local br_seeded = {}
 
+-- Writes member id's armour into grok_bo's tables (gbo: grok_bo's module), once until unseed_br.
 local function seed(gbo, id, body_br, head_br, body_hf, head_hf)
     if br_seeded[id] then return end
     br_seeded[id] = true
-
+    -- br as stored: never below 0.001 (see above).
     local function store(br)
         if not br or br < 0.001 then return 0.001 end
         return br
@@ -454,24 +638,30 @@ local function seed(gbo, id, body_br, head_br, body_hf, head_hf)
     end
 end
 
-local br_bonused = {}
-
+-- A regular's own armour plus Hunter armour class bonus (round 100). grok_bo loads a bone
+-- group's armour on the first hit there, so the bonus is added once it is loaded: from the
+-- second hit on that part of him.
+local br_bonused = {}              -- ["<id>_<group>"] = true
+-- Adds add to each bone group of regular id that grok_bo has loaded, once per group.
 function add_native_br(gbo, id, add)
     for _, group in ipairs({ "_2", "_11", "_15" }) do
         local key = tostring(id) .. group
         local v = gbo.custom_bone_value[key]
         if v and not br_bonused[key] then
             br_bonused[key] = true
-            br_seeded[id] = true
+            br_seeded[id] = true          -- unseed_br takes it out again
             gbo.custom_bone_value[key] = v + add
         end
     end
 end
 
+-- The seeds come out again whenever they are dropped. grok_bo never clears its tables, so a
+-- recycled id would otherwise give an ordinary NPC a hunter's armour. During a hunt pre_hit
+-- seeds again on your next hit (the old wrap, which did it before round 139, is gone).
 function unseed_br()
     if next(br_seeded) ~= nil then
         pcall(function()
-            local gbo = nemesis_compat.grok_bo()
+            local gbo = nemesis_compat.grok_bo()   -- grok_bo: nemesis_compat, GAMMA ballistics' module or nil
             if not gbo then return end
             for id in pairs(br_seeded) do
                 for _, group in ipairs({ "_2", "_11", "_15" }) do
@@ -486,18 +676,40 @@ function unseed_br()
     br_seeded, br_bonused = {}, {}
 end
 
-local armed = {}
-local pba_own = nil
+-- How your hits on our hunters meet GAMMA ballistics. Round 139: the old wrap took grok_bo's
+-- place in the hit callbacks. Next to AlifeTactics' own wrap that ran grok_bo twice on every NPC
+-- you shot, and without it, it switched 3DSS's silencer wear and momo's bullet filter off for
+-- everyone (found from the owner's play test of round 138). Owner's
+-- rule: another mod's behaviour changes only for our own hunters.
+-- Now no other mod's hook is touched. The chain GAMMA builds (AlifeTactics, 3DSS, momo, grok_bo,
+-- whatever is installed) runs in the Normal tier for every hit, ours included. Around it, for our
+-- hunters only:
+--   Pre (pre_hit): your hit on one of ours: his bone armour is seeded, his health noted and set
+--       to full, so the chain can never take him to 0 before his protection is applied;
+--   Normal: the chain deals the damage, exactly as for anyone;
+--   Post (settle_chain, from on_before_hit): the drop from full is the damage; his health becomes
+--       the noted health minus the damage times M. A named hunter keeps the floor and breaks off;
+--       the boss and the regulars can die (health 0: the engine's own hit kills them, CEntity::Hit
+--       in Entity.cpp, with you as the killer).
+-- The tiers came with the modded exes of 15 September 2026 (xray-monolith 0397a88, "axr_main: add
+-- pre and post callbacks"). Without them nothing can be placed around the chain: Nemesis then
+-- leaves GAMMA ballistics alone (your shots hit our hunters like anyone) and says so once.
+local armed = {}                   -- [member id] = { hp0, at, leaving, seen, odc } between Pre and Post
+local pba_own = nil                -- grok_bo's PBA_ohc while our listener stands in for it
 local pba_listener = nil
-local odc_own = nil
+local odc_own = nil                -- grok_bo's PBA_odc while ours holds it back (round 153)
 local odc_listener = nil
 
+-- grok_bo hands the damage it dealt to its PBA_ohc right after dealing it. Vanilla GAMMA's passes
+-- the real damage, so an overkill shot (more than his whole health) is read in full; Obrien's
+-- passes 0, so there it reads as the full health it took (as before round 139). The listener
+-- passes every call on unchanged and only notes the amount for a hunter armed in Pre.
 local function listen_pba(gbo)
     if pba_own then return end
     local own = gbo.PBA_ohc
     if type(own) ~= "function" then return end
     pba_own = own
-
+    -- grok_bo's PBA_ohc in its place: notes the amount for an armed hunter, then calls grok_bo's own.
     pba_listener = function(n, amount, ...)
         local ok, id = pcall(function() return n:id() end)
         local a = ok and armed[id]
@@ -505,11 +717,14 @@ local function listen_pba(gbo)
         return own(n, amount, ...)
     end
     gbo.PBA_ohc = pba_listener
-
+    -- Obrien's grok_bo also calls its PBA_odc the moment health reaches 0 (grok_bo.script 826-829):
+    -- Artefacts Reinvention's "an NPC died" perks. Since round 153, for an armed hunter that call
+    -- waits for the settle: it runs once if he really dies, never if he lives. Everyone else's goes
+    -- straight through. Vanilla GAMMA's grok_bo has no PBA_odc.
     local own_d = gbo.PBA_odc
     if type(own_d) ~= "function" then return end
     odc_own = own_d
-
+    -- grok_bo's PBA_odc in its place: held for an armed hunter, else grok_bo's own at once.
     odc_listener = function(n, who, ...)
         local ok, id = pcall(function() return n:id() end)
         local a = ok and armed[id]
@@ -522,6 +737,7 @@ local function listen_pba(gbo)
     gbo.PBA_odc = odc_listener
 end
 
+-- grok_bo's own PBA_ohc goes back once no hit is armed (and only if no one replaced ours since).
 local function unlisten_pba()
     if not pba_own or next(armed) ~= nil then return end
     local gbo = nemesis_compat.grok_bo()
@@ -532,18 +748,25 @@ local function unlisten_pba()
     odc_own, odc_listener = nil, nil
 end
 
+-- Pre tier: your hit on one of our hunters during a hunt, before every other mod's hook. A
+-- regular whose cut is nothing (M = 1) is left to the chain alone, exactly as anyone.
 local function pre_hit(npc, shit, bone_id, flags)
     if S.phase ~= "hunting" or not npc or not shit then return end
     local r = nemesis_member.hittable(npc)
     if not r or not from_player(shit) then return end
-
+    -- A regular with nothing to cut (M = 1) and no armour class bonus to add is left to the chain
+    -- alone; with a bonus he is armed too, so settle_chain adds it once grok_bo has loaded his
+    -- armour. The kit found that round 139 skipped the bonus whenever the cut was 0 (fixed in round 148).
     if not r.named and hit_mult(r.id, bone_id, true) >= 0.999 and nemesis_utils.br_bonus() <= 0 then return end
     local gbo = nemesis_compat.grok_bo()
     if not gbo then return end
     if r.named then
         local body_br, head_br, _, _, body_hf, head_hf = hunter_br_now(r.id)
-
-        if nemesis_compat.obrien_on() then br_seeded[r.id] = nil end
+        -- Vanilla GAMMA's grok_bo wears the bone armour down on every hit (k_ap * 0.6), so the
+        -- seed is written once per hunt and left to it. Obrien's never writes it after loading,
+        -- so there it is refreshed on every hit: the hunter follows your current suit, helmet
+        -- and their condition.
+        if nemesis_compat.obrien_on() then br_seeded[r.id] = nil end   -- obrien_on: nemesis_compat, is Obrien installed
         pcall(seed, gbo, r.id, body_br, head_br, body_hf, head_hf)
     end
     armed[r.id] = {
@@ -555,34 +778,37 @@ local function pre_hit(npc, shit, bone_id, flags)
     nemesis_engine.set_health(npc, 1)
 end
 
+-- Post tier (on_before_hit): the chain has dealt your hit on this hunter. Puts his real health
+-- back from the damage it dealt. Returns that damage, or nil when the hit was not armed in Pre.
 settle_chain = function(npc, r, bone_id)
     local a = armed[r.id]
     if not a then return nil end
     armed[r.id] = nil
-    local odc = a.odc and odc_own
+    local odc = a.odc and odc_own   -- the held death perks, run below only if he really dies
     unlisten_pba()
     if a.at ~= time_global() then
-
+        -- armed by an earlier hit whose Post never came: settle_stale's case, met here first
         nemesis_engine.set_health(npc, a.hp0)
         return nil
     end
     local dmg = 1 - (tonumber(npc.health) or 1)
     if type(a.seen) == "number" and a.seen > dmg then dmg = a.seen end
     if dmg < 0 then dmg = 0 end
-
+    -- Leaving: no damage at all (his hits are refused in on_before_hit, step 3).
     if a.leaving then
         nemesis_engine.set_health(npc, a.hp0)
         return dmg
     end
     local hp = a.hp0 - dmg * hit_mult(r.id, bone_id, true)
     if not r.named or nemesis_member.is_boss(r.id) then
-
+        -- The boss fights to the death (owner, 22 October: he stays killable) and a regular
+        -- dies like anyone: at 0 the engine's own hit kills him, you as the killer.
         if hp < 0 then hp = 0 end
         nemesis_engine.set_health(npc, hp)
-        if hp <= 0 and odc then pcall(odc, npc, a.odc.who) end
+        if hp <= 0 and odc then pcall(odc, npc, a.odc.who) end   -- he dies: Artefacts Reinvention's perks, once
         if hp > 0 and r.named then r.last_hp = hp end
         if not r.named then
-
+            -- his own armour plus Hunter armour class bonus, once grok_bo has loaded it (round 100)
             local add_br = nemesis_utils.br_bonus()
             local gbo = nemesis_compat.grok_bo()
             if add_br > 0 and gbo then pcall(add_native_br, gbo, r.id, add_br) end
@@ -598,16 +824,19 @@ settle_chain = function(npc, r, bone_id)
     return dmg
 end
 
+-- The tick: a hit armed in Pre whose Post never came (another mod's hook failed in between and
+-- the engine stopped calling the rest). His health goes back to before the hit, so he never
+-- stays at full health; that one hit is lost.
 local stale_logged = false
-
+-- Called by nemesis_guard.tick (see above).
 function settle_stale()
     if next(armed) == nil then return end
     local now = time_global()
     for id, a in pairs(armed) do
         if a.at ~= now then
             armed[id] = nil
-            local o = nemesis_engine.obj(id)
-            if o and nemesis_engine.alive(o) then nemesis_engine.set_health(o, a.hp0) end
+            local o = nemesis_engine.obj(id)   -- obj: nemesis_engine, the online object by id
+            if o and nemesis_engine.alive(o) then nemesis_engine.set_health(o, a.hp0) end   -- alive: nemesis_engine, a safe life read
             if not stale_logged then
                 stale_logged = true
                 dbg("!Nemesis ERROR: a hit on hunter %s never reached its last step (another mod's hit hook failed first); his health is put back.", tostring(id))
@@ -617,8 +846,10 @@ function settle_stale()
     unlisten_pba()
 end
 
+-- The hooks, once grok_bo is there (nemesis_guard.tick calls this every tick until it has
+-- looked). grok_bo loads with the game, so it is looked at once.
 local old_exes_told = false
-
+-- Looks once: no grok_bo, the Pre tier hook placed, or old exes (told once in the log and the PDA).
 function install_br_hooks()
     if gbo_state then return end
     if not nemesis_compat.grok_bo() then
@@ -626,9 +857,9 @@ function install_br_hooks()
         dbg("Nemesis: GAMMA ballistics (grok_bo) not found; the mitigation percent is applied by cutting the hit.")
         return
     end
-
+    -- Both tiers are needed: Pre for pre_hit, Post for on_before_hit (nemesis_core.hit_runs_last).
     if type(RegisterScriptCallbackPre) == "function" and nemesis_core.hit_runs_last() then
-
+        -- src: exes _g_patches.script (RegisterScriptCallbackPre)
         if pcall(RegisterScriptCallbackPre, "npc_on_before_hit", pre_hit) then
             gbo_state = "hooked"
             dbg("Nemesis: GAMMA ballistics: your hits on hunters go through GAMMA's own chain; their protection is put around it (Pre and Post tiers).")
@@ -636,11 +867,12 @@ function install_br_hooks()
         end
     end
     gbo_state = "old_exes"
-
+    -- Written whatever Debug logs says, so a player's log shows it in a bug report.
+    -- src: anomaly _g.script (printf)
     printf("~Nemesis: these modded exes have no callback tiers (added 15 September 2026). With GAMMA ballistics, your shots can kill named hunters instead of making them break off. Update the modded exes.")
     if not old_exes_told then
         old_exes_told = true
-
+        -- send_news, text: nemesis_lines, a PDA message and a string table's text
         nemesis_lines.send_news(nemesis_lines.text("st_nemesis_msg_old_exes"), nemesis_lines.text("st_nemesis_caption"))
     end
 end
@@ -648,7 +880,11 @@ end
 ---------------------------------------------------------------------------
 -- Settings: this script declares the Combat page (since round 122, the restructure's step 7)
 ---------------------------------------------------------------------------
-
+-- nemesis_mcm puts the menu together from the scripts that own its pages, in a fixed order, and
+-- saves every value under the same path as before ("nemesis/combat/<id>"), so nothing a player set
+-- is lost. Labels and tooltips come from ui_mcm_nemesis_<id> (configs/text/<language>/ui_mcm_nemesis.xml).
+-- mcm_presets: this page's share of Easy, Medium and Hard (Medium = the defaults below; how they
+-- are made: nemesis_mcm, DIFFICULTY). Both are called when the menu is built, never at load.
 function mcm_page()
     return { id = "combat", sh = true, text = "ui_mcm_nemesis_page_combat", gr = {
             { id = "title", type = "slide", link = "ui_options_slider_player", text = "ui_mcm_nemesis_title", size = {512, 50}, spacing = 20 },
@@ -678,6 +914,7 @@ function mcm_page()
         } }
 end
 
+-- This page's share of the presets (see above).
 function mcm_presets()
     return {
         easy = { retreat_health = 35, accuracy_boost = 8, regular_dr = 0, named_dr = 20, esc_step = 1.5, esc_max = 15, max_damage_reduction = 55, br_bonus = 0, pct_bonus = 0 },

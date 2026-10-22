@@ -1,51 +1,89 @@
 -- Nemesis Config: the player's own small file, gamedata/configs/nwss_player.ltx, which this mod
+-- alone reads and writes (made in round 117).
+-- Used by: nemesis_guard (the death record, section [death]), nemesis_mcm (the settings backup,
+-- section [custom_backup]).
+-- Uses: Anomaly's ini_file_ex (_g.script: a writable ini file with save), nemesis_utils (log_tag).
+-- Written the way Anomaly writes axr_options.ltx and other mods write theirs (Body Health System,
+-- Wearable Devices): ini_file_ex(name, true), w_value, save (Anomaly's _g.script). Under Mod
+-- Organizer it lands in the overwrite folder. The game never reads it as configuration (it is no
+-- system.ltx include and no DLTX mod_system_ file); only this mod reads it. Lane register E3.
+--
+-- Sections:
+--   [death]          pending (1 or 0), at (game seconds of the death), cycle (the cycle then):
+--                    killed by a hunter, the next loaded save from before that death has its
+--                    escalation halved (nemesis_guard). 0 once applied.
+--   [custom_backup]  your own settings, kept before a difficulty replaces them (nemesis_mcm).
+--                    "from" says which difficulty was applied.
+--
+-- Why a value and not a file that comes and goes (the owner's choice, round 117): the old marker file
+-- (nemesis_death_reset.txt) was deleted with os.remove, which never worked under Mod Organizer's
+-- virtual folder (seen: the marker from 18 October still there 3 days later), so every load
+-- halved the escalation again. Writing 0 goes the same way as every save of axr_options.
 
+-- Writes a [CONFIG] debug line, through nemesis_utils.log_tag (the tagged logger, only with Debug logs on).
 local function dbg(...) nemesis_utils.log_tag("CONFIG", ...) end
 
+-- The file's name under gamedata/configs; nemesis_mcm and nemesis_guard name it in their log lines.
 FILE = "nwss_player.ltx"
 
-local ini = nil
+local ini = nil                    -- the open file (ini_file_ex, advanced mode)
 
+-- Opens the file once per session and keeps it: ini_file_ex in advanced mode (writable; Anomaly's
+-- _g.script). Returns nil when this game has no ini_file_ex or opening fails (an error line,
+-- Debug logs only). For: get, set and save_checked share one open file, so what set wrote is
+-- what save writes.
 local function open()
     if ini then return ini end
     if type(ini_file_ex) == "nil" then return nil end
-
+    -- src: anomaly _g.script ini_file_ex (ini_file_ex)
     local ok, f = pcall(ini_file_ex, FILE, true)
     if ok and f then ini = f else dbg("!Nemesis ERROR: %s could not be opened (%s).", FILE, tostring(f)) end
     return ini
 end
 
+-- A value from the file, through the open file's r_value: typ 1 a boolean, 2 a number, nil a
+-- string; def when it is missing or the file cannot be read. r_value caches what it read or set
+-- this session. Called by nemesis_guard (the death record) and nemesis_mcm (the backup).
 function get(section, key, typ, def)
     local f = open()
     if not f then return def end
-
+    -- src: anomaly _g.script ini_file_ex (r_value)
     local ok, v = pcall(function() return f:r_value(section, key, typ, def) end)
     if ok then return v end
     return def
 end
 
+-- Writes a value into the open file, kept in memory until save_checked writes the file. Returns
+-- false when the file cannot be opened. Called by nemesis_guard and nemesis_mcm.
 function set(section, key, val)
     local f = open()
     if not f then return false end
-
+    -- src: anomaly _g.script ini_file_ex (w_value)
     return pcall(function() f:w_value(section, key, val) end) == true
 end
 
+-- Save the file, then read it again from disk with a fresh reader (r_value caches what w_value
+-- wrote, so the open file cannot tell). Returns "ok", "unverified" (the file is new this session:
+-- X-Ray indexes its files at start, so a fresh reader may not see it before the next start), or
+-- "failed" with the first key that does not hold. want is { key = value } to check in section.
+-- For: a record that did not save must say so, because the death record halves the escalation
+-- once and must never apply twice (the old marker file's bug). Called by nemesis_guard (the death
+-- record) and nemesis_mcm (the backup), which log each answer.
 function save_checked(section, want)
     local f = open()
     if not f then return "failed", "(no file)" end
-
+    -- src: anomaly _g.script ini_file_ex (save)
     if not pcall(function() f:save() end) then return "failed", "(save)" end
-
+    -- src: anomaly _g.script ini_file_ex (ini_file_ex)
     local ok, fresh = pcall(ini_file_ex, FILE)
     if not (ok and fresh) then return "unverified" end
     local seen = false
-
+    -- src: engine script_ini_file_script.cpp (section_exist)
     pcall(function() seen = fresh:section_exist(section) end)
     if not seen then return "unverified" end
     for k, v in pairs(want or {}) do
         local got = nil
-
+        -- src: anomaly _g.script ini_file_ex (r_value)
         pcall(function() got = fresh:r_value(section, k) end)
         if tostring(got) ~= tostring(v) then return "failed", k end
     end

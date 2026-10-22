@@ -1,20 +1,39 @@
 -- Nemesis Lines: what the hunt says and shows; split out of nemesis_utils in round 112.
+-- Everything the hunt says and shows: the PDA messages (send_news), the hunters' names, the
+-- lines per hunt faction (warning, taunt, retreat, boss lines ...). The sound picks went to
+-- nemesis_sound, which owns every sound since round 126. The emission boss's own lines are in nemesis_emission (pick asks
+-- there first). Callers call here directly; the old names in nemesis_utils went in round 137.
+-- Used by: nemesis_spawn, nemesis_core, nemesis_boss, nemesis_emission, nemesis_guard,
+-- nemesis_damage, nemesis_utils (text and the line functions).
+-- Uses: nemesis_state (the hunt faction, names), nemesis_utils (boss names, the player's
+-- faction), nemesis_mcm (HD icon), nemesis_sound (the PDA beep), nemesis_engine (portraits),
+-- nemesis_events (a module's own lines); the engine's translate_string and give_game_news.
 
+-- One log line: nemesis_utils.log_msg (tagged AI).
 local function log_msg(...) return nemesis_utils.log_msg(...) end
 
+-- Since the localization of round 134 (owner: the whole mod in Russian), every word the player sees comes
+-- from the game's string tables (configs/text/<language>/st_nemesis*.xml), so the lines speak the
+-- language the game runs in; the tables here hold string ids. An id with no text in the
+-- language's files comes back as the id itself (the engine's way); so does a failed call.
 function text(id)
     local t = nil
-
+    -- src: engine level_script.cpp (game.translate_string)
     pcall(function() t = game.translate_string(id) end)
     return (type(t) == "string" and t ~= "") and t or id
 end
 
+-- The hunt's faction for its lines: UNISG's or the Monolith's.
 local function hunt_faction() return nemesis_state.S.faction == "isg" and "isg" or "monolith" end
 
 ---------------------------------------------------------------------------
 -- Hunter names
 ---------------------------------------------------------------------------
-
+-- 30 first names, 30 surnames, all male (every Monolith and UNISG model and voice is male).
+-- Combined when a hunter spawns, not stored as 900 strings. The boss name (default Bogdan
+-- Kravets) is filtered out in next_hunter_name. Round 134: the lists hold string ids
+-- (st_nemesis_fname_N, st_nemesis_lname_N, st_nemesis_rank_<faction>_N in configs/text/<language>/
+-- st_nemesis.xml), read with text() when a name is made: a hunter keeps the name he was given.
 local FIRST_NAMES = {
     "st_nemesis_fname_1", "st_nemesis_fname_2", "st_nemesis_fname_3", "st_nemesis_fname_4", "st_nemesis_fname_5",
     "st_nemesis_fname_6", "st_nemesis_fname_7", "st_nemesis_fname_8", "st_nemesis_fname_9", "st_nemesis_fname_10",
@@ -33,40 +52,58 @@ local LAST_NAMES = {
     "st_nemesis_lname_26", "st_nemesis_lname_27", "st_nemesis_lname_28", "st_nemesis_lname_29", "st_nemesis_lname_30",
 }
 
+-- A random first name and surname, in the game's language.
 local function compose_name()
     return text(FIRST_NAMES[math.random(#FIRST_NAMES)]) .. " " .. text(LAST_NAMES[math.random(#LAST_NAMES)])
 end
 
+-- Named hunters carry a rank in front of their name, so they stand out from the regular
+-- stalkers of the squad. Monolith hunts use Monolith titles, UNISG hunts (when the player is
+-- Monolith, Zombified or Sin) military ranks. The boss keeps the MCM name as typed.
 local RANKS = {
     monolith = { "st_nemesis_rank_monolith_1", "st_nemesis_rank_monolith_2", "st_nemesis_rank_monolith_3", "st_nemesis_rank_monolith_4", "st_nemesis_rank_monolith_5", "st_nemesis_rank_monolith_6" },
     isg = { "st_nemesis_rank_isg_1", "st_nemesis_rank_isg_2", "st_nemesis_rank_isg_3", "st_nemesis_rank_isg_4", "st_nemesis_rank_isg_5", "st_nemesis_rank_isg_6" },
 }
 
+-- A random rank of the hunt's faction, in the game's language.
 local function rank()
     local list = RANKS[nemesis_state.S.faction] or RANKS.monolith
     return text(list[math.random(#list)])
 end
 
+-- One random name for a hunter; `named` adds a rank. `used` avoids the same name twice in
+-- one squad. The boss name (MCM) is never handed out, so it always means the boss.
 function next_hunter_name(used, named)
     used = used or {}
     local name = nil
     for _ = 1, 24 do
         name = compose_name()
         if named then name = rank() .. " " .. name end
-        if not used[name] and not nemesis_utils.is_boss_name(name) then break end
+        if not used[name] and not nemesis_utils.is_boss_name(name) then break end   -- is_boss_name: nemesis_utils, either boss's name
     end
     if nemesis_utils.is_boss_name(name) then name = (named and rank() .. " " or "") .. text("st_nemesis_name_fallback") end
     used[name] = true
     return name
 end
 
+
 ---------------------------------------------------------------------------
 -- PDA messages and sounds
 ---------------------------------------------------------------------------
-
+-- PDA message with the Nemesis banner (HD optional). Same engine call and sound as GAMMA's own
+-- skill messages (haru_skills: give_game_news + xr_sound "pda_tips"). The old version swallowed
+-- any error in a pcall and played no sound, so a failure was invisible. Now:
+--   * the result is logged (debug logs), with the error text if the call failed,
+--   * a failed call is retried once with a vanilla icon,
+--   * the PDA "tips" sound plays when the message went out.
+-- If the log says "sent" and nothing shows on screen, another mod is hiding it.
 local FALLBACK_ICON = "ui_inGame2_PD_storonnik_ravnovesiya"
 local NEWS_SHOW_MS = 7000
 
+-- msg: the message; caption: the sender line (nil or "": the Nemesis caption); icon_override:
+-- optional texture (the boss's own portrait). Default: the Nemesis banner.
+-- The message is msg, not text (round 141): a parameter named text hid this script's text(), so
+-- the fallback caption failed with "attempt to call local 'text'" (round 134 to 140).
 function send_news(msg, caption, icon_override)
     local actor = db.actor
     if not actor then
@@ -75,11 +112,11 @@ function send_news(msg, caption, icon_override)
     end
     if type(caption) ~= "string" or caption == "" then caption = text("st_nemesis_caption") end
     local icon = "ui_nemesis_news"
-    if nemesis_mcm.get_bool("hd_icon", false) then
+    if nemesis_mcm.get_bool("hd_icon", false) then   -- get_bool: nemesis_mcm, a menu checkbox (cached)
         icon = "ui_nemesis_news_hd"
     end
     if type(icon_override) == "string" and icon_override ~= "" then icon = icon_override end
-
+    -- src: engine script_game_object_script3.cpp (give_game_news)
     local ok, err = pcall(function() actor:give_game_news(caption, msg, icon, 0, NEWS_SHOW_MS) end)
     if not ok then
         log_msg("!Nemesis ERROR: PDA message failed with icon %s (%s), retrying with a vanilla icon.", icon, tostring(err))
@@ -87,7 +124,7 @@ function send_news(msg, caption, icon_override)
         ok, err = pcall(function() actor:give_game_news(caption, msg, icon, 0, NEWS_SHOW_MS) end)
     end
     if ok then
-        nemesis_sound.pda_tip()
+        nemesis_sound.pda_tip()   -- pda_tip: nemesis_sound, the PDA beep
         log_msg("Nemesis: PDA message sent [%s] %s (icon %s).", caption, msg, icon)
     else
         log_msg("!Nemesis ERROR: PDA message failed twice (%s).", tostring(err))
@@ -95,20 +132,30 @@ function send_news(msg, caption, icon_override)
     return ok
 end
 
+-- A PDA message from the boss: under his name (the boss name when he is not in the hunt yet)
+-- and with his portrait. Round 135 (the boss module): here, not in nemesis_boss, because the
+-- spawn, the core and the emission boss send his lines too.
 function boss_news(msg)
     local id = nemesis_state.S.boss_id
-
+    -- name_of: nemesis_state, his PDA name; get_npc_name: nemesis_utils, the hunt's boss name;
+    -- character_icon: nemesis_engine, his portrait
     return send_news(msg, nemesis_state.name_of(id) or nemesis_utils.get_npc_name(), id and nemesis_engine.character_icon(id))
 end
 
+
+-- Your character's name, or the fallback word when it cannot be read.
 local function player_name()
     local name = nil
-
+    -- src: engine script_game_object_script3.cpp (actor) (db.actor.character_name)
     pcall(function() name = db.actor:character_name() end)
     if type(name) ~= "string" or name == "" then name = text("st_nemesis_player_fallback") end
     return name
 end
 
+---------------------------------------------------------------------------
+-- Lines, per hunt faction. %name% is the player's name, %boss% the boss's, %faction% the player's
+-- faction. String ids since round 134; the words are in configs/text/<language>/st_nemesis.xml.
+---------------------------------------------------------------------------
 local LINES = {
     monolith = {
         warning = {
@@ -282,13 +329,15 @@ local LINES = {
     },
 }
 
+-- %faction%: the player's faction, for UNISG lines (they hunt Monolith, Zombified and Sin).
 local FACTION_NAMES = { monolith = "st_nemesis_faction_monolith", zombied = "st_nemesis_faction_zombied", greh = "st_nemesis_faction_greh" }
-
+-- Your faction's name (see above), the Monolith's when it is none of the three.
 local function player_faction_name()
-
+    -- player_community: nemesis_utils, your faction id
     return text(FACTION_NAMES[nemesis_utils.player_community() or ""] or FACTION_NAMES.monolith)
 end
 
+-- line with %name%, %faction% and %boss% filled in (boss, else the hunt's boss name).
 local function fill(line, boss)
     local you = player_name()
     line = string.gsub(line, "%%name%%", function() return you end)
@@ -297,44 +346,49 @@ local function fill(line, boss)
     return line
 end
 
+-- Public for a module's own lines (the emission boss's, nemesis_emission).
 function fill_line(line, boss) return fill(line, boss) end
 
+-- A random line of kind for the hunt's faction, filled in; a module's own line comes first.
 local function pick(kind, boss)
-
-    local own = nemesis_events.ask("own_line", kind, boss)
+    -- A module's hunt has its own lines (the emission boss, round 93; asked since round 115); the
+    -- rest are the hunt's.
+    local own = nemesis_events.ask("own_line", kind, boss)   -- ask: nemesis_events, the first module's answer, or nil
     if own then return own end
     local set = LINES[hunt_faction()][kind]
     return fill(text(set[math.random(#set)]), boss)
 end
 
+-- The hunt's warning (nemesis_spawn, before the spawn).
 function warning_line() return pick("warning") end
-
+-- A named hunter breaking off (nemesis_core).
 function retreat_line() return pick("retreat") end
-
+-- The hunt's time ran out with no living boss (nemesis_core).
 function time_up_line() return pick("time_up") end
-
+-- The boss's hunt-start line (nemesis_spawn).
 function boss_line() return pick("boss") end
-
+-- The warning of a boss hunt; boss is the boss's name (nemesis_spawn).
 function boss_warning_line(boss) return pick("boss_warning", boss) end
-
+-- The boss stash reward is marked (you killed him); boss is his name (nemesis_boss).
 function boss_stash_line(boss) return pick("boss_stash", boss) end
-
+-- The boss leaves alive when the time runs out (nemesis_core).
 function boss_escape_line() return pick("boss_escape") end
-
+-- A line from nowhere, now and then while the boss is cloaked and close (nemesis_boss).
 function dread_line() return pick("dread") end
-
+-- The sneaking boss is behind you; he attacks soon (nemesis_boss).
 function sneak_line() return pick("sneak") end
-
+-- You ran, and the sneaking boss has run you down (nemesis_boss).
 function rush_line() return pick("rush") end
-
+-- The sneaking boss is within his close range of you (nemesis_boss).
 function close_line() return pick("close") end
-
+-- You are at a spot the hunters remember; each named hunter says it (nemesis_core).
 function known_spot_line() return pick("known_spot") end
-
+-- The squad follows you to the next map (nemesis_spawn).
 function follow_line() return pick("follow") end
-
+-- You reload while the boss is near, once a hunt (nemesis_boss).
 function reload_line() return pick("reload") end
 
+-- Hunt-start taunt by cycle: he remembers earlier hunts, and later ones call you by name.
 function taunt(cycle)
     cycle = cycle or 1
     for _, tier in ipairs(LINES[hunt_faction()].taunt) do

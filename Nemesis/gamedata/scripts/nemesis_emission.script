@@ -1,101 +1,214 @@
 -- Nemesis Emission Boss (round 93, user design)
+-- A second boss, tied to emissions. An emission and a hunt meet (a hunt is running when the
+-- emission starts, or a hunt is about to start during one): the hunt is called off and he comes
+-- instead. Nowhere else does he appear.
+--
+--   1. You shelter indoors. The building's exits (up to EXITS_MAX) and your room are found. Round
+--      128 (owner): a ring of RING_GHOSTS ghosts, RING_M around the spot you sheltered, traps you,
+--      and a ghost stands at each door found. Round 130: a big building's ring stands further out.
+--   2. Reach the ring and you are pushed back into it; come close to a door ghost and you are
+--      pushed back inside, every tick (round 130): phantoms fly at you and a little psy damage, at
+--      most once per SHOVE_COOLDOWN_MS. No door pushes in a very small room.
+--   3. HAUNT_LEAD_MS later he arrives alone, outside, with a lightning strike, the teleport burst
+--      and his PDA line.
+--   4. HORDE_LEAD_MS before his arrival (round 147; it used to be HORDE_DELAY_MS after it) easy mutants
+--      spawn past the ghosts on his side, a share of them past the far door's ghosts, and come in after you.
+--   5. He walks (never runs) to the building; the ghosts never stop him. They hold until his
+--      hunt ends (so since round 106, kept in round 128).
+-- One emission boss at a time (force refuses a second, round 99).
+--
+-- He is a Sin (UNISG for Monolith, Zombified and Sin players, like every other hunt), walks
+-- through the emission unharmed, never cloaks or sneaks. Every hit on him goes through the damage
+-- formula with Emission boss damage reduction (round 100, nemesis_damage); NPC and mutant hits
+-- are cut by Emission boss NPC damage reduction first (only him). Every other
+-- boss rule holds: one boss at a time, he fights to the death, he leaves a body for you, and
+-- beating his hunt halves the escalation.
+--
+-- The hunt itself is a normal hunt (nemesis_spawn.spawn_lone_boss): saved, followed to other
+-- maps, ended by the time limit. This file adds the trigger, the haunting, the horde and his
+-- own per-tick rules. S.emission_hunt marks his hunt.
+--
+-- The first module (round 115, restructure step 6; owner: part of the same install). The core
+-- never calls this file: on_game_start (bottom) adds its answers and listeners to nemesis_events,
+-- its slow job and its sections to nemesis_core, and it saves its own state under its own key.
+-- Turning him off is the MCM Emission boss box, as before.
+-- Used by: nobody by name (a module, see on_game_start); the kit reads state and hunt_state.
+-- Uses: nemesis_state (S), nemesis_events, nemesis_core (add_job, add_uninstall_sections),
+-- nemesis_spawn (spawn_lone_boss and the squad helpers), nemesis_engine (the doorway: vertices,
+-- the building reads, squads), nemesis_compat (surge_manager, the psy rework, phantoms),
+-- nemesis_sound, nemesis_fx, nemesis_lines, nemesis_combat (focus), nemesis_member, nemesis_mcm,
+-- nemesis_utils; xlibs xsquad, xsmart and xmath.
+-- src (plain reads used throughout this file, round 121): engine script_game_object_script2.cpp (level_vertex_id); engine script_game_object_script2.cpp (position); engine script_game_object_script2.cpp (section)
 
 local S = nemesis_state.S
-local NO_VERTEX = 4294967295
+local NO_VERTEX = 4294967295     -- the engine's "no level vertex" (round 103: one name for it)
 
+-- A log line tagged EMISSION (nemesis_utils.log_tag: Debug logs, or always when it starts with "!!").
 local function dbg(...) nemesis_utils.log_tag("EMISSION", ...) end
 
-local H = { horde_done = nil,
-            released = nil,
-            squads = nil }
-
+-- His hunt's own state (round 115: this module's, saved under its own key). Cleared when a new
+-- hunt starts (hunt_started; a follow is the same hunt), kept over a follow and a load.
+local H = { horde_done = nil,      -- his horde has come this hunt
+            released = nil,        -- his ghosts are gone this hunt (they do not come back after a load)
+            squads = nil }         -- his horde's squad ids
+-- His hunt's state starts again (a new hunt, a new game, the uninstall).
 local function clear_hunt_state() H.horde_done, H.released, H.squads = nil, nil, nil end
-local saved_flow = nil
+local saved_flow = nil             -- runtime: the flow from the save, restored at the first update
 
+-- His squads, with his own stalker sections since round 95 (configs/mod_system_nemesis_emission.ltx,
+-- so the emission's ignore list holds him alone), and every section of his world objects, for the
+-- uninstall sweep.
 local SQUADS = { greh = "nemesis_emission_squad", isg = "nemesis_emission_squad_isg" }
 local OWN_SECTIONS = { "nemesis_emission_squad", "nemesis_emission_squad_isg", "nemesis_emission_boss",
                        "nemesis_emission_boss_isg", "nemesis_horde_zombied", "nemesis_horde_snork",
                        "nemesis_horde_snork_normal", "nemesis_phantom" }
-
+-- His squad's section for faction, or nil with an important error when his files are not loaded.
 local function squad_section(faction)
     local sec = SQUADS[faction] or SQUADS.greh
-    if nemesis_engine.section_exists(sec) then return sec end
+    if nemesis_engine.section_exists(sec) then return sec end   -- section_exists: nemesis_engine, is this ini section there
     dbg("!!Nemesis ERROR: squad section %s not found (squad_descr_nemesis_emission.ltx is not loaded).", sec)
     return nil
 end
 
-local WAIT_INSIDE_MS  = 60000
-local HAUNT_LEAD_MS   = 20000
-local HORDE_DELAY_MS  = 15000
-local HORDE_LEAD_MS   = 20000
-local RETRY_MS        = 5000
-local GIVE_UP_MS      = 60000
+local WAIT_INSIDE_MS  = 60000      -- not indoors this long after the trigger: he comes anyway, no ghosts
+local HAUNT_LEAD_MS   = 20000      -- ghosts first, then he arrives
+local HORDE_DELAY_MS  = 15000      -- user value: the mutants come this long after his arrival (now only when they could not come before him)
+local HORDE_LEAD_MS   = 20000      -- the owner's value (22 October 2026): the horde comes this long before him
+local RETRY_MS        = 5000       -- a failed arrival is tried again after this
+local GIVE_UP_MS      = 60000      -- ... until this long after the planned arrival
 
+-- Exits: from you outward on SCAN_HEADINGS headings, SCAN_STEP_M at a time up to SCAN_MAX_M, the
+-- first outdoor vertex (xcombat.is_indoor) on a straight walkable line. A line that ends at a wall
+-- inside is cast again from there (SCAN_HOP_HEADINGS headings), so doors off a corridor are found.
+-- A few headings per tick: is_indoor is up to 5 ray picks.
+-- The building's map sets the reach since round 129 (owner: a big hall's far end was never reached).
+-- The shelter test already reads the walls (xlibs get_enclosure: the wall distances east, west,
+-- north, south, up to 40 m). Each line reaches as far as that box does in its direction plus
+-- SCAN_DOOR_M (through a door), between SCAN_MAX_M (never shorter than before) and SCAN_REACH_M;
+-- the second casts along the walls reach the box's longest side, between SCAN_HOP_MAX_M and
+-- SCAN_HOP_REACH_M; and up to EXITS_MAX doors are kept (was 3). No enclosure probe (an older
+-- xlibs): the old reaches.
 local SCAN_HEADINGS, SCAN_HOP_HEADINGS = 24, 12
 local SCAN_STEP_M, SCAN_MAX_M, SCAN_HOP_MAX_M = 2, 30, 20
 local SCAN_DOOR_M, SCAN_REACH_M, SCAN_HOP_REACH_M = 5, 60, 40
-local ENC_NO_WALL_M = SCAN_REACH_M
+local ENC_NO_WALL_M = SCAN_REACH_M   -- no wall hit that way (xlibs' wall rays reach 40 m): the building goes on, so the full reach
 local SCAN_PER_TICK = 2
 local SCAN_HOPS_MAX = 6
 local EXIT_MERGE_M = 4
 local EXITS_MAX = 6
-
+-- The raycast burst, the owner's design of round 132 (the round 130 play test found no door in the
+-- Butcher's hangar, its lines all stopped on things near the shelter): when the lines are done,
+-- BURST_HEADINGS rays go out from the shelter and from up to BURST_SPOTS more spots the lines
+-- reached (BURST_SPOT_GAP_M apart), BURST_Y above the ground (under any window sill: only a door
+-- or a gap in a wall lets one out), against the level's geometry only (an NPC or a crate never
+-- hides a door), to BURST_PAST_M past the building's box (the walls the shelter read). A ray that
+-- gets past the box found an opening; neighbouring ones are one opening, and its door is where
+-- its middle ray leaves the building: the first navmesh spot on it (SCAN_STEP_M apart, no
+-- further than the ray was clear) that is outside by the lines' own rule (round 130).
+-- The burst's doors come first, then the lines' (merged within EXIT_MERGE_M; since round 130 the
+-- lines find no false door, and in the kit's test a burst that saw fewer doors than the lines
+-- would have lost real ones). On an xlibs without the ray: the lines' alone. BURST_PER_TICK rays
+-- a tick: the lines already cost more (up to 5 rays per indoor read).
 local BURST_HEADINGS, BURST_PER_TICK = 120, 60
 local BURST_SPOTS, BURST_SPOT_GAP_M = 3, 8
 local BURST_Y, BURST_PAST_M = 0.4, 3
 
+-- The ghosts: the black poltergeist's idle effect (checked in Anomaly's particles.xr), kept
+-- playing where each one is.
 local GHOST_FX = "monsters\\polter_black_idle"
-
+-- The ring, since round 128 (owner, after the RC12 test in the Butcher's hangar: the door scan is the fragile
+-- part in a big building): a ring of RING_GHOSTS ghosts, RING_M around the spot where your
+-- shelter was confirmed, evenly spaced, each on the navmesh where it stands. A ring point with no
+-- navmesh under it (inside a wall, a rock, another building's wall) gets no ghost: level.vertex_id
+-- answers no vertex for such a point (xray-monolith MT level_graph.cpp, CLevelGraph::vertex_id).
+-- Past RING_PUSH_M from the centre you are pushed RING_BACK_M back toward it: the ring traps you
+-- (owner: only back into the ring). And a ghost stands at each door the exit scan found: within
+-- GHOST_PUSH_M of one you are pushed back inside, toward the shelter (owner: they block the door).
+-- They all hold until his hunt ends. Owner: 12 ghosts, 16 if it needs to be tighter.
+-- Further out in a big building since round 130 (owner): the ring stands RING_PAST_WALL_M past the
+-- building's farthest wall the exit scan read, never closer than RING_M; the push comes
+-- RING_M - RING_PUSH_M inside it, as before.
 local RING_M, RING_GHOSTS = 55, 12
 local RING_PUSH_M, RING_BACK_M = 53, 6
 local RING_PAST_WALL_M = 25
-
+-- Spots off solid ground, since round 131 (owner's play test: 6 of 12 ring spots in solid ground, a gap at one end): a spot
+-- with no navmesh tries these instead, in order, and the first on the navmesh gets the ghost:
+-- { metres out (+) or in (-), a share of the step to the next ghost along the ring }.
 local RING_FILL = { { 5, 0 }, { -5, 0 }, { 10, 0 }, { -10, 0 }, { 0, 0.25 }, { 0, -0.25 },
                     { 5, 0.25 }, { 5, -0.25 }, { -5, 0.25 }, { -5, -0.25 }, { 0, 0.45 }, { 0, -0.45 } }
 local GHOST_PUSH_M = 3.5
-
+-- Side ghosts, since round 132 (owner: at least 2 ghosts per door, preferably 3, to fill any gaps): beside each
+-- door's ghost, one each side across the door (DOOR_SIDE_M along the wall, then nearer), each
+-- on the navmesh; a side in the wall gets its ghost DOOR_SIDE_M further out instead, so every
+-- door has at least 2. Each stands outside, as the door's own ghost (a door reached at an angle
+-- tilts "across", and a side spot could fall back inside). Their reach (GHOST_PUSH_M each)
+-- closes a door about 11 m wide.
 local DOOR_SIDE_M = { 2, 1.2 }
-
+-- A shelter under SMALL_ROOM_M2 (the scan's floor plan, measured to the last walkable spot
+-- before each wall, so about 5 x 5 m in reality) gets no door pushes and no psy damage there
+-- (user: too small a room, the psy would hit from both sides); the ring still holds.
 local SMALL_ROOM_M2 = 12
 local SHOVE_BACK_M = 1.5
 local SHOVE_COOLDOWN_MS = 1500
-
+-- A real shelter, since round 116 (play: the ghosts came while a friend ran to a building, and pushed him out). One
+-- indoor read is not a shelter: xcombat.is_indoor reads a roof within 4 m and walls within 5 m on
+-- 2 of 4 sides, so a porch, an awning by a wall or a doorway can read indoor for a moment as you
+-- run past. The haunting starts only after SHELTER_MS indoors without a single outdoor read in
+-- between (owner: 3 s). Every push must take you closer to the shelter (round 128: the ring's
+-- centre), or it is not made.
 local SHELTER_MS = 3000
-
-local SKIP_LOG_MS = 5000
-
+-- The owner's rule of round 116: the shelter must be emission cover too, as the emission decides it
+-- (nemesis_compat.actor_in_surge_cover: the level's cover zones, not the roof), and indoors (a
+-- building to haunt: a tent is cover but has no doors). Both, for SHELTER_MS in a row.
+local SKIP_LOG_MS = 5000           -- a skipped push is logged at most this often
+-- The wait's debug line, since round 127 (owner's RC12 test: in the Butcher's hangar the log only said "you are not indoors"
+-- after a minute): with Debug logs on, every WAIT_LOG_MS of his wait one line says what the
+-- shelter test reads where you stand: building or not, with the roof and the four wall distances
+-- (xlibs get_enclosure, east, west, north, south; "-" = no hit), emission cover, how long you
+-- have been inside, and how long until he comes without the ghosts.
 local WAIT_LOG_MS = 5000
-local SHOVE_PPE = "psychic.ppe"
+local SHOVE_PPE = "psychic.ppe"    -- the emission's own psy jolt (surge_manager)
 local SHOVE_PPE_ID = 93101
-
+-- Phantoms (vanilla m_phantom, our own section with no contact damage, configs/mod_system_nemesis_phantom.ltx):
+-- they fly at you when you are shoved. The psy damage is our own (psy_hit).
 local PHANTOM_SECTION = "nemesis_phantom"
 local PHANTOMS_PER_SHOVE = 2
 local PHANTOMS_MAX = 4
 
+-- His arrival: the psi storm's lightning strike (particles.xr) and the teleport burst. The strike's
+-- own sound has its own slider, off by default (round 99, play: it doubled the emission's sound).
+-- Never the blowout impact files: they are the emission's own sounds (round 99).
 local LIGHTNING_FX = "crommcruac\\psi_storm_01"
 local LIGHTNING_SOUNDS = { "anomaly\\psi_storm_01" }
 
+-- The horde ("not too hard", by map tier, user design): zombies (zombified stalkers), and on
+-- later maps a snork or two. Two squads of our own sections (squad_descr_nemesis_emission.ltx, his own file), one
+-- species each. Everyone in it and the boss leave each other alone (on_enemy_eval).
 local HORDE_ZOMBIES = { "sim_default_zombied_0", "sim_default_zombied_1", "sim_default_zombied_2" }
 local HORDE_SNORK_WEAK, HORDE_SNORK = "snork_weak", "snork_normal"
-
+-- A squad's leader is its section's own npc (sim_squad_scripted.create_npc reads it), so tier
+-- 4 and 5 maps get a squad section whose leader is a snork_normal (round 95).
 local HORDE_SQUAD_ZOMBIE, HORDE_SQUAD_SNORK, HORDE_SQUAD_SNORK_NORMAL = "nemesis_horde_zombied", "nemesis_horde_snork", "nemesis_horde_snork_normal"
 
-local em = nil
-local roll = nil
-local extra = nil
-local again = false
-local again_exits = nil
-local force_next = false
-local psy_at = nil
-local horde_job = nil
-local allies = {}
+local em = nil                     -- runtime: the trigger, the haunting and the ghosts (see begin)
+local roll = nil                   -- this emission's roll: nil (not rolled), true, false
+local extra = nil                  -- this emission's own roll (Emission boss extra chance) is used
+local again = false                -- his hunt was called off offline (core): he takes the next one
+local again_exits = nil            -- ... with the exits found before (his ring is cast from them)
+local force_next = false           -- MCM "Force the next hunt: Emission boss"
+local psy_at = nil                 -- runtime: the last ghost psy hit (PSY_COOLDOWN_MS)
+local horde_job = nil              -- runtime: horde members still to add, one per tick
+local allies = {}                  -- [id] = true: the boss and his horde (they never fight each other)
 local allies_any = false
-local immune = nil
+local immune = nil                 -- { sec, old }: his section on the emission's ignore list
 
+-- One emission boss at a time (round 99, play: a second pick of the list while he was coming
+-- brought a second one the moment his hunt ended). Refused while he is coming, hunting or
+-- following you; the debug list too.
 function force()
     if em or S.emission_hunt or own_follow_now() or force_next then
         nemesis_utils.log_tag("EMISSION", "Nemesis: the emission boss is already on his way; a second one is refused (MCM).")
-
+        -- send_news, text: nemesis_lines, a PDA message and a string table's text
         nemesis_lines.send_news(nemesis_lines.text("st_nemesis_em_msg_on_his_way"), nemesis_lines.text("st_nemesis_caption"))
         return false
     end
@@ -103,44 +216,57 @@ function force()
     return true
 end
 
+-- Whether the squad following you to this map is his hunt.
 function own_follow_now() return S.follow ~= nil and S.follow.emission_hunt == true end
 
 ---------------------------------------------------------------------------
 -- Settings
 ---------------------------------------------------------------------------
-
+-- His default name from his own string table (round 134: in Russian, Ilarion Grekh in Cyrillic).
 local function default_name() return nemesis_lines.text("st_nemesis_em_boss_name") end
-
+-- His name: MCM Emission boss name, else his default, with its spaces put back.
+-- spaced_name: nemesis_utils, spaces before capitals; get_string: nemesis_mcm, a menu text box
 function boss_name() return nemesis_utils.spaced_name(nemesis_mcm.get_string("emission_name", default_name())) end
 
-local function enabled() return nemesis_mcm.get_bool("emission_enabled", true) end
+-- MCM Emission boss (on or off).
+local function enabled() return nemesis_mcm.get_bool("emission_enabled", true) end   -- get_bool: nemesis_mcm, a menu checkbox (cached)
 
+-- An MCM number, held to lo..hi.
 local function setting(id, def, lo, hi)
-    return math.max(lo, math.min(hi, nemesis_mcm.get_number(id, def)))
+    return math.max(lo, math.min(hi, nemesis_mcm.get_number(id, def)))   -- get_number: nemesis_mcm, a menu number (cached)
 end
 
+-- Emission boss chance (0 when he is off).
 local function chance() return enabled() and setting("emission_chance", 100, 0, 100) or 0 end
-
+-- Emission boss extra chance: rolled once per emission, no hunt needed.
 local function extra_chance() return enabled() and setting("emission_extra", 6, 0, 100) or 0 end
-
+-- The part of an NPC's or a mutant's hit on him that is cut (0..0.95).
 function npc_cut() return setting("emission_npc_cut", 70, 0, 95) / 100 end
-
+-- The share of your psy bar a shove takes (0..0.20).
 local function psy_damage() return setting("emission_psy", 4, 0, 20) / 100 end
-
+-- How many mutants his horde brings (0..8).
 local function horde_size() return math.floor(setting("emission_horde", 4, 0, 8) + 0.5) end
-
+-- Horde flank share as 0..0.5, through setting (the menu number, held to its range): the part of
+-- the horde that comes from the far door's side (added in round 147). Used by spawn_horde.
 local function flank_share() return setting("emission_flank", 30, 0, 50) / 100 end
 
+-- Sin, or UNISG for players the Sin would not hunt (Monolith, Zombified, Sin), like every hunt.
 function faction_for_player()
-    return nemesis_utils.faction_for_player() == "isg" and "isg" or "greh"
+    return nemesis_utils.faction_for_player() == "isg" and "isg" or "greh"   -- faction_for_player: nemesis_utils, the hunt's faction
 end
 
-local function surge() return nemesis_compat.surge_on() end
+-- An emission (or a psi storm) is on, and its deadly part (from its first wave) has begun; the
+-- current map. Through the doorways (round 109): nemesis_compat for surge_manager, nemesis_engine.
+local function surge() return nemesis_compat.surge_on() end   -- surge_on: nemesis_compat, xlibs' is_surge
+-- The deadly part has begun (see above).
+local function deadly() return nemesis_compat.surge_deadly() end   -- surge_deadly: nemesis_compat, from the first wave
+-- The current map's name (see above).
+local function level_name() return nemesis_engine.level_name() end   -- level_name: nemesis_engine, this map's name
 
-local function deadly() return nemesis_compat.surge_deadly() end
-
-local function level_name() return nemesis_engine.level_name() end
-
+---------------------------------------------------------------------------
+-- Lines: his own, per faction. %name% is you, %boss% him. Round 134: string ids; the words are in
+-- configs/text/<language>/st_nemesis_emission.xml (his own file, the module's).
+---------------------------------------------------------------------------
 local LINES = {
     greh = {
         arrival = {
@@ -201,10 +327,11 @@ local LINES = {
     },
 }
 
+-- A line of this kind for his hunt, or nil (the caller uses the normal line).
 function line(kind)
     local set = LINES[S.faction == "isg" and "isg" or "greh"][kind]
     if not set then return nil end
-    return nemesis_lines.fill_line(nemesis_lines.text(set[math.random(#set)]), boss_name())
+    return nemesis_lines.fill_line(nemesis_lines.text(set[math.random(#set)]), boss_name())   -- fill_line: nemesis_lines, the line filled in
 end
 
 ---------------------------------------------------------------------------
@@ -216,19 +343,29 @@ local function set_ally(id, on)
     allies_any = next(allies) ~= nil
 end
 
+-- Whether a and e are both his (the no_fight answer, asked by nemesis_fx.on_enemy_eval).
 function no_fight(a, e)
     return allies_any and allies[a] == true and allies[e] == true
 end
 
-local SEE_ENEMY_M = 40
-
+-- The horde fights what it sees (owner, 22 October 2026): in play they walked past the NPCs they
+-- met, because GAMMA's own combat rules drop stalker fights beyond 60 m while an emission runs and
+-- forget an enemy that is not seen for a while (Anti_Lag_for_GAMMA's xr_combat_ignore.is_enemy),
+-- and their squad's target (you, at a run) pulls them on between fights. So for a horde member
+-- (not the boss: his targets are his combat AI's), a living stalker or mutant he is hostile to,
+-- SEE_ENEMY_M or nearer and seen right now, is his enemy. Who he shoots and how stays the engine's
+-- choice; only his own side of the question is answered, never the other NPC's (the owner's rule:
+-- other mods' NPCs keep their own rules). You are left out: they hunt you anyway.
+local SEE_ENEMY_M = 40             -- metres
+-- Whether horde member npc should count enemy as his enemy now (the sees_enemy answer, asked
+-- by nemesis_fx.on_enemy_eval, which runs very often: table reads first).
 function sees_enemy(npc, enemy)
     if not allies_any then return false end
     local ok, a, e = pcall(function() return npc:id(), enemy:id() end)
     if not ok or not allies[a] or a == S.boss_id or e == 0 or allies[e] then return false end
     local yes = false
     pcall(function()
-
+        -- src: engine script_game_object_script2.cpp (alive, relation, position, see)
         yes = enemy:alive() and npc:relation(enemy) == game_object.enemy
             and npc:position():distance_to_sqr(enemy:position()) <= SEE_ENEMY_M * SEE_ENEMY_M
             and npc:see(enemy)
@@ -236,8 +373,14 @@ function sees_enemy(npc, enemy)
     return yes == true
 end
 
-local function ignore_list() return nemesis_compat.surge_ignore_list() end
+---------------------------------------------------------------------------
+-- He walks through the emission: GAMMA's "NPCs Die in Emissions for Real" kills any stalker
+-- outdoors who is not Monolith, Zombified, a story NPC or on surge_manager_ignore_npc.ignore_npc
+-- (keyed by section). His section goes on that list while he lives and is put back after.
+---------------------------------------------------------------------------
+local function ignore_list() return nemesis_compat.surge_ignore_list() end   -- surge_ignore_list: nemesis_compat, the table or nil
 
+-- His section (obj's, or sec) goes on the ignore list, once; the old value is kept.
 local function make_immune(obj, sec)
     if immune or not (obj or sec) then return end
     if not sec then pcall(function() sec = obj:section() end) end
@@ -248,14 +391,16 @@ local function make_immune(obj, sec)
     dbg("Nemesis: %s walks through the emission (%s on the emission's ignore list).", boss_name(), tostring(sec))
 end
 
+-- make_immune for the running hunt's boss by his id (online or offline).
 local function immune_by_id()
     if immune or not S.boss_id then return end
     local sec = nil
-
+    -- src: engine xrServer_Objects_script.cpp (section_name)
     pcall(function() sec = nemesis_engine.se(S.boss_id):section_name() end)
     if sec then make_immune(nil, sec) end
 end
 
+-- The ignore list's entry for him is put back as it was.
 local function end_immunity()
     if not immune then return end
     local list = ignore_list()
@@ -266,23 +411,33 @@ end
 ---------------------------------------------------------------------------
 -- Exits
 ---------------------------------------------------------------------------
-
+-- An ini section present; a vertex's position (a copy); is pos indoors (xcombat, up to 5 ray
+-- picks). Through nemesis_engine (round 109).
 local function exists(sec) return nemesis_engine.section_exists(sec) end
-
-local function vpos(lv) return nemesis_engine.vertex_pos(lv) end
-
+-- Vertex lv's position, a copy (see above).
+local function vpos(lv) return nemesis_engine.vertex_pos(lv) end   -- vertex_pos: nemesis_engine, a copy of a vertex's position
+-- Inside a building, big halls too (round 127: nemesis_engine.is_building; xlibs' is_indoor
+-- missed the Butcher's hangar). Every indoor read of this module goes through here.
 local function indoor(pos) return nemesis_engine.is_building(pos) end
 
+-- What the shelter test reads at pos, in words, for the wait's debug line (5 rays: Debug logs only).
 local function shelter_reading(pos)
-    local enc = nemesis_engine.enclosure(pos)
+    local enc = nemesis_engine.enclosure(pos)   -- enclosure: nemesis_engine, xlibs' roof and wall distances
     if not enc then return (indoor(pos) and "indoors" or "not indoors") .. " (no enclosure probe in this xlibs)" end
-
+    -- A distance as text, "-" for none.
     local function m(v) return v and string.format("%.1f", v) or "-" end
     local w = enc.walls or {}
     return string.format("%s (roof %s m; walls E %s, W %s, N %s, S %s m)", indoor(pos) and "a building" or "not a building",
         m(enc.roof), m(w[1]), m(w[2]), m(w[3]), m(w[4]))
 end
 
+-- Deep inside, since round 130 (owner's play test: a door ghost 9 m into the Butcher's hangar, its west wall 27 m
+-- away, boxed you into a corner of it): xlibs' roof ray reaches 18 m, so under a higher part of a
+-- hall's roof, or a gap in it, a spot reads "not a building". A door is in a wall, and a line
+-- only gets past a wall through a door (vertex_in_direction stops at walls), so a real exit lies
+-- beyond a wall the shelter's rays read. A spot short of both walls it faces (on each axis, the
+-- wall on its side) is still inside. Toward a side with no wall the read is trusted, as before.
+-- walls: { e, w, n, s, c = where they were read from }.
 local function deep_inside(walls, p)
     if not (walls and walls.c and p) then return false end
     local dx, dz = p.x - walls.c.x, p.z - walls.c.z
@@ -290,11 +445,12 @@ local function deep_inside(walls, p)
     local wz = dz >= 0 and walls.n or walls.s
     return wx ~= nil and wz ~= nil and math.abs(dx) < wx and math.abs(dz) < wz
 end
-
+-- Inside the building: a building read, or deep inside the walls the scan read (round 130).
 local function in_building(p)
     return indoor(p) or deep_inside(em and em.walls, p)
 end
 
+-- Adds the exit (outside and inside spot) unless one is within EXIT_MERGE_M already.
 local function add_exit(exits, out_pos, in_pos)
     for _, e in ipairs(exits) do
         if e.out:distance_to(out_pos) < EXIT_MERGE_M then return end
@@ -302,6 +458,8 @@ local function add_exit(exits, out_pos, in_pos)
     exits[#exits + 1] = { out = out_pos, inside = in_pos }
 end
 
+-- How far from o, on heading (dx, dz), the building's box ends (the walls the shelter read; since
+-- the change of round 129), at most SCAN_REACH_M. East is +x, north +z, as xlibs' wall rays.
 local function box_edge(scan, o, dx, dz)
     local b, c = scan.box, scan.apos
     local t = SCAN_REACH_M
@@ -310,15 +468,18 @@ local function box_edge(scan, o, dx, dz)
     return math.max(t, 0)
 end
 
+-- How far a first line on heading ang reaches (round 129): to the building's box in that
+-- direction plus SCAN_DOOR_M, between SCAN_MAX_M and SCAN_REACH_M; SCAN_MAX_M without a box.
 local function line_reach(scan, ang)
     if not scan.box then return SCAN_MAX_M end
     local t = box_edge(scan, scan.apos, math.cos(ang), math.sin(ang))
     return math.min(SCAN_REACH_M, math.max(SCAN_MAX_M, t + SCAN_DOOR_M))
 end
 
+-- With Debug logs on: the map the scan used and what it found (round 129).
 local function log_scan(scan)
-    if not nemesis_utils.debug_on() then return end
-
+    if not nemesis_utils.debug_on() then return end   -- debug_on: nemesis_utils, the Debug logs box
+    -- A distance as whole metres.
     local function m(v) return string.format("%.0f", v) end
     local found = {}
     for _, e in ipairs(scan.exits) do
@@ -336,6 +497,9 @@ local function log_scan(scan)
     dbg("Nemesis: the exit scan: %s%s; %s exit(s)%s.", map, burst, tostring(#scan.exits), #found > 0 and (": " .. table.concat(found, ", ")) or "")
 end
 
+-- One straight cast from lv on heading ang. Adds an exit, or, when a wall stopped it before
+-- max_m, returns the step before the wall (for a second cast from there: from right at the wall
+-- a door along it is at too flat an angle for SCAN_HOP_HEADINGS).
 local function cast(scan, lv, ang, max_m, reach)
     local dir = vector():set(math.cos(ang), 0, math.sin(ang))
     local origin = vpos(lv)
@@ -344,7 +508,7 @@ local function cast(scan, lv, ang, max_m, reach)
     local d = SCAN_STEP_M
     while d <= max_m do
         local v = nil
-
+        -- vertex_toward: nemesis_engine, stops at walls
         pcall(function() v = nemesis_engine.vertex_toward(lv, dir, d) end)
         if not v or v >= NO_VERTEX then
             if reach then reach[#reach + 1] = last_in end
@@ -360,7 +524,7 @@ local function cast(scan, lv, ang, max_m, reach)
             if reach then reach[#reach + 1] = last_in end
             return nil
         end
-
+        -- vertex_in_direction stops at walls: a short result means a wall.
         local got = math.sqrt((p.x - origin.x) ^ 2 + (p.z - origin.z) ^ 2)
         if got < d - 1 then
             if reach then reach[#reach + 1] = last_in end
@@ -373,6 +537,8 @@ local function cast(scan, lv, ang, max_m, reach)
     return nil
 end
 
+-- The room you shelter in, from where the scan's headings ended (in order round you): the
+-- polygon they make, its floor area and its centre. nil with too few points.
 local function room_of(reach)
     if not reach or #reach < 3 then return nil end
     local ox, oz, y = reach[1].x, reach[1].z, reach[1].y
@@ -388,6 +554,9 @@ local function room_of(reach)
     return { c = vector():set(ox + cx / (3 * a2), y, oz + cz / (3 * a2)), area = area, small = area < SMALL_ROOM_M2 }
 end
 
+-- The raycast burst's spots: the shelter, then the lines' end points farthest from it (at least
+-- 2 SCAN_STEP_M from it), each BURST_SPOT_GAP_M from the other end points. None without the
+-- building's box.
 local function burst_spots(scan)
     local spots = {}
     if not scan.box then return spots end
@@ -396,7 +565,7 @@ local function burst_spots(scan)
     spots[1] = o
     local far = {}
     for _, p in ipairs(scan.reach) do far[#far + 1] = p end
-    local dist = nemesis_engine.flat_dist
+    local dist = nemesis_engine.flat_dist   -- (the module's flat_dist is declared further down)
     table.sort(far, function(a, b) return dist(a, o) > dist(b, o) end)
     for _, p in ipairs(far) do
         if #spots > BURST_SPOTS or dist(p, o) < 2 * SCAN_STEP_M then break end
@@ -412,12 +581,16 @@ local function burst_spots(scan)
     return spots
 end
 
+-- An opening seen from o on heading ang: its door is the first navmesh spot on that heading that
+-- is outside (not a building, and not deep inside the walls the shelter read), or none (a gap to
+-- another room). Only as far as the ray was clear (vertex_at reads straight down, through any
+-- wall). Up to 5 rays per spot read, for the few openings only.
 local function burst_door(scan, B, o, ang)
     local dx, dz = math.cos(ang), math.sin(ang)
     local last = box_edge(scan, o, dx, dz) + BURST_PAST_M
     local d = SCAN_STEP_M
     while d <= last do
-        local lv = nemesis_engine.vertex_at(vector():set(o.x + dx * d, o.y, o.z + dz * d))
+        local lv = nemesis_engine.vertex_at(vector():set(o.x + dx * d, o.y, o.z + dz * d))   -- vertex_at: nemesis_engine, the vertex at a position
         local p = lv and vpos(lv)
         if p and not indoor(p) and not deep_inside(scan.walls, p) then
             add_exit(B.exits, p, o)
@@ -427,6 +600,8 @@ local function burst_door(scan, B, o, ang)
     end
 end
 
+-- One spot's rays are all in (B.open[k]): each run of open headings is one opening, its door on
+-- its middle heading. Read once round from a blocked heading, so a run across heading 1 is one.
 local function burst_openings(scan, B, o)
     local n, open = BURST_HEADINGS, B.open
     local start = nil
@@ -436,7 +611,7 @@ local function burst_openings(scan, B, o)
             break
         end
     end
-    if not start then return end
+    if not start then return end   -- open all round: not inside a building here
     local step = 2 * math.pi / n
     local run = nil
     for i = 1, n do
@@ -451,16 +626,17 @@ local function burst_openings(scan, B, o)
     if run then burst_door(scan, B, o, ((start - 1 + (run.a + run.b) / 2) % n) * step) end
 end
 
+-- BURST_PER_TICK rays; true when every spot is done. Debug logs on: each tick is timed.
 local function burst_step(scan)
     local B = scan.burst
-    local t0 = nemesis_utils.debug_on() and nemesis_engine.clock_ms() or nil
+    local t0 = nemesis_utils.debug_on() and nemesis_engine.clock_ms() or nil   -- clock_ms: nemesis_engine, CPU milliseconds
     local n = 0
     while n < BURST_PER_TICK and B.s <= #B.spots do
         local o = B.spots[B.s]
         local ang = (B.k - 1) * 2 * math.pi / BURST_HEADINGS
         local dx, dz = math.cos(ang), math.sin(ang)
         local l = box_edge(scan, o, dx, dz) + BURST_PAST_M
-
+        -- line_blocked: nemesis_engine, a ray against the level's geometry
         B.open[B.k] = nemesis_engine.line_blocked(o, vector():set(o.x + dx * l, o.y, o.z + dz * l), BURST_Y) == false
         B.rays, n = B.rays + 1, n + 1
         B.k = B.k + 1
@@ -474,6 +650,9 @@ local function burst_step(scan)
     return B.s > #B.spots
 end
 
+-- A few casts per tick (SCAN_PER_TICK): first the SCAN_HEADINGS from you (each one's end point
+-- kept in scan.reach for the room), then the second casts from the walls they hit. True when
+-- done: scan.exits holds the EXITS_MAX nearest exits, scan.room the room (room_of).
 local function scan_step(scan)
     local n = 0
     while n < SCAN_PER_TICK and scan.i <= SCAN_HEADINGS do
@@ -502,7 +681,7 @@ local function scan_step(scan)
         scan.lines_found, scan.exits = #scan.exits, all
     end
     if scan.burst and scan.burst.s > #scan.burst.spots then
-
+        -- The EXITS_MAX nearest to you.
         local apos = scan.apos
         table.sort(scan.exits, function(a, b) return a.out:distance_to(apos) < b.out:distance_to(apos) end)
         while #scan.exits > EXITS_MAX do table.remove(scan.exits) end
@@ -513,6 +692,9 @@ local function scan_step(scan)
     return false
 end
 
+-- A new exit scan from where you stand (nil when you are off the navmesh). Since round 129 the
+-- building's box from the wall distances (no wall hit = ENC_NO_WALL_M), and the second casts'
+-- reach from its longest side.
 local function new_scan(actor)
     local lv, apos = nil, nil
     pcall(function()
@@ -537,20 +719,25 @@ end
 ---------------------------------------------------------------------------
 -- Ghosts
 ---------------------------------------------------------------------------
-
+-- A ghost's effect at pos, 1 m up (nil when it fails: ghosts_tick tries again).
 local function ghost_at(pos)
-    return nemesis_engine.particle_at(GHOST_FX, vector():set(pos.x, pos.y + 1, pos.z))
+    return nemesis_engine.particle_at(GHOST_FX, vector():set(pos.x, pos.y + 1, pos.z))   -- particle_at: nemesis_engine, a particle at a spot
 end
 
-local function flat_dist(a, b) return nemesis_engine.flat_dist(a, b) end
+-- Distance on the ground (height left out: a ghost floats 1 m up, a door sits on a step).
+local function flat_dist(a, b) return nemesis_engine.flat_dist(a, b) end   -- flat_dist: nemesis_engine, the distance on the ground
 
+-- The ring's ghost spots: RING_GHOSTS points ring_m() around c, each on the navmesh there (its
+-- ground height). A point with no vertex under it is inside a wall or rock: the RING_FILL spots
+-- near it are tried (round 131), and only when none is on the navmesh is it left out.
+-- Returns the spots, how many were left out and how many moved.
 local function ring_m() return (em and em.ring and em.ring.r) or RING_M end
-
+-- The spots around c (see above).
 local function ring_spots(c)
     local spots, skipped, moved = {}, 0, 0
     local r = ring_m()
     local step = 2 * math.pi / RING_GHOSTS
-
+    -- Ghost k's spot, dr metres out and da of a step along the ring, on the navmesh; or nil.
     local function spot(dr, da, k)
         local a = step * (k + da)
         local lv = nemesis_engine.vertex_at(vector():set(c.x + (r + dr) * math.cos(a), c.y, c.z + (r + dr) * math.sin(a)))
@@ -572,13 +759,16 @@ local function ring_spots(c)
     return spots, skipped, moved
 end
 
+-- The ring and the door ghosts go up (the exit scan is done). em.ring.c is the shelter.
+-- A door's ghost spots: the door itself, then one each side across it (round 132, DOOR_SIDE_M),
+-- the way through the door being from its inside spot to its outside one.
 local function door_spots(e)
     local spots = { e.out }
     local dx, dz = e.out.x - e.inside.x, e.out.z - e.inside.z
     local l = math.sqrt(dx * dx + dz * dz)
     if l < 0.1 then return spots end
     dx, dz = dx / l, dz / l
-
+    -- The navmesh spot at (x, z) when it is outside the building, or nil.
     local function on_mesh(x, z)
         local lv = nemesis_engine.vertex_at(vector():set(x, e.out.y, z))
         local p = lv and vpos(lv)
@@ -596,6 +786,7 @@ local function door_spots(e)
     return spots
 end
 
+-- The ring and the door ghosts go up (see above); exits: the scan's doors.
 local function ghosts_on(exits)
     em.ghosts = {}
     if not (em.ring and em.ring.c) then return end
@@ -615,25 +806,29 @@ local function ghosts_on(exits)
         em.room and string.format("%.0f", em.room.area) or "?", em.room and em.room.small and ", too small: no door pushes" or "")
 end
 
+-- The finished scan's exits, room and walls go into the flow, and the ring's size (round 130).
 local function take_scan()
     local sc = em.scan
     em.exits, em.room, em.walls, em.done_scan, em.scan = sc.exits, sc.room, sc.walls, true, nil
     if em.ring and sc.ring_m then em.ring.r = sc.ring_m end
 end
 
+-- Every tick: an effect that ended is started again where its ghost stands.
 local function ghosts_tick()
     if not (em and em.ghosts_on) then return end
     for _, g in ipairs(em.ghosts or {}) do
         local playing = false
-
+        -- src: engine script_sound_script.cpp / script_particles_script.cpp (playing)
         pcall(function() playing = g.fx ~= nil and g.fx:playing() end)
         if not playing then g.fx = ghost_at(g.pos) end
     end
 end
 
+-- Every ghost goes (his hunt is over, the map changed). Marks his hunt's haunting as done
+-- (H.released), so a load or a follow never brings them back.
 local function ghosts_off(why)
     if not em or not em.ghosts_on then return end
-
+    -- src: engine script_sound_script.cpp / script_particles_script.cpp (stop)
     for _, g in pairs(em.ghosts or {}) do if g.fx then pcall(function() g.fx:stop() end) end end
     em.ghosts, em.ghosts_on = {}, false
     if S.emission_hunt then H.released = true end
@@ -644,33 +839,43 @@ end
 -- The shove
 ---------------------------------------------------------------------------
 local ppe_ok = nil
-
+-- The emission's psy jolt on your screen, when psychic.ppe is there (looked at once).
 local function shove_ppe()
     if ppe_ok == nil then
         ppe_ok = false
-        ppe_ok = nemesis_engine.file_exists("$game_anims$", SHOVE_PPE)
+        ppe_ok = nemesis_engine.file_exists("$game_anims$", SHOVE_PPE)   -- file_exists: nemesis_engine, a file in an engine root
     end
-
+    -- src: engine level_script.cpp (level.add_pp_effector)
     if ppe_ok then pcall(function() level.add_pp_effector(SHOVE_PPE, SHOVE_PPE_ID, false) end) end
 end
 
+-- Up to PHANTOMS_PER_SHOVE phantoms near from (at most PHANTOMS_MAX alive); returns how many.
 local function phantoms(from)
     local sec = PHANTOM_SECTION
     if type(level.spawn_item) ~= "function" or not exists(sec) then return 0 end
-    local live = nemesis_compat.phantom_count(sec)
+    local live = nemesis_compat.phantom_count(sec)   -- phantom_count: nemesis_compat, phantoms alive
     local n = 0
     for k = 1, PHANTOMS_PER_SHOVE do
         if live + n >= PHANTOMS_MAX then break end
         local p = vector():set(from.x + (k - 1.5), from.y + 1.2, from.z)
-        if nemesis_engine.spawn_own_item(sec, p) then n = n + 1 end
+        if nemesis_engine.spawn_own_item(sec, p) then n = n + 1 end   -- spawn_own_item: nemesis_engine, an item of our own section
     end
     return n
 end
 
-local function psy_rework() return nemesis_compat.psy_rework() end
+-- A flat share of your whole psy bar per shove, whatever you wear. GAMMA's psy rework
+-- (arszi_psy) keeps its own psy health and takes your full psy protection off every psy hit,
+-- so a small hit does nothing in a good helmet: there its psy health is changed directly.
+-- Without it, the engine's psy health through change_psy_health, which adds the value. Never
+-- the psy_health property: every Anomaly engine since 1.5.1 binds it to SetPsyHealth, which
+-- SETS psy health (only CoP's original engine added), so -0.04 there was a psy death (round 95).
+-- change_psy_health is in every Anomaly engine; should a call fail, the shove still happens.
+local function psy_rework() return nemesis_compat.psy_rework() end   -- psy_rework: nemesis_compat, arszi_psy or nil
 
+-- At most one psy hit per PSY_COOLDOWN_MS (round 99, user value): several ghosts can push you
+-- at the same moment.
 local PSY_COOLDOWN_MS = 800
-
+-- One shove's psy share off your psy bar (see above).
 local function psy_hit(actor)
     local power = psy_damage()
     if power <= 0 then return end
@@ -679,51 +884,65 @@ local function psy_hit(actor)
     psy_at = now
     local lib = psy_rework()
     if lib then
-
+        -- src: gamma arszi_psy.script (Psy rework) (lib.change_psy_health)
         pcall(lib.change_psy_health, -power)
         return
     end
-
+    -- src: engine script_game_object_script2.cpp (change_psy_health)
     if not pcall(function() actor:change_psy_health(-power) end) then
         dbg("Nemesis: change_psy_health failed; the shove takes no psy health.")
     end
 end
 
+-- Pushed away from a door ghost you came too close to (round 101): out of its reach
+-- (GHOST_PUSH_M plus SHOVE_BACK_M since round 128: a shorter push left you inside it, and it pushed
+-- again at the next cooldown), if that is indoors on the navmesh; else nil.
 local function push_away(actor, pos, from)
     local dx, dz = pos.x - from.x, pos.z - from.z
     local l = math.sqrt(dx * dx + dz * dz)
     if l < 0.1 then return nil end
-
+    -- src: engine script_game_object_script2.cpp (level_vertex_id)
     local v = nemesis_engine.vertex_toward(actor:level_vertex_id(), vector():set(dx / l, 0, dz / l), GHOST_PUSH_M + SHOVE_BACK_M)
     local p = v and vpos(v)
     if p and in_building(p) and flat_dist(p, pos) > 0.5 then return p end
     return nil
 end
 
+-- True when to is closer to the shelter (the ring's centre) than from: a push inward.
 local function inward(from, to)
     local c = em and em.ring and em.ring.c
     return c ~= nil and to ~= nil and flat_dist(to, c) < flat_dist(from, c)
 end
 
+-- dist m toward the shelter on the navmesh (stopping at walls), or nil. indoors: only a spot
+-- that is indoors (a door push); the ring push may land outdoors inside the ring.
 local function push_toward_centre(actor, pos, dist, indoors)
     local c = em and em.ring and em.ring.c
     if not c then return nil end
     local dx, dz = c.x - pos.x, c.z - pos.z
     local l = math.sqrt(dx * dx + dz * dz)
     if l < 0.5 then return nil end
-
+    -- src: engine script_game_object_script2.cpp (level_vertex_id)
     local v = nemesis_engine.vertex_toward(actor:level_vertex_id(), vector():set(dx / l, 0, dz / l), math.min(dist, l))
     local p = v and vpos(v)
     if p and flat_dist(p, pos) > 0.5 and (not indoors or in_building(p)) then return p end
     return nil
 end
-
+-- Logs why a push was not made, at most once per SKIP_LOG_MS.
 local function skip_push(gt, why)
     if gt - (em.skip_log_at or -1000000) < SKIP_LOG_MS then return end
     em.skip_log_at = gt
     dbg("Nemesis: no push (%s).", why)
 end
 
+-- Every tick while the ghosts are up (round 128; since round 130 the push itself holds every tick,
+-- a wall, and only its effects wait SHOVE_COOLDOWN_MS between them):
+--   * past RING_PUSH_M from the shelter: pushed RING_BACK_M back toward it (the ring traps you);
+--   * within GHOST_PUSH_M of a door ghost (not in a small room): pushed away from it, indoors,
+--     or toward the shelter when that is not inward (round 132: outside beside a door, back
+--     through it, to its inside spot).
+-- A push always takes you closer to the shelter, or it is not made. At most once per
+-- SHOVE_COOLDOWN_MS a push also brings psy_hit, the psy screen effect and phantoms.
 local function guard_tick(gt, actor)
     if not (em and em.ghosts_on and em.ring and em.ring.c) then return end
     local pos = nil
@@ -731,7 +950,7 @@ local function guard_tick(gt, actor)
     if not pos then return end
     local c = em.ring.c
     local to, why = nil, nil
-
+    -- src: xlibs xmath.script (xmath.is_in_range)
     if not xmath.is_in_range(pos, c.x, c.z, ring_m() - (RING_M - RING_PUSH_M)) then
         to = push_toward_centre(actor, pos, RING_BACK_M, false)
         why = "the ring"
@@ -747,7 +966,8 @@ local function guard_tick(gt, actor)
         if not near then return end
         to = push_away(actor, pos, near.pos)
         if not inward(pos, to) then to = push_toward_centre(actor, pos, GHOST_PUSH_M + SHOVE_BACK_M, true) end
-
+        -- Outside beside a door (since round 132), the wall is between you and any indoor spot in a
+        -- straight line: back through the door, to its inside spot (the scan's).
         if not to then
             local ex = em.exits and em.exits[near.i]
             to = ex and ex.inside
@@ -758,9 +978,11 @@ local function guard_tick(gt, actor)
         return
     end
     if not inward(pos, to) then return skip_push(gt, why .. ": it would not take you toward the shelter") end
-
+    -- src: engine script_game_object_script2.cpp (set_actor_position)
     pcall(function() actor:set_actor_position(to) end)
-
+    -- Every tick, since round 130 (owner's play test: right after a push you could run straight past the ghost):
+    -- the push holds every tick, a wall; the psy share, the screen effect and the phantoms
+    -- come at most once per SHOVE_COOLDOWN_MS.
     if gt - (em.shove_at or -1000000) < SHOVE_COOLDOWN_MS then return end
     em.shove_at = gt
     psy_hit(actor)
@@ -774,22 +996,26 @@ end
 -- His arrival
 ---------------------------------------------------------------------------
 local fx_keep = {}
-
+-- Keeps effect object o while it plays (the last 4).
 local function keep(o)
     fx_keep[#fx_keep + 1] = o
     if #fx_keep > 4 then table.remove(fx_keep, 1) end
 end
 
+-- His arrival's lightning: the strike's effect where he stands (kept while it plays), and its
+-- sound at Lightning strike volume (off by default, round 99), through nemesis_sound (round 126:
+-- xsound, the engine keeps it while it plays).
 local function lightning(pos)
     local p = nemesis_engine.particle_at(LIGHTNING_FX, pos)
     if p then keep(p) end
-    local path = nemesis_sound.pick("lightning", LIGHTNING_SOUNDS)
-    local vol = nemesis_sound.volume("lightning_volume", 0)
-    if path and vol > 0 then nemesis_sound.play_at(path, pos, vol) end
+    local path = nemesis_sound.pick("lightning", LIGHTNING_SOUNDS)   -- pick: nemesis_sound, the first file that exists
+    local vol = nemesis_sound.volume("lightning_volume", 0)   -- volume: nemesis_sound, a volume slider as 0..1
+    if path and vol > 0 then nemesis_sound.play_at(path, pos, vol) end   -- play_at: nemesis_sound, a 3D sound at a spot
 end
 
+-- The new hunt's boss (nemesis_spawn, a followed one too): the boss of this hunt, his way.
 function make_boss(id)
-    local r = nemesis_state.member(id)
+    local r = nemesis_state.member(id)   -- member: nemesis_state, his member record
     S.boss_id = id
     S.boss_hunt = true
     S.emission_hunt = true
@@ -803,6 +1029,9 @@ function make_boss(id)
     dbg("Nemesis: '%s' is the EMISSION BOSS of this hunt (%s).", tostring(r and r.name), tostring(S.faction))
 end
 
+-- The exits' outside vertices (em.exits, from the building scan, through nemesis_engine.vertex_at),
+-- to cast his spot from: from outside, since walls stop every line. Used by arrive and by the
+-- haunt stage, which picks his spot early, as his horde comes.
 local function exit_vertices()
     local from = {}
     for _, e in ipairs(em and em.exits or {}) do
@@ -813,13 +1042,19 @@ local function exit_vertices()
     return from
 end
 
-local arriving = false
+local arriving = false             -- true while arrive() starts his hunt (the hunt_started listener reads it)
 
+-- He arrives (spawn_lone_boss, the lightning, the burst, his line); false when there is no spot yet.
+-- His spot was picked when his horde came (em.boss_spot, so they come from his side); without one,
+-- spawn_lone_boss picks it now. Called by update in the haunt stage once his clock lets him.
 local function arrive(gt)
     local faction = faction_for_player()
-
+    -- His hunt starting here announces hunt_started, whose listener clears the last hunt's horde
+    -- bookkeeping (clear_hunt_state). His horde came before him since round 147, so his own start
+    -- must keep it: arriving tells the listener (round 148, found by the kit: the early horde was
+    -- forgotten and a second one came 15 s after him).
     arriving = true
-
+    -- spawn_lone_boss: nemesis_spawn, his hunt placed like any hunt
     local ok, pos = pcall(nemesis_spawn.spawn_lone_boss, faction, exit_vertices(),
         { section = squad_section(faction), name = boss_name(), make_boss = make_boss, label = "emission boss",
           spot = em.boss_spot })
@@ -829,20 +1064,20 @@ local function arrive(gt)
         pos = nil
     end
     if not pos then
-        em.boss_spot = nil
+        em.boss_spot = nil   -- a picked spot that failed: the next try picks again
         return false
     end
     immune_by_id()
     lightning(pos)
-    nemesis_fx.play_retreat_fx(pos)
-    nemesis_lines.boss_news(line("arrival"))
+    nemesis_fx.play_retreat_fx(pos)   -- play_retreat_fx: nemesis_fx, the burst and sound
+    nemesis_lines.boss_news(line("arrival"))   -- boss_news: nemesis_lines, the boss's PDA message
     em.stage = "boss"
     em.boss_at = gt
-
+    -- His horde came before him (round 147), or he came back (em.again): either way no new one.
     H.horde_done = H.horde_done or em.again or nil
     H.released = nil
     dbg("Nemesis: the emission boss arrives with a lightning strike, %s m away.",
-
+        -- src: engine script_game_object_script2.cpp (actor) (db.actor.position)
         string.format("%.0f", pos:distance_to(db.actor:position())))
     return true
 end
@@ -850,10 +1085,10 @@ end
 ---------------------------------------------------------------------------
 -- The horde
 ---------------------------------------------------------------------------
-
+-- What comes, by the map's danger tier (nemesis_spawn.area_tier; scaling off counts as 2).
 local function horde_plan()
     local n = horde_size()
-    local tier = nemesis_spawn.area_tier() or 2
+    local tier = nemesis_spawn.area_tier() or 2   -- area_tier: nemesis_spawn, the map's danger tier
     local snorks = 0
     if tier >= 4 then snorks = 2 elseif tier >= 2 then snorks = 1 end
     if snorks > n then snorks = n end
@@ -863,8 +1098,23 @@ local function horde_plan()
     return zombies, snork_list, tier, tier >= 4 and HORDE_SQUAD_SNORK_NORMAL or HORDE_SQUAD_SNORK
 end
 
-local HORDE_OUT_MIN_M, HORDE_OUT_MAX_M = 5, 15
+-- Where the horde comes in. Since round 147 (owner): from the ghosts. The ring ghosts stand
+-- ring_m() around the shelter, beyond the building's farthest wall, so a spot past them is always
+-- outside it; the old way (the line through the door nearest to him) fell back to the door's own
+-- spot when a wall cut it short, and the exit scan sometimes places that spot just inside
+-- (play: at Butcher's Hall they spawned inside). So:
+--   the main group: past the ring ghost nearest to his side (em.boss_spot, picked as they come),
+--     HORDE_OUT_MIN_M..HORDE_OUT_MAX_M further out, outdoors and outside the ring (outside_spot);
+--     the next nearest ghost is tried when one gives no such spot;
+--   the flank (horde_spots): with two doors or more, Horde flank share of it comes past the ghost
+--     nearest to the door farthest from his door, and works in from there;
+--   no ghosts (you never got indoors) or no spot past them: the old way (horde_spot).
+local HORDE_OUT_MIN_M, HORDE_OUT_MAX_M = 5, 15   -- metres past the ring
 
+-- Whether spot p is fit for the horde: outdoors (through indoor: nemesis_engine.is_building, big
+-- halls too), and outside the ghosts' ring around the shelter c when there is one (flat_dist,
+-- ring_m). False for no spot. Used by beyond_ghost, and by fill_horde for each member's scatter.
+-- For: a horde spawned inside the building (play at Butcher's Hall).
 local function outside_spot(p, c)
     if not p then return false end
     if c and flat_dist(p, c) <= ring_m() then return false end
@@ -873,19 +1123,26 @@ local function outside_spot(p, c)
     return not inside
 end
 
+-- A spot HORDE_OUT_MIN_M..HORDE_OUT_MAX_M straight out from ghost spot g (away from the shelter c),
+-- walked on the navmesh (nemesis_engine.vertex_at, vertex_toward), when that is fit
+-- (outside_spot); else nil. Used by ghost_side_spot.
 local function beyond_ghost(g, c)
     local dx, dz = g.x - c.x, g.z - c.z
     local l = math.sqrt(dx * dx + dz * dz)
     if l < 0.1 then return nil end
-    local lv = nemesis_engine.vertex_at(g)
+    local lv = nemesis_engine.vertex_at(g)   -- vertex_at: nemesis_engine, the level vertex at a spot
     if not lv then return nil end
     local reach = math.random(HORDE_OUT_MIN_M, HORDE_OUT_MAX_M)
-    local v = nemesis_engine.vertex_toward(lv, vector():set(dx / l, 0, dz / l), reach)
+    local v = nemesis_engine.vertex_toward(lv, vector():set(dx / l, 0, dz / l), reach)   -- vertex_toward: nemesis_engine, a walk on the navmesh
     local p = v and vpos(v)
     if outside_spot(p, c) then return p end
     return nil
 end
 
+-- A spot for a horde group from toward's side: past the ring ghost (em.ghosts, kind "ring")
+-- nearest to toward that gives a fit one (beyond_ghost), the next nearest in turn; nil when none
+-- does or there are no ring ghosts. Used by horde_spots: toward his spot for the main group, toward
+-- the far door for the flank.
 local function ghost_side_spot(toward)
     local c = em and em.ring and em.ring.c
     if not (c and toward) then return nil end
@@ -901,6 +1158,11 @@ local function ghost_side_spot(toward)
     return nil
 end
 
+-- The old way, for when the ghosts give no spot (see above), since round 128: just outside the
+-- ring, on the line from the shelter through the door nearest to him; no door found: the same on
+-- his side; a line that meets a wall short of the ring: that door itself; without a door and the
+-- ring: 25 m from you toward him. His position is his early-picked spot (em.boss_spot) while he
+-- has not come yet.
 local function horde_spot(actor)
     local bpos = em and em.boss_spot and em.boss_spot.pos
     if not bpos then pcall(function() bpos = nemesis_engine.se(S.boss_id).position end) end
@@ -910,7 +1172,7 @@ local function horde_spot(actor)
         if not best_d or d < best_d then best, best_d = e, d end
     end
     local c = em and em.ring and em.ring.c
-
+    -- From from_pos straight away from the shelter, to HORDE_OUT_MIN_M..MAX past the ring.
     local function past_ring(from_pos, dx, dz)
         local l = math.sqrt(dx * dx + dz * dz)
         local lv = nemesis_engine.vertex_at(from_pos)
@@ -934,7 +1196,7 @@ local function horde_spot(actor)
         local dx, dz = bpos.x - apos.x, bpos.z - apos.z
         local l = math.sqrt(dx * dx + dz * dz)
         if l > 1 then
-
+            -- src: engine script_game_object_script2.cpp (level_vertex_id)
             local alv = actor:level_vertex_id()
             local v = nemesis_engine.vertex_toward(alv, vector():set(dx / l, 0, dz / l), 25)
             local p = v and vpos(v)
@@ -944,13 +1206,17 @@ local function horde_spot(actor)
     return apos
 end
 
+-- The main group's spot and the flank's (or nil), see "Where the horde comes in" above. The main
+-- group's from his side (ghost_side_spot toward em.boss_spot); without ghosts, the old way
+-- (horde_spot). The flank's, with two doors or more, from the side of the door farthest from his
+-- door, and only when that is at least ring_m() from the main group's. Used by spawn_horde.
 local function horde_spots(actor)
     local toward = em and em.boss_spot and em.boss_spot.pos
     local main = toward and ghost_side_spot(toward)
     if not main then return horde_spot(actor), nil end
     local exits = em.exits or {}
     if #exits < 2 then return main, nil end
-
+    -- his door: the one nearest to his side; the flank's: the one farthest from his
     local near, far = nil, nil
     for _, e in ipairs(exits) do
         if not near or flat_dist(e.out, toward) < flat_dist(near.out, toward) then near = e end
@@ -960,46 +1226,56 @@ local function horde_spots(actor)
     end
     if far == near then return main, nil end
     local flank = ghost_side_spot(far.out)
-
+    -- The flank must come from elsewhere: at least the ring's radius from the main group.
     if flank and flat_dist(flank, main) >= ring_m() then return main, flank end
     return main, nil
 end
 
+-- A horde squad of section at pos, scripted on you and off the smart roster; returns it and its
+-- vertices, or nil.
 local function new_squad(section, pos)
     local lv, gv = nil, nil
     pcall(function() lv = nemesis_engine.vertex_at(pos) end)
-
+    -- src: engine script_game_object_script2.cpp (actor) (db.actor.game_vertex_id)
     pcall(function() gv = db.actor:game_vertex_id() end)
     if not lv or lv >= NO_VERTEX or not gv then return nil end
     local sq = nil
     local ok, err = pcall(function()
-        sq = nemesis_engine.create_squad(section, pos, lv, gv)
+        sq = nemesis_engine.create_squad(section, pos, lv, gv)   -- create_squad: nemesis_engine, a squad of our own section
         if sq then
-
+            -- src: anomaly sim_squad_scripted.script (create_npc)
             sq:create_npc(nil, pos, lv, gv)
-
+            -- src: anomaly sim_squad_scripted.script (set_squad_relation)
             pcall(function() sq:set_squad_relation() end)
-
+            -- src: xlibs xsquad.script (xsquad.set_target_actor)
             xsquad.set_target_actor(sq, true)
-
+            -- src: xlibs xsmart.script (xsmart.assign_squad_to_smart)
             xsmart.assign_squad_to_smart(sq, nil)
         end
     end)
     if not ok then
         dbg("!Nemesis ERROR: the horde squad %s failed (%s).", section, tostring(err))
-
+        -- queue_squad_cleanup: nemesis_fx, the empty squad removed later
         if sq then pcall(function() nemesis_fx.queue_squad_cleanup(sq.id) end) end
         return nil
     end
     return sq, lv, gv
 end
 
+-- Keeps horde squad sq in H.squads, its members his allies.
 local function remember_squad(sq)
     H.squads = H.squads or {}
     H.squads[#H.squads + 1] = sq.id
-    for _, mid in ipairs(nemesis_spawn.member_ids(sq)) do set_ally(mid, true) end
+    for _, mid in ipairs(nemesis_spawn.member_ids(sq)) do set_ally(mid, true) end   -- member_ids: nemesis_spawn, a squad's member ids
 end
 
+-- The horde is planned (horde_plan), its spots found (horde_spots) and its first squad started
+-- (the rest come in fill_horde, one per beat), at time gt; em.horde_at notes when, so he arrives
+-- HORDE_LEAD_MS later. Called by update: in the haunt stage HORDE_LEAD_MS before he is due, or,
+-- for a flow that got no chance, HORDE_DELAY_MS after his arrival.
+-- The flank (Horde flank share, with two doors or more) takes zombies only, so the snorks come
+-- with him; with a horde of 2 or more and the share above 0 it is at least 1, and the main group
+-- always keeps at least 1.
 local function spawn_horde(actor, gt)
     H.horde_done = true
     local zombies, snorks, tier, snork_squad = horde_plan()
@@ -1018,7 +1294,8 @@ local function spawn_horde(actor, gt)
         if want > #zombies then want = #zombies end
         for _ = 1, want do flank[#flank + 1] = table.remove(zombies) end
     end
-
+    -- One at a time, nemesis_spawn.STAGGER_MS apart (fill_horde): the zombies' squad and its
+    -- members, then the snorks', then the flank's, each at its own spot.
     horde_job = { spot = spot, left = {}, next_at = nil }
     if #zombies > 0 then horde_job.left[#horde_job.left + 1] = { start = HORDE_SQUAD_ZOMBIE, list = zombies, spot = spot } end
     if #snorks > 0 then horde_job.left[#horde_job.left + 1] = { start = snork_squad, list = snorks, spot = spot } end
@@ -1028,9 +1305,13 @@ local function spawn_horde(actor, gt)
         tostring(#zombies), tostring(#snorks), tostring(#flank), tostring(tier))
 end
 
+-- A horde squad and its leader, at spot (its group's own: the main group's or the flank's; else
+-- the job's, horde_job.spot); the rest of its members go first in the queue. The leader is the
+-- squad section's own npc (the engine makes him), so he stands for the list's first. Used by
+-- fill_horde.
 local function start_horde_squad(job, section, list, spot)
     local lead = nil
-
+    -- src: anomaly _g.script ini_file (r_string_ex)
     pcall(function() lead = ini_sys:r_string_ex(section, "npc") end)
     if lead then list[1] = lead end
     if not (exists(section) and exists(list[1])) then
@@ -1046,6 +1327,7 @@ local function start_horde_squad(job, section, list, spot)
     for k = #list, 2, -1 do table.insert(job.left, 1, { sq = sq.id, sec = list[k], lv = lv, gv = gv }) end
 end
 
+-- One step of the horde (a squad, or a member) every STAGGER_MS beat.
 function fill_horde()
     local job = horde_job
     if not job then return end
@@ -1053,7 +1335,7 @@ function fill_horde()
     if job.next_at and now < job.next_at then return end
     local e = table.remove(job.left, 1)
     if not e then horde_job = nil return end
-    job.next_at = nemesis_spawn.stagger_next(job.next_at, now)
+    job.next_at = nemesis_spawn.stagger_next(job.next_at, now)   -- stagger_next: nemesis_spawn, the next spawn's time
     if e.start then
         start_horde_squad(job, e.start, e.list, e.spot)
         return
@@ -1063,29 +1345,32 @@ function fill_horde()
     local ang = math.random() * 6.28318
     local v = nil
     pcall(function() v = nemesis_engine.vertex_toward(e.lv, vector():set(math.cos(ang), 0, math.sin(ang)), 2 + math.random() * 4) end)
-
+    -- A member scatters only to a fit spot (outdoors, outside the ring: outside_spot); else he
+    -- stands at his squad's own spot (round 147: a scatter could step inside through a door).
     local c = em and em.ring and em.ring.c
     if not v or v >= NO_VERTEX or not outside_spot(vpos(v), c) then v = e.lv end
     local p = vpos(v) or job.spot
     local id = nil
     pcall(function()
-        local res = nemesis_engine.add_squad_member(sq, e.sec, p, v, e.gv)
+        local res = nemesis_engine.add_squad_member(sq, e.sec, p, v, e.gv)   -- add_squad_member: nemesis_engine, one member into ours
         id = type(res) == "number" and res or (type(res) == "userdata" or type(res) == "table") and res.id or nil
     end)
     for _, mid in ipairs(nemesis_spawn.member_ids(sq)) do set_ally(mid, true) end
     if not id then dbg("Nemesis: a horde member (%s) could not join.", tostring(e.sec)) end
 end
 
+-- Every slow tick: they keep coming for you (the target written back, you their enemy).
 local function hold_horde(actor)
     for _, sid in ipairs(H.squads or {}) do
         local sq = nemesis_engine.se(sid)
         if sq then
-
+            -- src: xlibs xsquad.script (xsquad.set_target_actor)
             pcall(function() if sq.scripted_target ~= "actor" then xsquad.set_target_actor(sq, true) end end)
             for _, mid in ipairs(nemesis_spawn.member_ids(sq)) do
                 set_ally(mid, true)
-                local o = nemesis_engine.obj(mid)
-
+                local o = nemesis_engine.obj(mid)   -- obj: nemesis_engine, the online object by id
+                -- src: anomaly _g.script (IsStalker)
+                -- is_stalker, alive: nemesis_engine, a class read and a safe life read
                 if o and nemesis_engine.is_stalker(o) and nemesis_engine.alive(o) then
                     pcall(function() o:set_relation(game_object.enemy, actor) end)
                     pcall(function() actor:set_relation(game_object.enemy, o) end)
@@ -1095,18 +1380,20 @@ local function hold_horde(actor)
     end
 end
 
+-- A slow job (nemesis_core, every SLOW_MS: 2 s): the horde kept on you while his hunt runs.
 function hold_tick(actor)
-
+    -- His hunt, or his flow before he came with the horde already in (round 147).
     local his = (S.phase == "hunting" and S.emission_hunt) or (em ~= nil and H.squads ~= nil)
     if his and actor then hold_horde(actor) end
 end
 
+-- The hunt is over: the horde is let go (they stay as mutants; an empty squad is removed).
 local function release_horde()
     horde_job = nil
     for _, sid in ipairs(H.squads or {}) do
         local sq = nemesis_engine.se(sid)
         if sq then
-            nemesis_engine.release_squad(sq)
+            nemesis_engine.release_squad(sq)   -- release_squad: nemesis_engine, back to the simulation
             nemesis_fx.queue_squad_cleanup(sid)
         end
     end
@@ -1117,27 +1404,48 @@ end
 ---------------------------------------------------------------------------
 -- His own clock: he arrives as the event's sound fades
 ---------------------------------------------------------------------------
+-- The owner's way (22 October 2026): his arrival waits until the event's own sound has faded, so
+-- nothing of his is lost under it, and his arrival no longer lands on top of the scan and the
+-- ghosts. Everything before it (the shelter check, the building scan, the ghosts and their pushes
+-- with their psy hits) starts as before, from the event's deadly part: you are trapped while the
+-- event rages. Only arrive() waits (update, the haunt stage):
+--   an emission (surge_manager): QUIET_S.emission seconds in. GAMMA's emission (Preblowout
+--     Murder's surge_manager.script 903-942) fades its rumble and earthquake from 200 to 214 s and
+--     ends at 222 s; Anomaly's keeps the same timeline;
+--   a psi storm (psi_storm_manager): QUIET_S.psi_storm seconds in, when its effects end (Audio
+--     Expansion's psi_storm_manager.script 359: 40 to 228 s; the storm ends at 254 s);
+--   whichever comes first: END_GRACE_MS after the event ends (a shorter emission, another manager,
+--     or a load that found the event running with no clock in the save).
+-- The clock counts real seconds (time_global), as the managers do: they divide game time by the
+-- time factor (surge_manager.script 227). It starts when the event is first seen on. A save keeps
+-- the seconds passed (save_flow's "clock"), so a load carries on; the owner chose that over the
+-- game start time, which would need a new engine call (level.get_time_factor) to read back.
+-- While Prepare for uninstall is ticked, no clock is kept, so the save holds nothing of it.
+local QUIET_S = { emission = 200, psi_storm = 228 }   -- seconds into the event (see above)
+local END_GRACE_MS = 5000          -- milliseconds after the event ends
+local ev = nil                     -- runtime: { kind, seen_at (ms), base (s passed at seen_at; nil: unknown), ended_at (ms) }
+local loaded_clock = nil           -- from the save (restore_flow): { s = seconds passed, kind }, for the first update
+local after_load = false           -- true from a load (reset_runtime) until the first update has looked
+local clock_held_logged = false    -- the "he waits for the clock" line is written once per event
 
-local QUIET_S = { emission = 200, psi_storm = 228 }
-local END_GRACE_MS = 5000
-local ev = nil
-local loaded_clock = nil
-local after_load = false
-local clock_held_logged = false
-
+-- The seconds passed in the running event at time gt (ms), from its clock (ev), or nil when not
+-- known. Used by event_tick, clock_open, clock_due_in and save_flow.
 local function event_seconds(gt)
     if not (ev and ev.base) then return nil end
     return ev.base + (gt - ev.seen_at) / 1000
 end
 
+-- Follows the event, every update (on: the event is on, surge()). Starts its clock the first time
+-- it is seen on (after a load: from the save's seconds, or unknown), notes when it ends, and
+-- forgets it once it is over and no flow of his waits on it. Called first thing in update.
 local function event_tick(gt, on)
-    if nemesis_mcm.get_bool("prepare_uninstall", false) then
+    if nemesis_mcm.get_bool("prepare_uninstall", false) then   -- get_bool: nemesis_mcm, a menu checkbox (cached)
         ev, loaded_clock, after_load = nil, nil, false
         return
     end
     local kind = nil
-    if on then kind = nemesis_compat.surge_kind() end
-
+    if on then kind = nemesis_compat.surge_kind() end   -- surge_kind: nemesis_compat, "emission", "psi_storm" or nil
+    -- A new event: the last one ended, or another kind took over.
     if on and ev and (ev.ended_at or ev.kind ~= kind) then ev = nil end
     if on and not ev then
         local base = 0
@@ -1160,6 +1468,9 @@ local function event_tick(gt, on)
     loaded_clock = nil
 end
 
+-- Whether he may arrive at time gt (ms): no event known (forced from the menu outside one),
+-- END_GRACE_MS after the event ended, or the event's quiet point reached (QUIET_S). Writes one
+-- debug line the first time it holds him back. Read by update before arrive().
 local function clock_open(gt)
     if not ev then return true end
     if ev.ended_at then return gt - ev.ended_at >= END_GRACE_MS end
@@ -1175,6 +1486,9 @@ local function clock_open(gt)
     return false
 end
 
+-- Milliseconds until clock_open lets him arrive, at time gt (ms): 0 when it would now, nil when it
+-- is not known yet (the event runs with no quiet point known: only its end will tell). His horde
+-- comes HORDE_LEAD_MS before that (update, the haunt stage).
 local function clock_due_in(gt)
     if not ev then return 0 end
     if ev.ended_at then return math.max(0, END_GRACE_MS - (gt - ev.ended_at)) end
@@ -1187,27 +1501,30 @@ end
 ---------------------------------------------------------------------------
 -- The flow
 ---------------------------------------------------------------------------
-
+-- His flow starts (why goes in the log; forced: Force the next hunt).
 local function begin(gt, why, forced)
     em = { stage = "wait", t0 = gt, lvl = level_name(), exits = nil, ghosts = {}, ghosts_on = false, forced = forced }
-    roll, extra = false, true
-
+    roll, extra = false, true      -- once per emission
+    -- His horde comes before him now (round 147), so an earlier flow's "the horde came" must not
+    -- stop this one's. (The "again" flow sets em.again: no new horde then.)
     H.horde_done = nil
     dbg("Nemesis: emission boss: %s.", why)
 end
 
+-- His flow ends before he came (why goes in the log); the ghosts go.
 function cancel(why)
     if not em then return end
     ghosts_off(why)
-
+    -- His horde comes before him (round 147): called off before he came, it is let go too.
     if H.squads or horde_job then release_horde() end
     em = nil
     dbg("Nemesis: emission boss called off (%s).", why or "?")
 end
 
+-- The emission's one roll (Emission boss chance). Forced from MCM: always.
 local function rolled()
     if force_next then return true end
-    if not enabled() then return false end
+    if not enabled() then return false end     -- off: even a roll made before it was turned off
     if roll == nil then
         local c = chance()
         roll = c > 0 and (c >= 100 or math.random() * 100 < c)
@@ -1216,9 +1533,10 @@ local function rolled()
     return roll
 end
 
+-- A hunt is about to start (nemesis_spawn.idle_tick). True: he takes it.
 function take_hunt(gt)
     if em or S.phase ~= "idle" then return false end
-
+    -- Back after the hunters' offline respawn (nemesis_core): at once, no new ghosts or horde.
     if again then
         again = false
         if surge() and enabled() then
@@ -1236,21 +1554,26 @@ function take_hunt(gt)
     return true
 end
 
+-- Every tick, before the rest (nemesis_core.tick). Returns:
+--   "call_off": a normal hunt runs during the emission; the core calls it off, he comes instead.
+--   true: he is on his way (waiting for you to be indoors, or haunting); no other hunt runs.
+--   nil: nothing for the core to do.
 function update(gt, actor, slow)
     local on = surge()
     event_tick(gt, on)
-    if not on and not em then roll, extra = nil, nil end
+    if not on and not em then roll, extra = nil, nil end   -- next emission, next rolls
 
+    -- His hunt is running.
     if S.phase == "hunting" and S.emission_hunt then
         if horde_job then fill_horde() end
-
+        -- Immune online or offline (the emission kills offline NPCs too), a load included.
         immune_by_id()
         if not em then
-
+            -- After a load mid-hunt: the haunting is back until he reaches the building.
             em = { stage = "boss", t0 = gt, boss_at = gt, lvl = level_name(), ghosts = {}, ghosts_on = false,
                    ring = { c = actor:position() } }
             if H.released then em.done_scan = true end
-            roll, extra = false, true
+            roll, extra = false, true  -- he came in this emission: no second one after the load
         end
         if em.lvl ~= level_name() then
             ghosts_off("you changed maps")
@@ -1267,22 +1590,24 @@ function update(gt, actor, slow)
         end
         ghosts_tick()
         guard_tick(gt, actor)
-
+        -- The horde comes before him (the haunt stage); this is for a flow that got no chance (round 147).
         if S.boss_id and not H.horde_done and gt - (em.boss_at or gt) >= HORDE_DELAY_MS then spawn_horde(actor, gt) end
-
+        -- The ghosts hold until his hunt ends (owner, round 128); he walks through them.
         return nil
     end
 
+    -- His hunt is over (or a load found none): the haunting and the horde end with it.
     if em and em.stage == "boss" then
         ghosts_off("his hunt is over")
         em = nil
     end
-
+    -- His hunt follows you to another map: no new haunting there.
     if own_follow_now() then H.released = true end
-
+    -- (A flow still waiting for him keeps its horde: it came before him, round 147.)
     if H.squads and not S.emission_hunt and not em then release_horde() end
     if not (S.boss_id and S.emission_hunt) then end_immunity() end
 
+    -- A normal hunt during the emission: called off, he comes instead.
     if not em and (on or force_next) and (S.phase == "hunting" or S.follow) and not S.emission_hunt and not own_follow_now() then
         if rolled() then
             local forced = force_next
@@ -1297,8 +1622,9 @@ function update(gt, actor, slow)
         return nil
     end
 
+    -- His own chance per emission: no hunt needed, but not where a hunt is held back.
     if not em and on and extra == nil and slow and S.phase == "idle" and not S.follow
-        and nemesis_spawn.extra_allowed(gt, actor) then
+        and nemesis_spawn.extra_allowed(gt, actor) then   -- extra_allowed: nemesis_spawn, not where a hunt is held back
         extra = true
         local c = extra_chance()
         local yes = c > 0 and math.random() * 100 < c
@@ -1313,25 +1639,26 @@ function update(gt, actor, slow)
         return nil
     end
 
+    -- Turned off in MCM before he came (the debug box still forces him).
     if not em.forced and not enabled() and (em.stage == "wait" or em.stage == "haunt") then
         cancel("turned off in MCM")
         return nil
     end
 
     if em.stage == "wait" then
-
+        -- The emission ended before you got inside: he stays away.
         if not on and not em.forced then
             cancel("the emission ended")
             return nil
         end
-
-        if nemesis_events.ask("boss_exists") then return true end
-
+        -- One boss at a time: a boss still in the world (the last hunt's, leaving) is waited for.
+        if nemesis_events.ask("boss_exists") then return true end   -- ask: nemesis_events, a module's answer or nil
+        -- Not before the deadly part; the wait for you to get inside counts from there.
         if not em.forced and not deadly() then return true end
         if not em.deadly then em.deadly, em.t0 = true, gt end
         local roofed = false
         pcall(function() roofed = indoor(actor:position()) end)
-        local cover = nemesis_compat.actor_in_surge_cover()
+        local cover = nemesis_compat.actor_in_surge_cover()   -- actor_in_surge_cover: nemesis_compat; nil: no such event in this game
         local inside = roofed and cover ~= false
         if gt - (em.wait_log_at or -1000000) >= WAIT_LOG_MS and nemesis_utils.debug_on() then
             em.wait_log_at = gt
@@ -1357,7 +1684,8 @@ function update(gt, actor, slow)
             em.inside_seen = true
             em.in_since = nil
             em.stage, em.scan, em.haunt_at = "haunt", new_scan(actor), gt
-
+            -- The ring's centre (since round 128). position() returns its own vector (by value: xray-monolith
+            -- script_game_object.h, Position), so it is kept as it is.
             em.ring = { c = actor:position() }
             dbg("Nemesis: you are sheltering indoors (%s s inside, emission cover %s); the building is being haunted.",
                 string.format("%.0f", SHELTER_MS / 1000), cover == nil and "not known in this game" or "yes")
@@ -1381,19 +1709,23 @@ function update(gt, actor, slow)
         ghosts_tick()
         guard_tick(gt, actor)
         if horde_job then fill_horde() end
-
+        -- His horde comes HORDE_LEAD_MS before him (owner, 22 October 2026), from his side: his spot
+        -- is picked now (em.boss_spot) and kept for his arrival. Not in the "again" flow.
         local due = clock_due_in(gt)
         if em.done_scan and not em.again and not H.horde_done and gt - em.haunt_at >= HAUNT_LEAD_MS
             and due ~= nil and due <= HORDE_LEAD_MS then
-
+            -- pick_lone_boss_spot: nemesis_spawn, where a lone boss would land
             em.boss_spot = em.boss_spot or nemesis_spawn.pick_lone_boss_spot(actor, exit_vertices())
-
+            -- No spot for him yet: the horde waits with him (round 148: with nowhere for him to land,
+            -- its spot fell back to your own position). If he comes without it, it follows him
+            -- HORDE_DELAY_MS later, the old way (the hunt branch).
             if em.boss_spot then spawn_horde(actor, gt) end
         end
-
+        -- His arrival also waits for his own clock (clock_open) and, after his horde, HORDE_LEAD_MS;
+        -- the ghosts hold until then.
         local horde_ok = not em.horde_at or gt - em.horde_at >= HORDE_LEAD_MS
         if em.done_scan and gt - em.haunt_at >= HAUNT_LEAD_MS and clock_open(gt) and horde_ok then
-            em.due_at = em.due_at or gt
+            em.due_at = em.due_at or gt    -- when he was first free to arrive: the give-up counts from here
             if gt >= (em.retry_at or 0) then
                 if arrive(gt) then return nil end
                 em.retry_at = gt + RETRY_MS
@@ -1408,41 +1740,58 @@ function update(gt, actor, slow)
     return nil
 end
 
+-- His tick (the boss_update answer, from nemesis_core.manage_hunter: online, alive): immune to the
+-- emission, and he always knows where you are. No cloak (the boss_no_cloak answer, for nemesis_fx),
+-- no sneak (only the boss module's boss sneaks).
 function boss_update(obj, r, gt, actor)
     make_immune(obj)
-
-    nemesis_combat.set_focus(r.id, true)
+    -- He always knows where you are: no waiting outside like the hunters (nemesis_siege; the chase
+    -- reads the focus).
+    nemesis_combat.set_focus(r.id, true)   -- set_focus: nemesis_combat, he knows where you are
 end
 
+-- He walks: the chase moves him at a walk (nemesis_chase.drive_chase).
 function walks(id)
     return S.emission_hunt == true and id ~= nil and id == S.boss_id
 end
 
+-- The hunt's boss died (member_died, before the boss module's own listener).
 function on_boss_killed(id)
     set_ally(id, false)
     end_immunity()
 end
 
+-- "Reloading, %name%?" is the boss's (the boss module's on_actor_reload, round 115); his own line for it
+-- comes from line("reload") through own_line.
+
+-- The core calls his hunt off because it stayed offline too long (the hunters' respawn): the next
+-- hunt is his again while the emission lasts, like the hunters coming back closer.
 function on_offline_call_off()
     if not S.emission_hunt then return end
     again = true
     again_exits = em and em.exits or nil
 end
 
+---------------------------------------------------------------------------
+-- Save and load (round 95, user request): his flow persists, waiting or haunting, with its
+-- exits, and so do this emission's rolls, so a load neither drops the ghosts nor rolls again.
+-- One string (the flow) in his own save key (round 115, on_saving). Times are kept as ms elapsed:
+-- time_global starts again at a load. Positions as x:y:z.
+---------------------------------------------------------------------------
 local function vstr(p) return string.format("%.2f:%.2f:%.2f", p.x, p.y, p.z) end
-
+-- vstr's text back into a vector, or nil.
 local function strv(t)
     local x, y, z = string.match(t or "", "^(-?[%d%.]+):(-?[%d%.]+):(-?[%d%.]+)$")
     if not x then return nil end
     return vector():set(tonumber(x), tonumber(y), tonumber(z))
 end
-
+-- exits as text: "out/inside|...".
 local function exits_str(exits)
     local out = {}
     for _, e in ipairs(exits or {}) do out[#out + 1] = vstr(e.out) .. "/" .. vstr(e.inside) end
     return table.concat(out, "|")
 end
-
+-- exits_str's text back into exits, or nil.
 local function str_exits(t)
     if type(t) ~= "string" or t == "" then return nil end
     local out = {}
@@ -1453,10 +1802,11 @@ local function str_exits(t)
     return out
 end
 
+-- For the save: a string, or nil when there is nothing to keep.
 function save_flow()
     local gt = time_global()
     local t = {}
-
+    -- Adds k=v to the string, unless v is nil or false.
     local function put(k, v)
         if v ~= nil and v ~= false then t[#t + 1] = k .. "=" .. tostring(v) end
     end
@@ -1486,7 +1836,7 @@ function save_flow()
         if em.ring and em.ring.c then put("ringc", vstr(em.ring.c)) end
         if em.ring and em.ring.r then put("ringr", string.format("%.1f", em.ring.r)) end
         if em.walls and em.walls.c then
-
+            -- A distance as text, "-" for none.
             local function m(v) return v and string.format("%.1f", v) or "-" end
             put("walls", string.format("%s:%s:%s:%s", m(em.walls.e), m(em.walls.w), m(em.walls.n), m(em.walls.s)))
             put("wallc", vstr(em.walls.c))
@@ -1498,7 +1848,7 @@ function save_flow()
         end
         put("shoves", em.shoves)
     end
-
+    -- The horde still coming in (a squad to start, or a member to add), in order.
     if horde_job and #horde_job.left > 0 then
         local h = {}
         for _, e in ipairs(horde_job.left) do
@@ -1508,13 +1858,15 @@ function save_flow()
         put("horde", table.concat(h, "|"))
         put("hspot", vstr(horde_job.spot))
     end
-
+    -- His clock (event_tick): the seconds passed in the running event, and its kind.
     local s = ev and not ev.ended_at and event_seconds(gt)
     if s then put("clock", string.format("%.0f", s) .. "," .. tostring(ev.kind)) end
     if #t == 0 then return nil end
     return table.concat(t, ";")
 end
 
+-- At the first update after a load: the flow as it was saved. A scan cut short starts again
+-- from where you stand; ghosts that stood come back.
 local function restore_flow(str)
     local v = {}
     for k, val in string.gmatch(str, "([^;=]+)=([^;]*)") do v[k] = val end
@@ -1536,7 +1888,7 @@ local function restore_flow(str)
             end
         end
     end
-
+    -- His clock (save_flow): picked up by the first update (event_tick).
     local cs, ck = string.match(v.clock or "", "^(%d+),(.+)$")
     if cs then loaded_clock = { s = tonumber(cs), kind = ck } end
     if not v.stage then return end
@@ -1544,7 +1896,7 @@ local function restore_flow(str)
            forced = v.forced == "1" or nil, deadly = v.deadly == "1" or nil, done_scan = v.scanned == "1" or nil,
            inside_seen = v.inside == "1" or nil, again = v.em_again == "1" or nil,
            exits = str_exits(v.exits), shoves = tonumber(v.shoves) }
-
+    -- The ring's centre; a flow saved before round 128 has the last indoor spot instead.
     local rc = strv(v.ringc) or strv(v.last_in)
     if rc then em.ring = { c = rc, r = tonumber(v.ringr) } end
     local we, ww, wn, ws = string.match(v.walls or "", "^([^:]+):([^:]+):([^:]+):([^:]+)$")
@@ -1564,12 +1916,13 @@ local function restore_flow(str)
     dbg("Nemesis: emission boss flow restored after the load (%s).", tostring(em.stage))
 end
 
+-- The first update after a load (loaded) or of a new game (runtime_reset).
 function reset_runtime(loaded)
-    if not loaded then
+    if not loaded then   -- a new game: nothing of his
         clear_hunt_state()
         saved_flow = nil
     end
-
+    -- src: engine script_sound_script.cpp / script_particles_script.cpp (stop)
     if em then for _, g in pairs(em.ghosts or {}) do if g.fx then pcall(function() g.fx:stop() end) end end end
     em = nil
     ev, loaded_clock = nil, nil
@@ -1584,6 +1937,8 @@ function reset_runtime(loaded)
     saved_flow = nil
 end
 
+-- Prepare for uninstall (nemesis_core): nothing of his is left running, in the world or in the
+-- save. The core calls his hunt off and sweeps his squads, the horde's and the phantoms.
 function prepare_uninstall()
     cancel("preparing for uninstall")
     ev, loaded_clock, after_load = nil, nil, false
@@ -1595,8 +1950,10 @@ function prepare_uninstall()
     saved_flow = nil
 end
 
+-- His flow is on (waiting for you to be indoors, or haunting): the core ticks at the hunt's rate.
 function active() return em ~= nil end
 
+-- For the tests and the debug log.
 function state()
     if not em then return nil end
     local g = {}
@@ -1605,15 +1962,21 @@ function state()
              room = em.room, ring = em.ring and em.ring.c, ghost_list = g }
 end
 
+---------------------------------------------------------------------------
+-- His own save key (round 115): { v = SAVE_VERSION, flow, horde_done, released, squads }, written
+-- after the core's data (the core announces saving and loaded; two scripts' own save_state
+-- handlers would run in no fixed order).
+---------------------------------------------------------------------------
 local SAVE_KEY, SAVE_VERSION = "nemesis_emission", 1
 
+-- Ids as text, "1,2,3", or nil for none.
 local function ids_str(list)
     if not list or #list == 0 then return nil end
     local t = {}
     for _, id in ipairs(list) do t[#t + 1] = tostring(id) end
     return table.concat(t, ",")
 end
-
+-- ids_str's text back into ids, or nil.
 local function str_ids(str)
     if type(str) ~= "string" or str == "" then return nil end
     local out = {}
@@ -1621,6 +1984,7 @@ local function str_ids(str)
     return #out > 0 and out or nil
 end
 
+-- The saving event: his own key in the save (see above).
 function on_saving(mdata)
     if type(mdata) ~= "table" then return end
     local d = { v = SAVE_VERSION, flow = save_flow(), horde_done = H.horde_done and true or nil,
@@ -1628,6 +1992,11 @@ function on_saving(mdata)
     if d.flow or d.horde_done or d.released or d.squads then mdata[SAVE_KEY] = d else mdata[SAVE_KEY] = nil end
 end
 
+-- CONVERTER, the owner's rule of round 115: convert old saves, do not keep reading the old format.
+-- A save from before the change of round 115 keeps his state in the core's data (em_flow,
+-- em_horde_done, em_released, em_squads in nemesis_state). Read once into his own state; the next
+-- save writes his own key only. Anything new in his key starts at its default. Kept through 1.1.0
+-- (owner, 22 October 2026), then judged again.
 local function convert_old(mdata)
     local s = type(mdata) == "table" and mdata.nemesis_state
     if type(s) ~= "table" then return nil end
@@ -1640,6 +2009,7 @@ local function convert_old(mdata)
     return d
 end
 
+-- The loaded event: his own key (or an old save's state, converted).
 function on_loaded(mdata)
     local d = type(mdata) == "table" and mdata[SAVE_KEY] or nil
     if type(d) ~= "table" then d = convert_old(mdata) end
@@ -1657,23 +2027,30 @@ function on_loaded(mdata)
         saved_flow and "yes" or "no", H.horde_done and "came" or "no", H.released and "yes" or "no", tostring(H.squads and #H.squads or 0))
 end
 
+-- For the tests and the debug log: his hunt's own state.
 function hunt_state() return { horde_done = H.horde_done, released = H.released, squads = H.squads } end
 
+---------------------------------------------------------------------------
+-- The module, since the restructure of round 115: everything the core asks him and everything he
+-- listens to, added here.
+-- An answer returns nil for "not mine" (the next one is asked); never false where nil is meant.
+---------------------------------------------------------------------------
 local function own_hunt() return S.emission_hunt == true end
 
+-- Registers the module (Anomaly calls every script's on_game_start).
 function on_game_start()
     local name = "the emission boss"
     local na, nl = 0, 0
     local E = {
-
+        -- Adds answer fn to question q under this module's name, counted for the line at the end.
         answer = function(q, _, fn, order)
             na = na + 1
-            nemesis_events.answer(q, name, fn, order)
+            nemesis_events.answer(q, name, fn, order)   -- answer: nemesis_events, a module's answer to a question
         end,
-
+        -- Adds listener fn to event ev under this module's name, counted for the line at the end.
         on = function(ev, _, fn, order)
             nl = nl + 1
-            nemesis_events.on(ev, name, fn, order)
+            nemesis_events.on(ev, name, fn, order)   -- on: nemesis_events, a listener to an event
         end,
     }
     E.answer("take_hunt", name, function(gt) return take_hunt(gt) or nil end)
@@ -1685,14 +2062,17 @@ function on_game_start()
         return true
     end)
     E.answer("boss_dr", name, function()
-        if own_hunt() then return nemesis_utils.clamped("emission_dr", 30, 0, 85) / 100 end
+        if own_hunt() then return nemesis_utils.clamped("emission_dr", 30, 0, 85) / 100 end   -- clamped: nemesis_utils, a menu number held to a range
     end)
     E.answer("boss_npc_cut", name, function(id) if own_hunt() then return npc_cut() end end)
     E.answer("boss_no_cloak", name, function() return own_hunt() or nil end)
     E.answer("walks", name, function(id) return walks(id) or nil end)
     E.answer("no_fight", name, function(a, e) return no_fight(a, e) or nil end)
     E.answer("sees_enemy", name, function(npc, enemy) return sees_enemy(npc, enemy) or nil end)
-
+    -- The warm-up after a load (nemesis_spawn.add_warm, round 147): his squad and his horde's
+    -- squads, made once offline on another map and removed at once, so his first arrival and
+    -- his first horde of the session don't load their files in the middle of the fight.
+    -- add_warm: nemesis_spawn, a module's squads for the warm-up
     nemesis_spawn.add_warm(function()
         if not enabled() then return {} end
         return {
@@ -1720,22 +2100,24 @@ function on_game_start()
         if ok then dbg("Nemesis: the emission boss comes now, emission or not (MCM).") end
         return ok and true or false
     end)
-
+    -- A new hunt: the last hunt's horde bookkeeping is cleared, except for his own arrival, whose
+    -- horde came before him (arrive sets arriving; round 148).
     E.on("hunt_started", name, function()
         if not arriving then clear_hunt_state() end
     end)
-
+    -- Before the boss's own death listener (order 20): his allies and his immunity end here.
     E.on("member_died", name, function(id)
-        if nemesis_member.is_boss(id) then on_boss_killed(id) end
+        if nemesis_member.is_boss(id) then on_boss_killed(id) end   -- is_boss: nemesis_member, the running hunt's boss
     end, 15)
     E.on("runtime_reset", name, function(loaded) reset_runtime(loaded) end)
     E.on("saving", name, on_saving)
     E.on("loaded", name, on_loaded)
     E.on("uninstall", name, function() prepare_uninstall() end)
     E.on("offline_too_long", name, function() on_offline_call_off() end)
-
+    -- order 50: after the core's four slow jobs, where the horde job always was.
+    -- add_job: nemesis_core, a job on the core's tick or slow tick
     nemesis_core.add_job("slow", "emission horde", function(gt, actor) hold_tick(actor) end, 50, true)
-    nemesis_core.add_uninstall_sections(OWN_SECTIONS)
+    nemesis_core.add_uninstall_sections(OWN_SECTIONS)   -- add_uninstall_sections: nemesis_core, for the uninstall sweep
     dbg("Nemesis: the emission boss module is in (%s answers, %s listeners, 1 slow job, %s sections).",
         tostring(na), tostring(nl), tostring(#OWN_SECTIONS))
 end
@@ -1743,7 +2125,11 @@ end
 ---------------------------------------------------------------------------
 -- Settings: this script declares the Emission boss page (since round 122, the restructure's step 7)
 ---------------------------------------------------------------------------
-
+-- nemesis_mcm puts the menu together from the scripts that own its pages, in a fixed order, and
+-- saves every value under the same path as before ("nemesis/emission/<id>"), so nothing a player set
+-- is lost. Labels and tooltips come from ui_mcm_nemesis_<id> (his own configs/text/<language>/ui_mcm_nemesis_emission.xml).
+-- mcm_presets: this page's share of Easy, Medium and Hard (Medium = the defaults below; how they
+-- are made: nemesis_mcm, DIFFICULTY). Both are called when the menu is built, never at load.
 function mcm_page()
     return { id = "emission", sh = true, text = "ui_mcm_nemesis_page_emission", gr = {
             { id = "title", type = "slide", link = "ui_options_slider_player", text = "ui_mcm_nemesis_title", size = {512, 50}, spacing = 20 },
@@ -1759,6 +2145,7 @@ function mcm_page()
         } }
 end
 
+-- This page's share of the presets (see above).
 function mcm_presets()
     return {
         easy = { emission_chance = 80, emission_extra = 4, emission_dr = 20, emission_npc_cut = 55, emission_horde = 3, emission_psy = 3, emission_flank = 20 },
@@ -1767,4 +2154,5 @@ function mcm_presets()
     }
 end
 
+-- This script's choice in Debug & tools, Force the next hunt (round 122).
 function mcm_force_next() return { "emission", "ui_mcm_nemesis_force_next_emission" } end

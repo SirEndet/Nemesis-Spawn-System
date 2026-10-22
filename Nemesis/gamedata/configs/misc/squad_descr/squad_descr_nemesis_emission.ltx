@@ -1,4 +1,9 @@
-; Nemesis emission boss (Sin, and UNISG)
+; The emission boss module's own squads (round 124: his file, squad_descr_nemesis_emission.ltx;
+; squad_descr.ltx includes every squad_descr_*.ltx). Same rules as the hunt squad
+; (squad_descr_nemesis.ltx): no story id, no home smart, no target_smart.
+; Emission boss (round 93). The Sin boss. His own stalker section (round 95,
+; configs/mod_system_nemesis_emission.ltx), so the emission spares him alone. Players who are
+; Monolith, Zombified or Sin get his UNISG squad below instead.
 [nemesis_emission_squad]:online_offline_group
 faction = greh
 npc = nemesis_emission_boss
@@ -9,7 +14,8 @@ faction = isg
 npc = nemesis_emission_boss_isg
 common = false
 
-; Nemesis emission boss horde
+; His horde: zombified stalkers, and snorks on later maps. The leader is the npc below; the
+; rest join in script. No target_smart, as above.
 [nemesis_horde_zombied]:online_offline_group
 faction = zombied
 npc = sim_default_zombied_1
@@ -20,6 +26,7 @@ faction = monster
 npc = snork_weak
 common = false
 
+; Tier 4 and 5 maps (round 95): the leader is a snork_normal too.
 [nemesis_horde_snork_normal]:online_offline_group
 faction = monster
 npc = snork_normal

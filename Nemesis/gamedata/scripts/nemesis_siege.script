@@ -1,23 +1,44 @@
 -- Nemesis Siege: what the hunters do while you hide indoors. They wait outside, each on his own
+-- spot, then storm in. Also the "remembered spot" switch: you fight from a spot they remember, so
+-- they know where you are. (Split out of nemesis_utils in round 112.)
+-- Used by: nemesis_core sets both every slow tick (set_player_indoor, set_known_spot, and reads
+-- player_indoor); nemesis_chase and nemesis_combat read them (siege_active, vertex, known_spot);
+-- nemesis_boss's sneak reads indoors_since; nemesis_damage breaks the siege (break_siege);
+-- nemesis_utils.reset_chase resets it (reset).
+-- Uses: nemesis_engine (vertex_at, vertex_pos), xlibs xcombat (is_indoor), nemesis_state (S.boss_hunt),
+-- nemesis_utils (log_msg).
+-- src (plain reads used throughout this file, so noted once): engine script_game_object_script2.cpp (id); engine script_game_object_script2.cpp (position)
 
-local NO_VERTEX = 4294967295
+local NO_VERTEX = 4294967295     -- the engine's "no level vertex"
 
+-- Writes a debug line through nemesis_utils.log_msg (the shared helpers' logger, with Debug logs on).
 local function log_msg(...) return nemesis_utils.log_msg(...) end
 
+-- Per hunt: you at a remembered spot (core, every slow tick), you indoors since (ms), and
+-- each hunter's siege spot outside.
 local known_spot_on = false
 local indoor_since = nil
 local indoor_now = false
 local outdoor_since = nil
-local siege_broken = false
-local siege_spot = {}
+local siege_broken = false       -- you shot one of them: they come in (until you are out)
+local siege_spot = {}            -- [id] = { lv, ax, az }: his spot, and where you were then
 
-local SIEGE_MS = 90000
-local SIEGE_BOSS_MS = 20000
-local SIEGE_OUT_MS = 10000
-local SIEGE_RING_M = 25
-local SIEGE_MOVE_M = 5
-local SIEGE_TURNS = { 0, 30, -30, 60, -60, 90, -90 }
+-- Indoors (the owner's design, round 64): the hunters do not push in. Each takes a spot outside,
+-- SIEGE_RING_M from you on his own side (the first of a few headings that is not indoors
+-- itself), and waits there, fighting whatever he sees, until you have been inside SIEGE_MS;
+-- then they storm in. Never the boss: he comes in after you.
+-- Shooting one of them from inside ends the siege and they storm in; and stepping out for less
+-- than SIEGE_OUT_MS (an awning, a doorway: the indoor read flips a lot between sheds) does not
+-- start the 90 s again (both seen in game, round 67).
+local SIEGE_MS = 90000           -- milliseconds they wait outside before storming in
+local SIEGE_BOSS_MS = 20000      -- a boss hunt: his escort waits only this long (the owner's design, round 68)
+local SIEGE_OUT_MS = 10000       -- milliseconds outside before the siege is forgotten
+local SIEGE_RING_M = 25          -- metres from you: the ring their spots are on
+local SIEGE_MOVE_M = 5           -- you moved this far inside: new spots
+local SIEGE_TURNS = { 0, 30, -30, 60, -60, 90, -90 }   -- degrees off his own side, tried in this order
 
+-- Notes whether you are indoors now (on) at time now (ms): starts the siege clock, or forgets
+-- the siege once you have been out for SIEGE_OUT_MS. Called by nemesis_core every slow tick.
 function set_player_indoor(on, now)
     indoor_now = on and true or false
     if on then
@@ -30,9 +51,11 @@ function set_player_indoor(on, now)
         end
     end
 end
-
+-- Whether you were indoors at the last slow tick (set_player_indoor). Read by nemesis_core.
 function player_indoor() return indoor_now end
 
+-- Ends the waiting: you shot one of them from inside, so they storm in. Called by
+-- nemesis_damage.note_hit on your hit. Stays broken until you have been outside SIEGE_OUT_MS.
 function break_siege()
     if indoor_now and indoor_since and not siege_broken then
         siege_broken = true
@@ -40,13 +63,19 @@ function break_siege()
     end
 end
 
+-- Whether the hunters are waiting outside now (time now in ms, or the current time): you are
+-- indoors, the siege isn't broken, and the wait (SIEGE_MS, or SIEGE_BOSS_MS in a boss hunt) isn't
+-- over. Read by nemesis_chase and nemesis_combat to keep them at their spots.
 function siege_active(now)
-    local wait = nemesis_state.S.boss_hunt and SIEGE_BOSS_MS or SIEGE_MS
+    local wait = nemesis_state.S.boss_hunt and SIEGE_BOSS_MS or SIEGE_MS   -- S.boss_hunt: nemesis_state, this hunt brings a boss
     return indoor_now and not siege_broken and indoor_since ~= nil and (now or time_global()) - indoor_since < wait
 end
-
+-- Notes whether you are at a spot the hunters remember (on). Called by nemesis_core every slow tick.
 function set_known_spot(on) known_spot_on = on and true or false end
 
+-- The level vertex of hunter npc's siege spot: SIEGE_RING_M from you on his own side, the first
+-- of SIEGE_TURNS that is on the navmesh and not indoors itself; nil when none is. Kept per
+-- hunter until you move SIEGE_MOVE_M. Read by nemesis_chase, which sends him there.
 function vertex(npc, actor)
     local id, apos = npc:id(), actor:position()
     local c = siege_spot[id]
@@ -62,10 +91,11 @@ function vertex(npc, actor)
         local p = vector()
         p:set(apos.x + math.cos(a) * SIEGE_RING_M, apos.y, apos.z + math.sin(a) * SIEGE_RING_M)
         local v = nil
-        pcall(function() v = nemesis_engine.vertex_at(p) end)
+        pcall(function() v = nemesis_engine.vertex_at(p) end)   -- vertex_at: nemesis_engine, the level vertex at a position or nil
         if v and v < NO_VERTEX then
             local inside = true
-
+            -- src: xlibs xcombat.script (xcombat.is_indoor)
+            -- vertex_pos: nemesis_engine, a copy of a vertex's position
             pcall(function() inside = xcombat.is_indoor(nemesis_engine.vertex_pos(v)) end)
             if not inside then
                 lv = v
@@ -77,10 +107,14 @@ function vertex(npc, actor)
     return lv
 end
 
+-- Whether you are at a spot they remember (set_known_spot). Read by nemesis_chase.
 function known_spot() return known_spot_on end
 
+-- When you went indoors this time (ms), or nil while you are outside (the SIEGE_OUT_MS grace
+-- included). Read by nemesis_boss's sneak.
 function indoors_since() return indoor_since end
 
+-- Forgets everything above: a new hunt or a load (called by nemesis_utils.reset_chase with no id).
 function reset()
     known_spot_on, indoor_since, siege_spot = false, nil, {}
     indoor_now, outdoor_since, siege_broken = false, nil, false

@@ -1,30 +1,72 @@
 -- Nemesis Core
+-- The hunt's heart: a squad of hunters (Monolith, or UNISG when you are Monolith, Zombified or
+-- Sin) spawns far from you and chases you; its named hunters break off when hurt instead of
+-- dying. Every finished hunt makes the next stronger.
+-- Phases: idle -> hunting -> idle (cooldown).
+--
+-- The scripts (the core calls the first ones by name; the two modules register themselves):
+--   nemesis_state   the hunt state (S), one record per member, save/load
+--   nemesis_member  a member's life: active, leaving, dead, gone
+--   nemesis_spawn   when, where and how a hunt starts (warning, squad, extras, names)
+--   nemesis_damage  the damage pipeline, and GAMMA ballistics' Pre and Post tiers (round 139)
+--   nemesis_fx      burst, invisible model, removal queues, cloak, masks, distortion, reserved bodies
+--   nemesis_guard   release guard, south exemption, AlifePlus owner, death reset, MCM boxes
+--   nemesis_chase   the chase action and movement; nemesis_combat: who fights; nemesis_siege:
+--                   the wait outside
+--   nemesis_sound, nemesis_lines   every sound; every word and PDA message
+--   nemesis_engine, nemesis_compat   the doorways to the engine and to the other mods
+--   nemesis_events, nemesis_mcm, nemesis_config, nemesis_utils   questions and events, the
+--                   settings, the player's own file, the log and the settings readers
+--   nemesis_boss, nemesis_emission   the two modules, asked through nemesis_events, never by name
+--   nemesis_core    this file: the tick, the per-member management, the end of a hunt
+-- Used by: Anomaly (on_game_start, the callbacks), nemesis_damage (hit_runs_last), nemesis_boss
+-- and nemesis_emission (add_job, add_uninstall_sections); the kit reads version().
+--
+-- Design rules (all from reading the engine/Anomaly sources):
+--  * Track NPCs by id. Callbacks give a game_object; the state holds ids.
+--  * Never keep a server-object reference across frames; look it up by id.
+--  * Never release an NPC from inside a hit or death callback. Callbacks only set flags; the
+--    tick and the per-frame queues do the work. The writes from a hit callback are the hit's own
+--    (its power, the engine's flags) and a member's health and invulnerability (nemesis_damage:
+--    GAMMA ballistics' Pre and Post tiers since round 139, a retreat's full health, the smart
+--    cover guard).
+--  * Never change the model of a dead stalker (see nemesis_fx).
+-- src (plain reads used throughout this file, round 121): engine script_game_object_script2.cpp (id); engine script_game_object_script2.cpp (position)
 
 local S = nemesis_state.S
 
-local TICK_IDLE_MS     = 2000
-local TICK_HUNT_MS     = 250
-local SLOW_MS          = 2000
-local OFFLINE_LIMIT_MS = 300000
-local RETREAT_GRACE_MS = 8000
+local TICK_IDLE_MS     = 2000      -- state machine period while no hunter exists
+local TICK_HUNT_MS     = 250       -- while hunting (health checks)
+local SLOW_MS          = 2000      -- names, level check, relations
+local OFFLINE_LIMIT_MS = 300000    -- offline this long -> called off, respawned closer (user value, round 93)
+local RETREAT_GRACE_MS = 8000      -- no retreat until this long after he is actually online
 local RETREAT_COVER_RADIUS_M = 20
-local RETREAT_COVER_AHEAD_M = 10
-local RETREAT_MIN_RUN_M = 6
-local RETREAT_FLEE_M = 15
+local RETREAT_COVER_AHEAD_M = 10   -- the cover search starts this far beyond him, away from you
+local RETREAT_MIN_RUN_M = 6        -- a cover closer than this is no run (he stood in it: round 78)
+local RETREAT_FLEE_M = 15          -- no cover: he runs this far away from you along a clear lane
 local RETREAT_COVER_MS = 4000
 
 local loaded_flag = false
-local load_vanish = {}
+local load_vanish = {}             -- ids from the save still waiting for their removal
 local next_tick = 0
 local next_slow = 0
 local chase_install_warned = false
 
+-- A log line tagged CORE (nemesis_utils.log_tag: Debug logs, or always when it starts with "!!").
 local function dbg(...) nemesis_utils.log_tag("CORE", ...) end
 
+-- The mod's version (round 134, owner: the log names the build that ran). The one place it is
+-- written; the release documents and the zip's name follow it. version() reads it.
+-- Dev rounds carry "-dev" on the next release's number (round 138, owner): a play-test log of a
+-- dev round then never reads like a released build. The release build sets the plain number.
 local VERSION = "1.0.2"
-
+-- The mod's version, as the start-up line writes it.
 function version() return VERSION end
 
+-- xlibs is required. Every xlibs name the mod uses is checked once per session; if one is
+-- missing the mod stays off, with one error line in the log (written even with Debug logs off).
+-- xpp (boss distortion) and xevent (the loot gate) are optional on purpose: their callers run
+-- under pcall and simply stay off without them.
 local XLIBS_API = {
     xsquad = { "set_target_actor", "iterate_member_ids", "release_squad" },
     xsmart = { "get_named_smarts", "is_base", "assign_squad_to_smart" },
@@ -34,10 +76,10 @@ local XLIBS_API = {
                 "set_destination", "show_enemy", "COVER",
                 "is_indoor", "INDOOR_LEVELS" },
     xgraft = { "get_blocked_planners", "is_takeover_current" },
-    xmath = { "is_in_range" },
+    xmath = { "is_in_range" },     -- the emission boss's ring, since round 128
 }
 local xlibs_ok = nil
-
+-- Whether every name in XLIBS_API is there (see above), checked once a session.
 local function check_xlibs()
     if xlibs_ok ~= nil then return xlibs_ok end
     local missing = {}
@@ -51,77 +93,96 @@ local function check_xlibs()
     xlibs_ok = #missing == 0
     if not xlibs_ok then
         table.sort(missing)
-
+        -- Always written (an important error, round 120: yellow "~" and the label, as log_tag's).
+        -- 1.9.0 is the true minimum (round 133, checked against xlibs' changelog and the installed
+        -- 1.9.0): xgraft became its own module there, and nothing the mod calls is newer. 1.9.1 only
+        -- added xpda's news clock (AlifePlus 1.8.10 needs 1.9.1; the mod does not).
         printf("~NEMESIS IMPORTANT ERROR (please report): xlibs 1.9.0 or newer is required (missing: %s). The mod is off.", table.concat(missing, ", "))
     end
     return xlibs_ok
 end
 
+-- Vanilla's own "keep when attacked" switch (xr_combat_ignore.is_enemy): with
+-- xr_combat_ignore_enabled = false the NPC always takes the player as an enemy, before any job
+-- logic override (combat_ignore_cond, no_combat_job) or the night/rain distance limits. Stored
+-- in the NPC's own pstor; hunt members are removed when the hunt ends.
 local function never_ignore_player(obj)
-    nemesis_engine.save_var(obj, "xr_combat_ignore_enabled", false)
+    nemesis_engine.save_var(obj, "xr_combat_ignore_enabled", false)   -- save_var: nemesis_engine, a pstor value on ours
 end
 
 ---------------------------------------------------------------------------
 -- Leaving the hunt
 ---------------------------------------------------------------------------
-
+-- Invulnerability off (a retreat sets it), a reserved cover spot freed, and the chase
+-- forgotten. Every way out of the hunt goes through here: the reservation lives in vanilla's
+-- shared db.used_level_vertex_ids (xcombat.register_cover) and nothing else frees it, so a
+-- leak blocks that cover for every NPC until the next load. Removal itself is done by the
+-- vanish queue (teleports) and remove_offline.
 local function release_id(id)
-    local obj = nemesis_engine.obj(id)
-    if obj then nemesis_engine.set_invulnerable(obj, false) end
-    nemesis_compat.release_hold(id, obj)
-    local cover = nemesis_chase.get_retreat_dest(id)
-
+    local obj = nemesis_engine.obj(id)   -- obj: nemesis_engine, the online object by id
+    if obj then nemesis_engine.set_invulnerable(obj, false) end   -- set_invulnerable: nemesis_engine, on ours
+    nemesis_compat.release_hold(id, obj)   -- release_hold: nemesis_compat, the movement hold let go
+    local cover = nemesis_chase.get_retreat_dest(id)   -- get_retreat_dest: nemesis_chase, his cover vertex
+    -- src: xlibs xcombat.script (xcombat.release_cover)
     if cover then pcall(xcombat.release_cover, cover, id) end
-    nemesis_utils.reset_chase(id)
-    nemesis_chase.forget(id)
-    nemesis_fx.forget_neutral(id)
+    nemesis_utils.reset_chase(id)   -- reset_chase: nemesis_utils, his chase slot
+    nemesis_chase.forget(id)   -- forget: nemesis_chase, his runtime entries and fight memory
+    nemesis_fx.forget_neutral(id)   -- forget_neutral: nemesis_fx, nobody ignores him any more
 end
 
+-- A living member leaves with the hunt: burst, invisible model, removed a moment later. The
+-- caller drops it from the hunt in the same frame, before the removal runs.
 local function teleport_away(obj, id)
-    nemesis_fx.play_retreat_fx(obj:position())
+    nemesis_fx.play_retreat_fx(obj:position())   -- play_retreat_fx: nemesis_fx, the burst and sound
     pcall(function() obj:set_relation(game_object.neutral, db.actor) end)
-    nemesis_fx.make_invisible(obj)
-    nemesis_fx.queue_vanish(id, nemesis_fx.RETREAT_VANISH_MS)
+    nemesis_fx.make_invisible(obj)   -- make_invisible: nemesis_fx, the invisible model
+    nemesis_fx.queue_vanish(id, nemesis_fx.RETREAT_VANISH_MS)   -- queue_vanish: nemesis_fx, removed after a delay
 end
 
+-- Living extras leave with the hunt. Corpses stay. Offline extras are removed outright.
 local function release_extras()
     local offline, ids = {}, {}
-    for i, id in ipairs(S.squad_ids) do ids[i] = id end
+    for i, id in ipairs(S.squad_ids) do ids[i] = id end   -- drop_member edits S.squad_ids
     for _, id in ipairs(ids) do
         local obj = nemesis_engine.obj(id)
         local r = S.m[id]
-        if obj and nemesis_engine.alive(obj) then
+        if obj and nemesis_engine.alive(obj) then   -- alive: nemesis_engine, a safe life read
             teleport_away(obj, id)
         elseif obj and r and not r.death and r.inited and not r.hit_by_player then
-
+            -- Died this frame, before his death callback: not your kill, so he teleports too.
             nemesis_fx.play_retreat_fx(obj:position())
             nemesis_fx.queue_vanish(id, nemesis_fx.DEAD_BODY_DELAY_MS)
         elseif not obj then
             offline[#offline + 1] = id
         end
         release_id(id)
-        nemesis_member.forget(id, "the hunt is over")
+        nemesis_member.forget(id, "the hunt is over")   -- forget: nemesis_member, his record dropped
     end
     S.squad_ids = {}
-    nemesis_fx.remove_offline(offline)
+    nemesis_fx.remove_offline(offline)   -- remove_offline: nemesis_fx, offline members removed
 end
 
+-- The squad object is handed back (xsquad and AlifePlus let go of it) and queued for removal
+-- once it is empty.
 local function release_sim_squad()
     local id = S.sim_squad_id
     if id then
-        local squad = nemesis_engine.se(id)
-        if squad then nemesis_engine.release_squad(squad) end
-        local ap = nemesis_compat.alifeplus()
+        local squad = nemesis_engine.se(id)   -- se: nemesis_engine, the server object by id
+        if squad then nemesis_engine.release_squad(squad) end   -- release_squad: nemesis_engine, back to the simulation
+        local ap = nemesis_compat.alifeplus()   -- alifeplus: nemesis_compat, AlifePlus's API or nil
         if ap and ap.release_squad then
             pcall(function() ap.release_squad(id) end)
         end
         S.sim_squad_id = nil
-        nemesis_fx.queue_squad_cleanup(id)
+        nemesis_fx.queue_squad_cleanup(id)   -- queue_squad_cleanup: nemesis_fx, removed once empty
     end
 end
 
+-- The one teardown, for every way a hunt ends (beaten, called off, time limit): everyone still
+-- here teleports out, offline members are removed, the squad is handed back. Nobody is left in
+-- the world carrying a Nemesis name.
 local function release_npc()
-    nemesis_fx.reveal_all()
+    nemesis_fx.reveal_all()   -- reveal_all: nemesis_fx, every own model back
     local offline = {}
     for _, id in ipairs(S.hunter_ids) do
         local obj = nemesis_engine.obj(id)
@@ -129,7 +190,7 @@ local function release_npc()
             offline[#offline + 1] = id
         elseif nemesis_engine.alive(obj) then
             local r = S.m[id]
-
+            -- Already burst out in a retreat: only the removal is left.
             if r and r.teleport_at then
                 nemesis_fx.queue_vanish(id, nemesis_fx.RETREAT_VANISH_MS)
             else
@@ -138,7 +199,8 @@ local function release_npc()
         end
         release_id(id)
     end
-
+    -- The hunt's boss leaves the hunt record, and the last one is remembered until he is confirmed
+    -- gone (one boss at a time). Round 135: the record's own cleanup, here (was nemesis_boss.clear).
     if S.boss_id then S.boss_ghost = S.boss_id end
     S.boss_id, S.boss_hunt, S.boss_sneak, S.emission_hunt = nil, nil, nil, nil
     S.hunter_ids = {}
@@ -146,14 +208,20 @@ local function release_npc()
     S.pending_squad = nil
     release_extras()
     release_sim_squad()
-    nemesis_damage.unseed_br()
-    nemesis_state.clear_members()
-
+    nemesis_damage.unseed_br()   -- unseed_br: nemesis_damage, grok_bo's armour seeds out
+    nemesis_state.clear_members()   -- clear_members: nemesis_state, every member record dropped
+    -- After the members are dropped, so the release guard lets them through.
     nemesis_fx.remove_offline(offline)
 end
 
+-- The hunt is over (retreat, death or time limit): the cooldown starts.
+--   beaten (default): the next hunt is one cycle stronger; a hunt the boss was in halves the
+--     escalation instead (user design), never below 1.
+--   escaped (time limit): one cycle weaker, never below 1.
 local function end_hunt(reason, escaped)
-
+    -- Escalation (user design): escaped (the time limit) -1; beaten +1, whoever finished the
+    -- hunters (you or NPCs); a beaten boss hunt halves it. Never below cycle 1. A death to a
+    -- hunter halves it on the next load (nemesis_guard). There is no daily decay any more.
     local next_cycle = S.cycle + 1
     if escaped then next_cycle = math.max(1, S.cycle - 1)
     elseif S.boss_hunt then next_cycle = math.max(1, math.floor(S.cycle / 2)) end
@@ -164,80 +232,93 @@ local function end_hunt(reason, escaped)
     S.retreat_announced = false
     S.seen_online = nil
     S.hunt_start = nil
-    local now = nemesis_engine.game_seconds()
+    local now = nemesis_engine.game_seconds()   -- game_seconds: nemesis_engine, in-game seconds
     if next_cycle ~= S.cycle then nemesis_damage.unseed_br() end
     S.cycle = next_cycle
     S.last_retreat = now
-    nemesis_events.emit("hunt_ended", reason, escaped and true or false)
+    nemesis_events.emit("hunt_ended", reason, escaped and true or false)   -- emit: nemesis_events, every listener of the event
 end
 
 ---------------------------------------------------------------------------
 -- Retreat
 ---------------------------------------------------------------------------
-
+-- The teleport itself: burst, invisible model, removed RETREAT_VANISH_MS later (manage).
 local function teleport_out(obj, r)
     local id = r.id
     local cover = nemesis_chase.get_retreat_dest(id)
-
+    -- src: xlibs xcombat.script (xcombat.release_cover)
     if cover then pcall(xcombat.release_cover, cover, id) end
-    nemesis_chase.set_retreat_dest(id, nil)
-    nemesis_chase.set_wanted(id, false)
-
-    if not nemesis_compat.hold_still(obj) then pcall(function() obj:set_movement_type(move.stand) end) end
+    nemesis_chase.set_retreat_dest(id, nil)   -- set_retreat_dest: nemesis_chase, his cover vertex
+    nemesis_chase.set_wanted(id, false)   -- set_wanted: nemesis_chase, the chase on or off for him
+    -- Planted for the burst: the engine's movement hold on the latest exes, else a stand order
+    -- (sent again every tick in phase 2).
+    -- src: engine script_game_object_script2.cpp (set_movement_type)
+    if not nemesis_compat.hold_still(obj) then pcall(function() obj:set_movement_type(move.stand) end) end   -- hold_still: nemesis_compat, the exes' movement hold
     nemesis_fx.play_retreat_fx(obj:position())
     nemesis_fx.make_invisible(obj)
     r.cloak_vis = nil
     r.teleport_at = time_global()
 end
 
+-- From the tick only, never from an engine callback: it changes health, relations and
+-- invulnerability.
 local function begin_retreat(obj, r, why)
     if S.phase ~= "hunting" or r.retreat_at then return end
-    if nemesis_member.is_body(r, obj) then return end
+    if nemesis_member.is_body(r, obj) then return end   -- is_body: nemesis_member; never on a body (round 105)
     local id = r.id
     r.pending = false
-    if not nemesis_member.set_leaving(id, why or "hurt") then return end
+    if not nemesis_member.set_leaving(id, why or "hurt") then return end   -- set_leaving: nemesis_member, active to leaving
     nemesis_chase.set_wanted(id, false)
-
+    -- You beat him here: the spot is remembered (round 64). Only when your hit did it.
     if r.hit_by_player then
-
+        -- src: engine script_game_object_script2.cpp (actor) (db.actor.position)
+        -- remember_spot: nemesis_state, a spot they remember; level_name: nemesis_engine, this map's name
         pcall(function() nemesis_state.remember_spot(nemesis_engine.level_name(), db.actor:position(), nemesis_engine.game_seconds()) end)
     end
     dbg("Nemesis: %s is wounded and breaks off the fight.", r.name or "A hunter")
     nemesis_engine.set_invulnerable(obj, true)
-
-    nemesis_engine.set_health(obj, 1)
-
+    -- Back to full health: he is invulnerable and leaving, so it no longer matters, and at his
+    -- low health the vanilla wounded state laid him down (it looked like a body falling) and the
+    -- chase, which never moves a wounded stalker, could not run him to cover (round 77, play).
+    nemesis_engine.set_health(obj, 1)   -- set_health: nemesis_engine, health on ours
+    -- Stop shooting at the player while this one backs off. The others keep hunting.
     pcall(function() obj:set_relation(game_object.neutral, db.actor) end)
-
+    -- Cover first (MCM): a cover that hides him from the player, at least RETREAT_MIN_RUN_M
+    -- away, searched from a point beyond him (away from you), reserved so two hunters never
+    -- share it (xcombat). Without one, a clear lane RETREAT_FLEE_M away from you. He sprints
+    -- there, still invulnerable, then teleports. Neither, or the option off: he teleports on the
+    -- spot. Since a play test in round 78: the plain nearest cover was usually the one he was fighting from, so
+    -- he "arrived" on the next tick and vanished without running.
     local dest, how = nil, nil
-    if nemesis_mcm.get_bool("retreat_to_cover", true) then
+    if nemesis_mcm.get_bool("retreat_to_cover", true) then   -- get_bool: nemesis_mcm, a menu checkbox (cached)
         local pos, apos = obj:position(), db.actor:position()
         local dx, dz = pos.x - apos.x, pos.z - apos.z
         local len = math.sqrt(dx * dx + dz * dz)
         if len < 0.1 then dx, dz, len = 1, 0, 1 end
         local away = vector():set(dx / len, 0, dz / len)
-
+        -- A real run, and away from you: at least RETREAT_MIN_RUN_M from him and farther from
+        -- you than he is now (user rule: he always flees from the player, then finds cover).
         local my_d = pos:distance_to(apos)
-
+        -- Whether vertex vid is a real run away from you (see above).
         local function far_enough(vid)
             local ok, yes = pcall(function()
-                local vp = nemesis_engine.vertex_pos(vid)
+                local vp = nemesis_engine.vertex_pos(vid)   -- vertex_pos: nemesis_engine, a copy of a vertex's position
                 return pos:distance_to(vp) >= RETREAT_MIN_RUN_M and vp:distance_to(apos) > my_d
             end)
             return ok and yes == true
         end
         pcall(function()
             local search = vector():set(pos.x + away.x * RETREAT_COVER_AHEAD_M, pos.y, pos.z + away.z * RETREAT_COVER_AHEAD_M)
-
+            -- src: xlibs xcombat.script (xcombat.find_cover)
             dest = xcombat.find_cover(obj, apos, { selection = xcombat.COVER.NEAREST,
                 firing = false, radius = RETREAT_COVER_RADIUS_M, search_pos = search })
         end)
         if dest and not far_enough(dest) then dest = nil end
-
+        -- src: xlibs xcombat.script (xcombat.register_cover)
         if dest and not xcombat.register_cover(dest, id) then dest = nil end
         if dest then how = "cover" end
         if not dest then
-
+            -- src: xlibs xcombat.script (xcombat.find_flee_lane)
             pcall(function() dest = xcombat.find_flee_lane(obj, away, RETREAT_FLEE_M, 20, 90) end)
             if dest and not (far_enough(dest) and xcombat.register_cover(dest, id)) then dest = nil end
             if dest then how = "away from you" end
@@ -247,7 +328,7 @@ local function begin_retreat(obj, r, why)
         r.cover_until = time_global() + RETREAT_COVER_MS
         nemesis_chase.set_retreat_dest(id, dest)
         nemesis_chase.set_wanted(id, true)
-        nemesis_chase.install(obj)
+        nemesis_chase.install(obj)   -- install: nemesis_chase, the chase action on his planner
         dbg("Nemesis: %s runs %s before teleporting.", r.name or "A hunter", how == "cover" and "for cover" or "away from you")
     else
         dbg("Nemesis: %s has nowhere to run and teleports on the spot.", r.name or "A hunter")
@@ -255,7 +336,7 @@ local function begin_retreat(obj, r, why)
     end
     if not S.retreat_announced then
         S.retreat_announced = true
-
+        -- send_news, retreat_line: nemesis_lines, a PDA message and a random retreat line
         nemesis_lines.send_news(nemesis_lines.retreat_line(), r.name)
     end
 end
@@ -263,7 +344,11 @@ end
 ---------------------------------------------------------------------------
 -- Deaths
 ---------------------------------------------------------------------------
-
+-- A death that teleports out: burst at the body on the first frame after the death, removal in
+-- that same frame (the vanish queue runs right after), so body and burst go together. Not in
+-- the death callback itself, where the engine is still building the ragdoll. The body's model
+-- is never changed. A death where the body stays: the member leaves the hunt (manage drops a
+-- named hunter; a dead extra stays listed as a corpse).
 local function process_deaths()
     local any = false
     for id in pairs(S.dying) do
@@ -274,31 +359,38 @@ local function process_deaths()
             if r.death.teleport then
                 local corpse = nemesis_engine.obj(id)
                 if corpse then nemesis_fx.play_retreat_fx(corpse:position()) end
-                release_id(id)
+                release_id(id)   -- frees a cover he was running to (killed on the way)
                 nemesis_member.forget(id, "his body teleported out")
                 nemesis_fx.queue_vanish(id, nemesis_fx.DEAD_BODY_DELAY_MS)
             else
-                r.cloak_vis = nil
+                r.cloak_vis = nil   -- a cloaked one never stays (see decide_death)
             end
         end
     end
-
-    if any and S.phase == "hunting" and not nemesis_state.members_left() then
+    -- The last member is gone (a named hunter or a regular, round 82): the hunt ends here, after
+    -- every death of the frame.
+    if any and S.phase == "hunting" and not nemesis_state.members_left() then   -- members_left: nemesis_state, anyone still in it
         end_hunt(S.retreat_announced and "retreat" or "killed")
     end
 end
 
+-- Killed by the player: the body stays, it is loot (user rule, round 66): a regular or the
+-- boss. A named hunter always escapes and teleports out, whoever killed him (round 77). Killed by an NPC or a mutant: teleports out. A self-kill (killer ==
+-- victim) is the engine removing the NPC: no teleport, the body is left alone. One
+-- exception: a member who dies cloaked or masked always teleports, because his body has the
+-- invisible model, which must never be changed back on a dead stalker. Decided once: the
+-- first of the death callback and the tick (decide_dead) wins.
 local function decide_death(id, r, killer, by_player, source)
     if r.death then return end
     local self_kill = (killer == id)
     local cloaked = r.cloak_vis ~= nil or r.mask_vis ~= nil
-
-    local escapes = r.named and not nemesis_member.is_boss(id)
-
-    local assist = not by_player and not self_kill and nemesis_member.assisted(r)
+    -- Named hunters always escape (user rule, round 77): only a regular or the boss leaves a body.
+    local escapes = r.named and not nemesis_member.is_boss(id)   -- is_boss: nemesis_member, the running hunt's boss
+    -- Yours: your bullet, or an NPC's right after yours (the assist, round 110: 2 s).
+    local assist = not by_player and not self_kill and nemesis_member.assisted(r)   -- assisted: nemesis_member, your hit within 2 s
     local yours = by_player or assist
     local stays = self_kill or (yours and not cloaked and not escapes)
-    nemesis_member.set_dead(id, not stays, "killed" .. (source or ""))
+    nemesis_member.set_dead(id, not stays, "killed" .. (source or ""))   -- set_dead: nemesis_member, his death noted once
     local how
     if self_kill then how = "self-kill, engine removed it, no teleport"
     elseif escapes and not cloaked then how = "a named hunter never leaves a body, teleports"
@@ -308,22 +400,26 @@ local function decide_death(id, r, killer, by_player, source)
     elseif assist then how = string.format("your assist: you hit him %.1f s before, body stays", (time_global() - r.player_hit_at) / 1000)
     else how = "NPC, teleports" end
     dbg("Nemesis: '%s' died, killer %s (%s%s).", r.name or "?", tostring(killer), how, source or "")
-
+    -- Who reacts, since round 111: the body reservation and the boss's death, as listeners (on_game_start).
     nemesis_events.emit("member_died", id, r, yours, not stays)
 end
 
+-- npc_on_death_callback (registered below): a member's death, decided once (decide_death).
 local function on_death(victim, who)
     local id = victim and victim:id()
-    local r = nemesis_state.member(id)
+    local r = nemesis_state.member(id)   -- member: nemesis_state, his member record
     if not r then return end
     local killer = 0
     pcall(function() killer = who and who:id() or 0 end)
     local by_player = false
-
+    -- src: engine script_game_object_script2.cpp (actor) (db.actor.id)
     pcall(function() by_player = (db.actor ~= nil and who ~= nil and who:id() == db.actor:id()) end)
     decide_death(id, r, killer, by_player)
 end
 
+-- The tick found a member dead before his death callback arrived (round 76: the body stayed,
+-- because the member was dropped and the callback then ignored him). The last damaging hit
+-- names the killer: the player's hit keeps the body, anything else teleports it.
 local function decide_dead(id, r)
     decide_death(id, r, r.hit_from or 0, r.hit_by_player == true, ", seen by the tick")
 end
@@ -331,28 +427,35 @@ end
 ---------------------------------------------------------------------------
 -- Time limit
 ---------------------------------------------------------------------------
-
-local TIME_UP_WAIT_MS = 6000
-local time_up_at = nil
-local time_up_hunt = nil
-
+-- Time is up (round 106, owner: the named hunters retreat as when they are hurt). Every named
+-- hunter still here, the boss included, runs away and teleports out (begin_retreat). The hunt
+-- ends when they are gone, or TIME_UP_WAIT_MS later at the latest; then everyone still here
+-- (the regulars, anyone offline) teleports away (end_hunt). The hunt counts as escaped.
+local TIME_UP_WAIT_MS = 6000       -- the cover run (4 s) and the vanish (1 s), with a margin
+local time_up_at = nil             -- runtime: when time ran out, while the named hunters leave
+local time_up_hunt = nil           -- ... and for which hunt (its start), so a hunt ended another way never inherits it
+-- The end of a hunt whose time ran out: the leaving is over (or took too long), so everyone
+-- still here teleports away and the escape is counted (end_hunt, escaped).
 local function hunt_time_up_end()
     time_up_at = nil
     end_hunt("time limit, you escaped", true)
 end
-
+-- Time ran out (the slow tick in manage, time_limit_reached). The escape line goes out (the
+-- boss's own if he is alive, else the leader's), every named hunter here and online breaks off
+-- (begin_retreat "time is up"), and manage waits for them (time_up_at). With none to wait for,
+-- the hunt ends at once.
 local function hunt_time_up()
-
+    -- name_of: nemesis_state, a member's name; leader: nemesis_state, the first named hunter
     local leader = nemesis_state.name_of(nemesis_state.leader())
     local boss = S.boss_id
     local boss_obj = boss and nemesis_engine.obj(boss)
     local boss_alive = boss_obj ~= nil and nemesis_engine.alive(boss_obj)
     local boss_name = boss and nemesis_state.name_of(boss)
-    local boss_pic = boss_alive and nemesis_engine.character_icon(boss) or nil
+    local boss_pic = boss_alive and nemesis_engine.character_icon(boss) or nil   -- character_icon: nemesis_engine, his portrait
     if boss_alive then
-        nemesis_lines.send_news(nemesis_lines.boss_escape_line(), boss_name, boss_pic)
+        nemesis_lines.send_news(nemesis_lines.boss_escape_line(), boss_name, boss_pic)   -- boss_escape_line: nemesis_lines, a random line
     else
-        nemesis_lines.send_news(nemesis_lines.time_up_line(), leader)
+        nemesis_lines.send_news(nemesis_lines.time_up_line(), leader)   -- time_up_line: nemesis_lines, a random line
     end
     time_up_at, time_up_hunt = time_global(), S.hunt_start
     local n = 0
@@ -368,51 +471,57 @@ local function hunt_time_up()
     if n == 0 then hunt_time_up_end() end
 end
 
+-- Whether the hunt has run MCM Hunt duration (4..12 in-game hours).
 local function time_limit_reached()
-    local hours = nemesis_mcm.get_number("hunt_duration", 5)
+    local hours = nemesis_mcm.get_number("hunt_duration", 5)   -- get_number: nemesis_mcm, a menu number (cached)
     if hours < 4 then hours = 4 end
     if hours > 12 then hours = 12 end
     local now = nemesis_engine.game_seconds()
     S.hunt_start = S.hunt_start or now
-    if now < S.hunt_start then S.hunt_start = now end
+    if now < S.hunt_start then S.hunt_start = now end -- clock went backwards
     return now - S.hunt_start >= hours * 3600
 end
 
 ---------------------------------------------------------------------------
 -- Per tick: one named hunter
 ---------------------------------------------------------------------------
-
+-- Returns keep (still in the hunt), online (counts as present).
+-- A hunter breaking off (round 85: split out of manage_hunter). Returns nil when he is not
+-- retreating; otherwise the same (keep, online) pair manage_hunter returns.
 local function manage_retreat(id, r, gt)
     if not r.retreat_at then return nil end
-
+    -- Phase 1: running for cover. Teleports on arrival, after RETREAT_COVER_MS, or at once if he
+    -- went offline.
     if not r.teleport_at then
         local runner = nemesis_engine.obj(id)
         if not runner then
             r.teleport_at = gt
-        elseif nemesis_chase.retreat_arrived(runner) or gt >= (r.cover_until or 0) then
+        elseif nemesis_chase.retreat_arrived(runner) or gt >= (r.cover_until or 0) then   -- retreat_arrived: nemesis_chase, at his cover
             teleport_out(runner, r)
         else
             nemesis_chase.set_wanted(id, true)
         end
         return true, true
     end
-
+    -- Phase 2: the burst played; gone RETREAT_VANISH_MS later.
     local gone = nemesis_engine.obj(id)
     if gt - r.teleport_at < nemesis_fx.RETREAT_VANISH_MS then
-
-        if gone and not nemesis_compat.is_held(id) then pcall(function() gone:set_movement_type(move.stand) end) end
+        -- src: engine script_game_object_script2.cpp (set_movement_type)
+        if gone and not nemesis_compat.is_held(id) then pcall(function() gone:set_movement_type(move.stand) end) end   -- is_held: nemesis_compat, held by the exes
         return true, true
     end
-
-    if gone and not nemesis_fx.invisible_model_exists() then nemesis_fx.play_retreat_fx(gone:position()) end
+    -- Without the invisible model he is still visible: a second burst covers him.
+    if gone and not nemesis_fx.invisible_model_exists() then nemesis_fx.play_retreat_fx(gone:position()) end   -- invisible_model_exists: nemesis_fx
     release_id(id)
     nemesis_member.forget(id, "teleported out")
     nemesis_fx.queue_vanish(id, 0)
     return false, false
 end
 
+-- One named hunter, every tick: his retreat, his death, his health, the boss's rules, the cloak and
+-- the chase. Returns keep (still in the hunt), online (counts as present).
 local function manage_hunter(id, r, gt, actor, retreat_health)
-    nemesis_compat.no_downed(id)
+    nemesis_compat.no_downed(id)   -- no_downed: nemesis_compat, no wounded state for him
     local keep, online = manage_retreat(id, r, gt)
     if keep ~= nil then return keep, online end
 
@@ -423,11 +532,12 @@ local function manage_hunter(id, r, gt, actor, retreat_health)
         nemesis_member.forget(id, "no server object")
         return false, false
     end
-    if not obj then return true, false end
+    if not obj then return true, false end   -- offline
     if not nemesis_engine.alive(obj) then
-
+        -- A one-frame "not alive" during spawn used to end the hunt (the self-kill at 0 m), so
+        -- only a confirmed death counts.
         if not r.death and (r.dead or r.inited) then
-            decide_dead(id, r)
+            decide_dead(id, r)   -- process_deaths takes it on the next tick, as for the callback
             return true, true
         end
         if r.death and r.death.teleport then return true, true end
@@ -439,22 +549,22 @@ local function manage_hunter(id, r, gt, actor, retreat_health)
         end
         return true, true
     end
-    nemesis_fx.unmask(obj, r)
-    nemesis_damage.lift_bypass_guard(obj, r)
-    nemesis_compat.apply_ai(obj, r, gt)
-    nemesis_combat.stall_check(obj, gt)
+    nemesis_fx.unmask(obj, r)   -- unmask: nemesis_fx, his own model back after a mask
+    nemesis_damage.lift_bypass_guard(obj, r)   -- lift_bypass_guard: nemesis_damage, the smart cover guard off
+    nemesis_compat.apply_ai(obj, r, gt)   -- apply_ai: nemesis_compat, the exes' AI features
+    nemesis_combat.stall_check(obj, gt)   -- stall_check: nemesis_combat, the stall detector
 
     if not r.inited then
         r.inited = true
         S.seen_online = true
         r.grace_until = gt + RETREAT_GRACE_MS
         local hp0 = tonumber(obj.health)
-
+        -- 0 is what an unfinished body reports. Do not treat it as a wound.
         if hp0 and hp0 > 0.05 and hp0 <= 1 then
             r.last_hp = hp0
             r.hp_armed = true
         end
-
+        -- He followed you from another map: he arrives as hurt as he left.
         if r.follow_hp and r.follow_hp > 0.05 and r.follow_hp < 1 then
             nemesis_engine.set_health(obj, r.follow_hp)
             r.last_hp = r.follow_hp
@@ -462,10 +572,11 @@ local function manage_hunter(id, r, gt, actor, retreat_health)
         r.follow_hp = nil
         dbg("Nemesis: '%s' is online (health %s). No retreat for %ss.", r.name or "A hunter",
             (hp0 and string.format("%.2f", hp0)) or "unread", tostring(RETREAT_GRACE_MS / 1000))
-
+        -- Relations: keep_squad_friendly, at the end of this same tick (the member is unbound).
         never_ignore_player(obj)
     end
-
+    -- Arm late if the first read was an unfinished body. Without this, a hunter whose first
+    -- health read failed was immortal for the rest of the hunt.
     if not r.hp_armed then
         local hpa = tonumber(obj.health)
         if hpa and hpa > 0.05 and hpa <= 1 then
@@ -478,30 +589,34 @@ local function manage_hunter(id, r, gt, actor, retreat_health)
     local hp = tonumber(obj.health)
     if not hp or hp <= 0 or hp > 1 then hp = r.last_hp or 1 end
     local prev = r.last_hp
-
+    -- Drops the hit callback did not see (bleeding, a smart cover hit): the same give-back.
+    -- A drop from a hit that was cut already is left as it is (round 100: NPC hits on named
+    -- hunters and bosses were cut twice, the emission boss took 1.5% of them at cycle 13).
     if r.cut_drop then r.cut_drop = nil
-    else hp = nemesis_damage.absorb(obj, r, prev, hp) end
+    else hp = nemesis_damage.absorb(obj, r, prev, hp) end   -- absorb: nemesis_damage, part of a drop given back
     local in_grace = r.grace_until and gt < r.grace_until
     local hurt = r.hp_armed and prev and hp < (prev - 0.02)
     if in_grace then r.pending = false end
     if hp > 0.05 then r.last_hp = hp end
 
+    -- The boss never breaks off: he fights to the death (round 66).
     if id ~= S.boss_id and not in_grace and (r.pending or (hurt and hp <= retreat_health)) then
         begin_retreat(obj, r)
         return true, true
     end
     if id == S.boss_id then
-
-        nemesis_events.ask("boss_update", obj, r, gt, actor)
+        -- The boss's per-tick rules are his module's (round 135; a special hunt's module answers
+        -- first: the emission boss, round 115). Asked, not named.
+        nemesis_events.ask("boss_update", obj, r, gt, actor)   -- ask: nemesis_events, the first module's answer
     end
-    nemesis_fx.cloak_update(obj, r, gt, actor)
-
+    nemesis_fx.cloak_update(obj, r, gt, actor)   -- cloak_update: nemesis_fx, cloak or reveal
+    -- Always on while online: the chase action blocks the alife planner.
     nemesis_chase.set_wanted(id, true)
     if not nemesis_chase.install(obj) and not chase_install_warned then
         chase_install_warned = true
         dbg("!Nemesis ERROR: could not add the chase action to the hunter.")
     end
-
+    -- has_run: nemesis_chase, the chase action ran for him
     if r.grace_until and gt > r.grace_until + 3000 and not nemesis_chase.has_run(id) and not r.idle_warned then
         r.idle_warned = true
         dbg("!Nemesis ERROR: chase action has not run for '%s'.", r.name or "?")
@@ -509,6 +624,7 @@ local function manage_hunter(id, r, gt, actor, retreat_health)
     return true, true
 end
 
+-- Per tick: one regular extra.
 local function manage_extra(id, r, actor)
     local extra = nemesis_engine.obj(id)
     if extra and not r.death and not nemesis_engine.alive(extra) and r.inited then
@@ -524,66 +640,81 @@ local function manage_extra(id, r, actor)
         if r.follow_hp and r.follow_hp > 0.05 and r.follow_hp < 1 then nemesis_engine.set_health(extra, r.follow_hp) end
         r.follow_hp = nil
     end
-
+    -- His health, for a change of map (round 87): he follows you as hurt as he is.
     local hp = tonumber(extra.health)
     if hp and hp > 0.05 and hp <= 1 then r.last_hp = hp end
     if not r.role_set then
-
+        -- Alternate sides so two extras flank from both directions.
         S.role_side = -(S.role_side or 1)
-        nemesis_chase.set_role(id, { extra = true, side = S.role_side, angle = math.random(30, 60) })
+        nemesis_chase.set_role(id, { extra = true, side = S.role_side, angle = math.random(30, 60) })   -- set_role: nemesis_chase, his flank
         r.role_set = true
     end
     nemesis_chase.set_wanted(id, true)
     nemesis_chase.install(extra)
 end
 
+-- The hunters are on another map than you: you changed maps (any way: on foot, a shortcut,
+-- fast travel, a guide). Read from the first hunter still in the hunt, or with none left, the
+-- first living regular (round 82).
 local function player_left_level()
     for _, id in ipairs(S.hunter_ids) do
         local anchor = nemesis_engine.se(id)
         local r = S.m[id]
         if anchor and not (r and r.retreat_at) then
-
-            return nemesis_engine.same_level(anchor, alife():actor()) == false
+            -- src: engine alife_simulator_script.cpp (alife().actor)
+            return nemesis_engine.same_level(anchor, alife():actor()) == false   -- same_level: nemesis_engine, one map (nil: unknown)
         end
     end
     if #S.hunter_ids > 0 then return false end
     for _, id in ipairs(S.squad_ids) do
-        local anchor = nemesis_state.regular_alive(id) and nemesis_engine.se(id)
+        local anchor = nemesis_state.regular_alive(id) and nemesis_engine.se(id)   -- regular_alive: nemesis_state, not dead
         if anchor then return nemesis_engine.same_level(anchor, alife():actor()) == false end
     end
     return false
 end
 
+-- The hunt is called off (why goes in the log): the teardown, and no new hunt for retry_ms.
 local function call_off(gt, why, retry_ms)
     dbg("Nemesis: %s", why)
     release_npc()
     S.phase = "idle"
-    nemesis_spawn.block(gt + retry_ms)
+    nemesis_spawn.block(gt + retry_ms)   -- block: nemesis_spawn, no spawn until then
 end
 
 ---------------------------------------------------------------------------
 -- Prepare for uninstall (MCM, Debug)
 ---------------------------------------------------------------------------
-
+-- A save made during a hunt holds the hunt squad, a server object of this mod's own squad
+-- section (squad_descr_nemesis.ltx). Without the mod that section does not exist and the save
+-- will most likely not load. With the box ticked: a running hunt is called off (the usual
+-- teardown: everyone teleports out), the world is searched once for squads of our sections
+-- (leftovers of older hunts included), and UNINSTALL_SWEEP_MS later whatever is left of them is
+-- removed with its members. When none is left a PDA line says it is safe to save. No hunt
+-- starts while the box stays ticked; unticking it lets them come back. Runs again after a load
+-- with the box still ticked.
+-- Our squad sections, which would not load without the mod. A module adds the sections of its
+-- own world objects (round 115: add_uninstall_sections, from its on_game_start; the emission
+-- boss's squads, stalkers, horde and phantoms).
 local UNINSTALL_SECTIONS = { nemesis_hunter_squad = true, nemesis_hunter_squad_isg = true }
-
+-- A module's own sections (list) join the sweep (see above).
 function add_uninstall_sections(list)
     for _, sec in ipairs(list or {}) do UNINSTALL_SECTIONS[sec] = true end
 end
 local UNINSTALL_SWEEP_MS = 3000
 local MAX_SE_ID = 65534
-local uninstall = nil
+local uninstall = nil   -- runtime: { squads = {[id] = true}, at = ms, said = bool }
 
+-- Every squad of UNINSTALL_SECTIONS in the world, as { [id] = true }: one pass over every id.
 local function our_squads_in_world()
     local found = {}
-
+    -- src: engine alife_simulator_script.cpp (alife)
     local sim = alife()
     if not sim then return found end
     for id = 1, MAX_SE_ID do
-
+        -- src: engine alife_simulator_script.cpp (object)
         local se = sim:object(id)
         if se then
-
+            -- src: engine xrServer_Objects_script.cpp (section_name)
             local ok, sec = pcall(function() return se:section_name() end)
             if ok and UNINSTALL_SECTIONS[sec] then found[id] = true end
         end
@@ -591,6 +722,7 @@ local function our_squads_in_world()
     return found
 end
 
+-- True while the box is ticked: the caller then starts no hunt.
 local function uninstall_tick(gt)
     if not nemesis_mcm.get_bool("prepare_uninstall", false) then
         if uninstall then
@@ -605,9 +737,9 @@ local function uninstall_tick(gt)
             S.follow = nil
             dbg("Nemesis: preparing for uninstall: the squad following you is called off.")
         end
-        nemesis_events.emit("uninstall")
-        nemesis_spawn.reset_runtime()
-        nemesis_guard.forget_death_marker()
+        nemesis_events.emit("uninstall")          -- every module leaves nothing running (round 115)
+        nemesis_spawn.reset_runtime()             -- reset_runtime: nemesis_spawn, a warning already given is dropped
+        nemesis_guard.forget_death_marker()   -- forget_death_marker: nemesis_guard, nothing pending in the file
         uninstall = { squads = our_squads_in_world(), at = gt + UNINSTALL_SWEEP_MS, said = false }
         local n = 0
         for _ in pairs(uninstall.squads) do n = n + 1 end
@@ -618,48 +750,50 @@ local function uninstall_tick(gt)
     for id in pairs(uninstall.squads) do
         local sq = nemesis_engine.se(id)
         local ours = false
-
+        -- src: engine xrServer_Objects_script.cpp (section_name)
         pcall(function() ours = UNINSTALL_SECTIONS[sq:section_name()] == true end)
         if not (sq and ours) then
-            uninstall.squads[id] = nil
+            uninstall.squads[id] = nil            -- gone (or the id now belongs to something else)
         else
-            nemesis_fx.remove_object(sq)
+            nemesis_fx.remove_object(sq)          -- remove_object: nemesis_fx, with any member still in it
             left = left + 1
         end
     end
     if left > 0 then
-        uninstall.at = gt + 1000
+        uninstall.at = gt + 1000                  -- check again: removal completes on the next update
     elseif not uninstall.said then
         uninstall.said = true
         dbg("Nemesis: uninstall preparation done, no Nemesis squad left.")
-
+        -- text: nemesis_lines, a string table's text
         nemesis_lines.send_news(nemesis_lines.text("st_nemesis_msg_uninstall_safe"), nemesis_lines.text("st_nemesis_caption"))
     end
     return true
 end
 
+-- Every slow tick (2 s) of a hunt (round 64): are you indoors (the hunters lay siege), and are
+-- you at a spot where you beat them before (they know where you are, one line says so)?
 local function read_surroundings(gt, actor)
     local pos = nil
     pcall(function() pos = actor:position() end)
     if not pos then return end
     local inside = false
-    pcall(function() inside = nemesis_engine.is_indoor(pos) end)
-    local was = nemesis_siege.player_indoor()
-    nemesis_siege.set_player_indoor(inside, gt)
+    pcall(function() inside = nemesis_engine.is_indoor(pos) end)   -- is_indoor: nemesis_engine, xlibs' indoor test
+    local was = nemesis_siege.player_indoor()   -- player_indoor: nemesis_siege, indoors at the last look
+    nemesis_siege.set_player_indoor(inside, gt)   -- set_player_indoor: nemesis_siege, the siege clock
     if inside ~= was then
         dbg("Nemesis: player is %s.", inside and "indoors, the hunters wait outside" or "outdoors again")
     end
     local lname = nil
     pcall(function() lname = nemesis_engine.level_name() end)
-    local known = lname ~= nil and nemesis_state.known_spot(lname, pos, nemesis_engine.game_seconds())
-    nemesis_siege.set_known_spot(known)
+    local known = lname ~= nil and nemesis_state.known_spot(lname, pos, nemesis_engine.game_seconds())   -- known_spot: nemesis_state
+    nemesis_siege.set_known_spot(known)   -- set_known_spot: nemesis_siege, they know where you are
     if known and not S.spot_said then
         S.spot_said = true
         dbg("Nemesis: player is at a remembered spot.")
         for _, id in ipairs(S.hunter_ids) do
             local r = S.m[id]
             if r and r.named and id ~= S.boss_id and not r.retreat_at then
-                nemesis_lines.send_news(nemesis_lines.known_spot_line(), r.name)
+                nemesis_lines.send_news(nemesis_lines.known_spot_line(), r.name)   -- known_spot_line: nemesis_lines, a random line
                 break
             end
         end
@@ -669,7 +803,12 @@ end
 ---------------------------------------------------------------------------
 -- They follow you to another map (user design)
 ---------------------------------------------------------------------------
-
+-- Any change of map during a hunt: the squad as it stands (named hunters not breaking off,
+-- living extras, each with his health, the boss and his look) is removed from the old map and
+-- comes after you. The countdown (FOLLOW_MIN_S..FOLLOW_MAX_S) starts once you are
+-- FOLLOW_CLEAR_M from where you arrived, so they never land on the level exit. The time limit
+-- keeps running. They follow follow_max() times a hunt (MCM Maps they follow you); the next change of map shakes them off,
+-- which counts as an escape (-1 cycle), as does the time limit running out while they follow.
 local function follow_max()
     local n = math.floor(nemesis_mcm.get_number("follow_maps", 2))
     if n < 0 then n = 0 end
@@ -679,6 +818,7 @@ end
 local FOLLOW_CLEAR_M = 40
 local FOLLOW_MIN_S, FOLLOW_MAX_S = 60, 120
 
+-- Your map's name and your position (either nil when it cannot be read).
 local function here(actor)
     local lname, pos = nil, nil
     pcall(function() lname = nemesis_engine.level_name() end)
@@ -686,12 +826,14 @@ local function here(actor)
     return lname, pos
 end
 
+-- They lost your trail: the time-up line (under caption), and the hunt ends as escaped.
 local function escape_follow(why, caption)
     nemesis_lines.send_news(nemesis_lines.time_up_line(), caption or nemesis_lines.text("st_nemesis_caption_hunter"))
     S.follow = nil
     end_hunt(why, true)
 end
 
+-- You changed maps during a hunt: the squad as it stands follows you (see above), or the hunt ends.
 local function begin_follow(gt, actor)
     local leader = nemesis_state.name_of(nemesis_state.leader())
     if (S.follows or 0) >= follow_max() then
@@ -699,7 +841,7 @@ local function begin_follow(gt, actor)
         return
     end
     local members = {}
-
+    -- Member id, when he is still in it, joins the following squad (the boss first).
     local function add(id, named)
         local r = S.m[id]
         if not r or r.retreat_at or r.dead or r.death then return end
@@ -708,7 +850,7 @@ local function begin_follow(gt, actor)
     end
     for _, id in ipairs(S.hunter_ids) do add(id, true) end
     for _, id in ipairs(S.squad_ids) do add(id, false) end
-
+    -- Regulars alone follow too (round 82): the hunt goes on while anyone is left.
     if #members == 0 then
         end_hunt("everyone was breaking off when you left the map")
         return
@@ -729,6 +871,7 @@ local function begin_follow(gt, actor)
     S.follows = (S.follows or 0) + 1
 end
 
+-- Idle tick while a squad is following (slow ticks only).
 local function follow_tick(gt, actor, slow)
     local f = S.follow
     if not slow or not f then return end
@@ -740,7 +883,7 @@ local function follow_tick(gt, actor, slow)
     local lname, pos = here(actor)
     if not pos then return end
     if lname and f.lvl and lname ~= f.lvl then
-
+        -- Another change of map before they arrived.
         if (S.follows or 0) >= follow_max() then
             escape_follow("you changed maps again; they lost your trail, you escaped", caption)
             return
@@ -757,28 +900,30 @@ local function follow_tick(gt, actor, slow)
         dbg("Nemesis: player left the arrival area; the hunters arrive in %s s.", string.format("%.0f", (f.spawn_at - gt) / 1000))
         return
     end
-    if gt < f.spawn_at or nemesis_spawn.follow_blocked(actor) then return end
-    nemesis_spawn.spawn_follow(gt, f)
+    if gt < f.spawn_at or nemesis_spawn.follow_blocked(actor) then return end   -- follow_blocked: nemesis_spawn, a dialogue, sleep or underground
+    nemesis_spawn.spawn_follow(gt, f)   -- spawn_follow: nemesis_spawn, the squad placed
     if S.phase ~= "idle" then S.follow = nil end
 end
 
 local manage_ids = {}
-local hit_post = false
+local hit_post = false             -- the hit callback runs in the Post tier (set at game start)
 
+-- Whether on_before_hit runs in the Post tier, after every other mod's hook (hit_post).
+-- nemesis_damage.install_br_hooks needs it to place its hooks around GAMMA ballistics.
 function hit_runs_last() return hit_post end
 local exe_logged = false
-
+-- The hunt's tick: deaths, the time limit, a change of map, every member, the hum and the distortion.
 local function manage(gt, actor, slow)
     if not nemesis_state.members_left() then
         call_off(gt, "hunter object no longer exists; resetting.", 10000)
         return
     end
     process_deaths()
-    if S.phase == "idle" then return end
+    if S.phase == "idle" then return end   -- the last hunter just teleported out
 
     if time_up_at and time_up_hunt ~= S.hunt_start then time_up_at = nil end
     if time_up_at then
-
+        -- Time ran out: the named hunters are leaving; the hunt ends once they are gone.
         local leaving = false
         for _, id in ipairs(S.hunter_ids) do
             if S.m[id] and S.m[id].retreat_at then leaving = true end
@@ -797,8 +942,8 @@ local function manage(gt, actor, slow)
     end
 
     local any_online = false
-    local retreat_health = nemesis_utils.get_retreat_health(S.cycle)
-
+    local retreat_health = nemesis_utils.get_retreat_health(S.cycle)   -- get_retreat_health: nemesis_utils, MCM Retreat health
+    -- A copy, because manage_hunter can drop the hunter it handles. One array reused (round 80).
     local ids = manage_ids
     for i = #ids, 1, -1 do ids[i] = nil end
     for i, id in ipairs(S.hunter_ids) do ids[i] = id end
@@ -815,6 +960,7 @@ local function manage(gt, actor, slow)
         return
     end
 
+    -- A living regular online counts too (round 82: they keep hunting after the named ones).
     if not any_online then
         for _, id in ipairs(S.squad_ids) do
             if nemesis_state.regular_alive(id) and nemesis_engine.obj(id) then
@@ -838,29 +984,36 @@ local function manage(gt, actor, slow)
         local r = S.m[id]
         if r then manage_extra(id, r, actor) end
     end
-
+    -- Relations at once when a member is seen for the first time (and every 2 s, a slow job).
+    -- has_unbound_member, keep_squad_friendly: nemesis_spawn, a new member, the relations
     if nemesis_spawn.has_unbound_member() then nemesis_spawn.keep_squad_friendly() end
-    local near_d, boss_d, near_id, hum_d = nemesis_fx.measure(actor)
-    nemesis_sound.hum_update(near_d, near_id, hum_d)
-    nemesis_sound.heart_update(boss_d)
-
-    nemesis_fx.distort_update(boss_d)
+    local near_d, boss_d, near_id, hum_d = nemesis_fx.measure(actor)   -- measure: nemesis_fx, the nearest hunter and the boss
+    nemesis_sound.hum_update(near_d, near_id, hum_d)   -- hum_update: nemesis_sound, the psy hum
+    nemesis_sound.heart_update(boss_d)   -- heart_update: nemesis_sound, the heartbeat (round 142)
+    -- The whispers (nemesis_sound.whisper_update, round 143) are not on this boss any more (round
+    -- 151, owner: "the boss already hums"; kept for a solo boss or The Twins). Their file is stereo,
+    -- so they could not come from his direction anyway (the engine plays a stereo file 2D:
+    -- xrSound SoundRender_Core.cpp, play_at_pos, checked 22 October).
+    nemesis_fx.distort_update(boss_d)   -- distort_update: nemesis_fx, the boss distortion
 end
 
 ---------------------------------------------------------------------------
 -- Tick and callbacks
 ---------------------------------------------------------------------------
-
+-- The slow work (round 103, user: a slight stutter every 2 s): one job per hunt tick after the
+-- slow tick, 250 ms apart, instead of all of them in it. The time limit and the change of map
+-- stay in the slow tick itself (manage). With Debug logs on, a job or a whole tick over PERF_MS
+-- writes a "Nemesis PERF" line, so the cost can be read in a real game.
 local PERF_MS = 1
 local PERF_TICK_MS = 2
-
+-- Milliseconds of CPU time (nemesis_engine.clock_ms). Only for the PERF lines.
 local function clock_ms() return nemesis_engine.clock_ms() end
 local SLOW_JOBS = {
     { name = "names and the squad target", order = 10, fn = function()
         if S.phase ~= "hunting" then return end
-        nemesis_spawn.apply_names()
-
-        nemesis_spawn.hold_guard_exemption()
+        nemesis_spawn.apply_names()   -- apply_names: nemesis_spawn, the members' names
+        -- The scripted target on the player is written back if anything cleared it.
+        nemesis_spawn.hold_guard_exemption()   -- hold_guard_exemption: nemesis_spawn, the target back
     end },
     { name = "indoors and remembered spot", order = 20, fn = function(gt, actor)
         if S.phase == "hunting" then read_surroundings(gt, actor) end
@@ -868,27 +1021,39 @@ local SLOW_JOBS = {
     { name = "squad relations", order = 30, fn = function()
         if S.phase == "hunting" then nemesis_spawn.keep_squad_friendly() end
     end },
-
+    -- order 40 also: the boss stash (nemesis_boss adds it, round 135)
     { name = "reserved bodies", order = 40, fn = function(gt, actor)
-        nemesis_fx.reserve_tick(gt, actor)
+        nemesis_fx.reserve_tick(gt, actor)   -- reserve_tick: nemesis_fx, claims run out
     end },
-
+    -- order 50: the emission boss's horde (nemesis_emission adds it, round 115)
 }
-local slow_jobs = {}
+local slow_jobs = {}               -- runtime: the jobs still due this round, in order
 
+-- The scheduler, since the restructure of round 111 (step 4). Besides the slow jobs above, two more lists:
+--   FRAME_JOBS  every frame (actor_on_update): queues that must not wait for the tick
+--   TICK_JOBS   every tick (250 ms in a hunt, 2 s idle), before the hunt's own work
+-- A part of the mod adds its job with add_job (nemesis_core.on_game_start adds the core's). Each
+-- list runs by order number (lower first, default 100), then by when the job was added, so a
+-- module adding its job from its own on_game_start lands in the same place whatever the scripts'
+-- load order (so since round 115). guard: run it in pcall and log an error line naming it (a module's job
+-- must never stop the core's tick); the core's own jobs run unguarded as before. With Debug logs
+-- on each job is timed: over PERF_MS, a PERF line names it. What stays written out in tick() is the flow that
+-- decides what the tick does at all (the uninstall, the emission boss's call-off, idle or
+-- hunting): a list cannot express "stop here".
 local FRAME_JOBS, TICK_JOBS = {}, {}
 local job_seq = 0
 for _, j in ipairs(SLOW_JOBS) do
     job_seq = job_seq + 1
     j.seq = job_seq
 end
-
+-- The jobs' order: by order number (default 100), then by when they were added.
 local function job_order(a, b)
     local oa, ob = a.order or 100, b.order or 100
     if oa ~= ob then return oa < ob end
     return a.seq < b.seq
 end
-
+-- Adds job fn (named name) to the frame, tick or slow list at order; a job of the same name is
+-- replaced. guard: run it in pcall (see above). False for an unknown list or no function.
 function add_job(kind, name, fn, order, guard)
     local list = (kind == "frame" and FRAME_JOBS) or (kind == "tick" and TICK_JOBS) or (kind == "slow" and SLOW_JOBS) or nil
     if not list or type(fn) ~= "function" then return false end
@@ -903,15 +1068,16 @@ function add_job(kind, name, fn, order, guard)
     table.sort(list, job_order)
     return true
 end
-
+-- Runs job j (in a pcall with an error line when it is guarded).
 local function call_job(j, gt, actor)
     if not j.guard then return j.fn(gt, actor) end
     local ok, err = pcall(j.fn, gt, actor)
     if not ok then dbg("!Nemesis ERROR: the job '%s' failed: %s", j.name, tostring(err)) end
 end
-
+-- One job; with Debug logs on it is timed, and a PERF line goes out if it took longer
+-- than PERF_MS.
 local function run_slow_job(j, gt, actor)
-    if not nemesis_utils.debug_on() then
+    if not nemesis_utils.debug_on() then   -- debug_on: nemesis_utils, the Debug logs box
         call_job(j, gt, actor)
         return
     end
@@ -921,18 +1087,22 @@ local function run_slow_job(j, gt, actor)
     if ms > PERF_MS then dbg("Nemesis PERF: %s took %s ms.", j.name, string.format("%.2f", ms)) end
 end
 
+-- Every sound and picture of a running hunt stops: between hunts, while the emission boss's
+-- flow takes the tick, and while the uninstall preparation holds it (round 142: the heartbeat,
+-- and the uninstall's hold, which returned before the stops; round 143: the whispers fade out).
 local function quiet()
-    nemesis_sound.hum_stop()
-    nemesis_sound.heart_stop("no hunt")
-    nemesis_sound.whisper_fade("no hunt")
-    nemesis_fx.distort_stop()
+    nemesis_sound.hum_stop()   -- hum_stop: nemesis_sound, the hum stops
+    nemesis_sound.heart_stop("no hunt")   -- heart_stop: nemesis_sound, the heartbeat stops
+    nemesis_sound.whisper_fade("no hunt")   -- whisper_fade: nemesis_sound, the whispers fade out
+    nemesis_fx.distort_stop()   -- distort_stop: nemesis_fx, the distortion ends
 end
 
+-- One tick (every TICK_HUNT_MS in a hunt, TICK_IDLE_MS idle): the jobs, then the flow (see above).
 local function tick()
     if not check_xlibs() then return end
-    nemesis_guard.tick()
+    nemesis_guard.tick()   -- tick: nemesis_guard, its hooks and the menu boxes
     local actor = db.actor
-
+    -- src: engine alife_simulator_script.cpp (alife)
     if not actor or not actor:alive() or not alife() then return end
     if S.first_hunt == nil then S.first_hunt = nemesis_engine.game_seconds() end
 
@@ -944,7 +1114,7 @@ local function tick()
     end
     for _, j in ipairs(TICK_JOBS) do run_slow_job(j, gt, actor) end
     if slow then
-
+        -- Leftovers of the last round (idle ticks are 2 s apart: they all run now), then a new one.
         while slow_jobs[1] do run_slow_job(table.remove(slow_jobs, 1), gt, actor) end
         for i, j in ipairs(SLOW_JOBS) do slow_jobs[i] = j end
     else
@@ -955,7 +1125,8 @@ local function tick()
         quiet()
         return
     end
-
+    -- A module may take the tick (round 115: asked, not named). The emission boss (round 93): an
+    -- emission meets a hunt, and he comes instead.
     local em = nemesis_events.ask("take_tick", gt, actor, slow)
     if em == "call_off" then
         call_off(gt, "an emission began: the hunt is called off, the emission boss comes instead.", 0)
@@ -967,20 +1138,22 @@ local function tick()
     if S.phase == "idle" then
         quiet()
         if S.follow then follow_tick(gt, actor, slow)
-        else nemesis_spawn.idle_tick(gt, actor, slow) end
+        else nemesis_spawn.idle_tick(gt, actor, slow) end   -- idle_tick: nemesis_spawn, the warning and the hunt
     else
-        nemesis_spawn.fill_squad()
+        nemesis_spawn.fill_squad()   -- fill_squad: nemesis_spawn, the next extra
         manage(gt, actor, slow)
     end
 end
 
+-- actor_on_update (registered below): deaths and the frame jobs every frame, then the tick when due.
 local function on_update()
     local gt = time_global()
-
+    -- Deaths are handled every frame, not on the 250 ms tick, so burst and removal go together.
     if S.phase ~= "idle" and next(S.dying) ~= nil then process_deaths() end
     for _, j in ipairs(FRAME_JOBS) do run_slow_job(j, gt, db.actor) end
     if gt < next_tick then return end
-
+    -- A module's flow may need the hunt's rate with no hunt (the emission boss's haunting: the
+    -- ghosts read you every tick).
     next_tick = gt + ((S.phase == "idle" and not nemesis_events.ask("fast_tick")) and TICK_IDLE_MS or TICK_HUNT_MS)
     if nemesis_utils.debug_on() then
         local t = clock_ms()
@@ -990,60 +1163,72 @@ local function on_update()
     else
         tick()
     end
-
+    -- A hunt that started in this tick goes on at the hunt's rate at once (its members join on
+    -- the 750 ms beat, nemesis_spawn.fill_squad).
     if (S.phase ~= "idle" or nemesis_events.ask("fast_tick")) and next_tick > gt + TICK_HUNT_MS then next_tick = gt + TICK_HUNT_MS end
 end
 
+-- DIAGNOSTIC (debug logs only): a hunt member removed by someone other than this mod. The mod
+-- drops a member before its own removals, so those never log here; anything that does is
+-- another mod (the traceback names it).
 local function on_se_unregister(se_obj, type_name)
     local id = se_obj and se_obj.id
-    if not id or S.phase == "idle" or not nemesis_utils.debug_on() or not nemesis_state.is_member(id) then return end
+    if not id or S.phase == "idle" or not nemesis_utils.debug_on() or not nemesis_state.is_member(id) then return end   -- is_member: nemesis_state
     local tb = ""
     pcall(function() tb = debug.traceback("", 2) end)
     dbg("!Nemesis DIAG: hunt member %s unregistered (%s).%s", tostring(id), tostring(type_name), tb or "")
 end
 
+-- actor_on_net_destroy (registered below): the session ends; the next first update starts clean.
 local function on_net_destroy()
     loaded_flag = false
 end
 
+-- A member going offline loses his game object, and the AI planner the chase action was added
+-- to goes with it. The object that comes online later has a fresh planner, so the install
+-- flags are dropped and the chase is added again on his next online tick (as
+-- xgraft.release_takeover, which AlifeTactics calls from this callback).
 local function on_npc_net_destroy(npc)
     local id = nil
     pcall(function() id = npc:id() end)
     if not id or S.phase == "idle" or not nemesis_state.is_member(id) then return end
-    nemesis_chase.offline(id)
+    nemesis_chase.offline(id)   -- offline: nemesis_chase, the install flags dropped
     nemesis_utils.reset_chase(id)
     dbg("Nemesis: %s went offline; the chase is added again when he is back.", nemesis_state.name_of(id) or tostring(id))
 end
 
+-- actor_on_first_update (registered below): a new game or a load starts every script's runtime again.
 local function on_first_update()
     if not loaded_flag then
-
-        nemesis_state.reset()
+        -- New game, or a save without Nemesis data: start clean (Lua state outlives a session).
+        nemesis_state.reset()   -- reset: nemesis_state, a fresh S
         load_vanish = {}
     end
-    nemesis_fx.reset_runtime()
+    nemesis_fx.reset_runtime()   -- reset_runtime: nemesis_fx, its queues and runtime
     nemesis_spawn.reset_runtime()
-    nemesis_events.emit("runtime_reset", loaded_flag == true)
+    nemesis_events.emit("runtime_reset", loaded_flag == true)   -- every module hears it (since round 115; the boss's since round 135)
     for id, r in pairs(S.m) do
-        if r.mask_vis then nemesis_fx.note_masked(id) end
+        if r.mask_vis then nemesis_fx.note_masked(id) end   -- note_masked: nemesis_fx, unmasked next frame
     end
-    uninstall = nil
+    uninstall = nil   -- a load with the box still ticked searches the world again
     for _, id in ipairs(load_vanish) do nemesis_fx.queue_vanish(id, 2000) end
     load_vanish = {}
-    nemesis_guard.apply_death_reset()
-    nemesis_mcm.invalidate()
-    nemesis_mcm.sync_difficulty()
-    nemesis_chase.reset_all()
-
-    nemesis_utils.reset_chase()
+    nemesis_guard.apply_death_reset()   -- apply_death_reset: nemesis_guard, a death to a hunter halves the cycle
+    nemesis_mcm.invalidate()   -- invalidate: nemesis_mcm, the cached settings dropped
+    nemesis_mcm.sync_difficulty()      -- sync_difficulty: nemesis_mcm; a preset picked in the main menu applies here
+    nemesis_chase.reset_all()   -- reset_all: nemesis_chase, every install flag
+    -- The chase slots, the fight memory with the boss's focus, and the siege (round 149): the Lua
+    -- state outlives a load in the same session, and these were never cleared by one, though
+    -- nemesis_siege's own note said so. A stale entry could match an id in the loaded game.
+    nemesis_utils.reset_chase()   -- reset_chase: nemesis_utils, every chase slot, fight memory and the siege
     loaded_flag = false
     next_tick = 0
     next_slow = 0
     slow_jobs = {}
     time_up_at = nil
     nemesis_damage.unseed_br()
-    nemesis_damage.forget_bullets()
-    nemesis_compat.reset_obrien()
+    nemesis_damage.forget_bullets()   -- forget_bullets: nemesis_damage, the impacts forgotten
+    nemesis_compat.reset_obrien()   -- reset_obrien: nemesis_compat, Obrien detected again
     if not exe_logged then
         exe_logged = true
         dbg("Nemesis: hit callback runs %s.", hit_post and "last (Post tier, latest exes)"
@@ -1051,57 +1236,69 @@ local function on_first_update()
     end
 end
 
+-- The core's data first, then each module writes (and reads) its own key (round 115): two
+-- scripts' own save_state handlers would run in no fixed order.
 local function save_state(mdata)
-
+    -- save: nemesis_state, the core's data; vanish_ids: nemesis_fx, removals still due
     nemesis_state.save(mdata, nemesis_fx.vanish_ids())
     nemesis_events.emit("saving", mdata)
 end
 
+-- load_state (registered below): the core's data first, then every module's.
 local function load_state(mdata)
     nemesis_chase.reset_all()
     loaded_flag = true
-    load_vanish = nemesis_state.load(mdata)
+    load_vanish = nemesis_state.load(mdata)   -- load: nemesis_state, returns the removals still due
     nemesis_events.emit("loaded", mdata)
 end
 
+-- Anomaly calls it once per game start: the version line, the jobs, the listeners and the callbacks.
 function on_game_start()
-
+    -- Always written, Debug logs or not (owner, 21 October): every log a player sends says which
+    -- build ran. A plain line, not an error: not yellow, not one of the important errors.
+    -- src: anomaly _g.script (printf)
     printf("Nemesis Wave Spawn System %s loaded", VERSION)
-    nemesis_mcm.on_game_start()
-
+    nemesis_mcm.on_game_start()   -- on_game_start: nemesis_mcm, its callbacks
+    -- The scheduler's jobs (round 111), in their order. The slow jobs are in SLOW_JOBS.
+    -- count_frame: nemesis_damage, the frame count for one bullet, one hit
     add_job("frame", "count frames (one bullet, one hit)", function() nemesis_damage.count_frame() end)
-
+    -- unmask_survivors: nemesis_fx, masked members who lived
     add_job("frame", "unmask the survivors", function() nemesis_fx.unmask_survivors() end)
-
+    -- process_queues: nemesis_fx, the vanish and squad cleanup queues
     add_job("frame", "vanish and squad cleanup queues", function(gt) nemesis_fx.process_queues(gt) end)
-
+    -- warm_tick: nemesis_sound, the sound warm-up after a load
     add_job("tick", "sound warm-up after a load", function(gt) nemesis_sound.warm_tick(gt) end)
-
+    -- The squads' warm-up after a load (round 147; warm_tick: nemesis_spawn).
     add_job("tick", "squad warm-up after a load", function(gt) nemesis_spawn.warm_tick(gt) end)
-
+    -- heart_frame: nemesis_sound, the heartbeat's beats on an even rhythm (round 142)
     add_job("frame", "the heartbeat", function(gt) nemesis_sound.heart_frame(gt) end)
-
+    -- whisper_frame: nemesis_sound, the whispers' fade (round 143)
     add_job("frame", "the whispers' fade", function(gt) nemesis_sound.whisper_frame(gt) end)
-
+    -- silence_frame: nemesis_sound, the silence before the warning (round 145)
     add_job("frame", "the silence before the warning", function(gt) nemesis_sound.silence_frame(gt) end)
-
+    -- The events' listeners (round 111), in their order (nemesis_events).
+    -- on: nemesis_events, a listener to an event
     nemesis_events.on("member_died", "reserve your kill's body", function(id, r, yours, teleport)
-        if yours and not teleport then nemesis_fx.reserve_body(id) end
+        if yours and not teleport then nemesis_fx.reserve_body(id) end   -- reserve_body: nemesis_fx, the body kept for you
     end, 10)
-
+    -- order 20: the boss's death (nemesis_boss adds it, round 135)
     nemesis_events.on("hunt_ended", "forget the bullets", function() nemesis_damage.forget_bullets() end, 30)
-
+    -- src: anomaly _g.script (RegisterScriptCallback)
     RegisterScriptCallback("save_state", save_state)
     RegisterScriptCallback("load_state", load_state)
     RegisterScriptCallback("actor_on_first_update", on_first_update)
     RegisterScriptCallback("actor_on_update", on_update)
     RegisterScriptCallback("actor_on_net_destroy", on_net_destroy)
     RegisterScriptCallback("npc_on_net_destroy", on_npc_net_destroy)
-
+    -- Post tier on the latest exes (round 81): the cut and the 5% floor see the hit's final power,
+    -- after every other mod has changed it. GAMMA's own chain stays in the Normal tier, untouched;
+    -- your hits on our hunters get nemesis_damage's Pre-tier hook too (install_br_hooks, round 139).
+    -- register_post: nemesis_compat, the Post tier when the exes have it
     hit_post = nemesis_compat.register_post("npc_on_before_hit", nemesis_damage.on_before_hit)
     nemesis_compat.register_post("monster_on_before_hit", nemesis_damage.on_monster_before_hit)
     RegisterScriptCallback("npc_on_hit_callback", nemesis_damage.on_hunter_hit)
-
+    -- One bullet, one hit for hunt members (round 118): which bullet hit whom (modded exes; read
+    -- only, the same callback GAMMA's momo_multihit_fix uses).
     RegisterScriptCallback("bullet_on_impact", nemesis_damage.on_bullet_impact)
     RegisterScriptCallback("npc_shot_dispersion", nemesis_damage.on_shot_dispersion)
     RegisterScriptCallback("actor_on_before_hit", nemesis_damage.on_actor_before_hit)
@@ -1113,3 +1310,4 @@ function on_game_start()
     RegisterScriptCallback("actor_on_weapon_zoom_in", nemesis_fx.wd_on_zoom_in)
     RegisterScriptCallback("actor_on_weapon_zoom_out", nemesis_fx.wd_on_zoom_out)
 end
+

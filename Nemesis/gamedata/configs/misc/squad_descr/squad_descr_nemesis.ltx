@@ -1,10 +1,14 @@
-; Nemesis hunt squad (Monolith)
+; Nemesis hunt squad. One generic Monolith stalker, no story id, no home smart.
+; squad_descr.ltx includes this folder on its own. Do not give this section a
+; target_smart: that condlist sends the squad home, and a bad travel releases
+; every member as a self-kill. Extras are added in script, each on their own vertex.
 [nemesis_hunter_squad]:online_offline_group
 faction = monolith
 npc = sim_default_monolith_3
 common = false
 
-; Nemesis hunt squad (UNISG, when the player is Monolith, Zombified or Sin)
+; UNISG version, used when the player is Monolith, Zombified or Sin (Monolith hunters would be friends, and
+; killing them would cost the player Monolith standing). Same rules as above.
 [nemesis_hunter_squad_isg]:online_offline_group
 faction = isg
 npc = sim_default_isg_3
