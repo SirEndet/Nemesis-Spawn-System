@@ -1,4 +1,4 @@
--- Nemesis Engine (round 109, restructure step 3: the engine wrappers)
+-- Nemesis Engine: the one doorway to the game engine and xlibs (made in round 109).
 
 ---------------------------------------------------------------------------
 -- Level vertices and places
@@ -37,6 +37,7 @@ function is_indoor(pos)
 end
 
 local BUILDING_MIN_WALLS = 2
+
 function enclosure(pos)
     if not pos then return nil end
     local enc = nil
@@ -46,8 +47,8 @@ function enclosure(pos)
     end
     return type(enc) == "table" and enc or nil
 end
-
 local RQ_STATIC = 2
+
 function line_blocked(a, b, y)
     if not (a and b and xcombat and xcombat.is_line_blocked) then return nil end
     local r = nil
@@ -55,6 +56,7 @@ function line_blocked(a, b, y)
     pcall(function() r = xcombat.is_line_blocked(a, b, { from_y = y, to_y = y, flags = RQ_STATIC }) end)
     return r
 end
+
 function is_building(pos)
     if not pos then return false end
     if not (xcombat and xcombat.get_enclosure) then return is_indoor(pos) end
@@ -64,7 +66,11 @@ function is_building(pos)
     local enc = enclosure(pos)
     if not (enc and enc.roof) then return false end
     local walls = 0
-    for i = 1, 4 do if enc.walls and enc.walls[i] then walls = walls + 1 end end
+    for i = 1, 4 do
+        if enc.walls and enc.walls[i] then
+            walls = walls + 1
+        end
+    end
     return walls >= BUILDING_MIN_WALLS
 end
 
@@ -135,6 +141,17 @@ function obj(id)
     return o
 end
 
+function character_icon(id)
+    local ic = nil
+    pcall(function()
+        local o = obj(id)
+
+        ic = o and o:character_icon() or se(id):character_icon()
+    end)
+    if type(ic) ~= "string" or ic == "" then return nil end
+    return ic
+end
+
 function se(id)
     if id == nil then return nil end
     local s = nil
@@ -160,6 +177,7 @@ function is_stalker(o)
     end
     return yes
 end
+
 function is_mutant(o)
     if not o then return false end
     local yes = false
@@ -174,6 +192,7 @@ function is_mutant(o)
 end
 
 local function _alive(o) return o:alive() end
+
 function alive(o)
     if not o then return false end
     local ok, yes = pcall(_alive, o)
@@ -181,6 +200,7 @@ function alive(o)
 end
 
 local function _dist(a, b) return a:position():distance_to(b:position()) end
+
 function dist(a, b)
     if not (a and b) then return nil end
     local ok, d = pcall(_dist, a, b)
@@ -188,16 +208,18 @@ function dist(a, b)
 end
 
 ---------------------------------------------------------------------------
--- Ownership (round 123, owner's lane rule 1: ours to change is only what the mod creates)
+-- Ownership: ours to change is only what the mod creates (the owner's lane rule 1, round 123)
 ---------------------------------------------------------------------------
 
 local OWN_PREFIX = "nemesis_"
 local known = {}
+
 local function own_section(se_obj)
     local sec = nil
     pcall(function() sec = se_obj:section_name() end)
     return type(sec) == "string" and sec:sub(1, #OWN_PREFIX) == OWN_PREFIX
 end
+
 function ours(id)
     if id == nil then return false end
     if known[id] then return true end
@@ -223,6 +245,7 @@ local function _oid(o)
     if type(v) == "number" then return v end
     return o:id()
 end
+
 local function id_of(o)
     if o == nil then return nil end
     local ok, i = pcall(_oid, o)
@@ -271,6 +294,7 @@ function set_character_name(s, name)
 end
 
 local PLAYER_KEYS = { toolkit_reward_count = true, toolkit_reward_last = true }
+
 function save_var(o, key, val)
     if not (o and key) then return false end
     local i = id_of(o)
@@ -317,7 +341,10 @@ end
 
 function add_squad_member(squad, section, pos, lv, gv)
     if not squad then return nil end
-    if not ours(id_of(squad)) then refuse("add a member to a squad", squad); return nil end
+    if not ours(id_of(squad)) then
+        refuse("add a member to a squad", squad)
+        return nil
+    end
 
     return squad:add_squad_member(section, pos, lv, gv)
 end
@@ -339,8 +366,8 @@ end
 ---------------------------------------------------------------------------
 -- Time
 ---------------------------------------------------------------------------
-
 local epoch = nil
+
 function game_seconds()
     if not epoch then
 
@@ -349,6 +376,24 @@ function game_seconds()
     end
 
     return game.get_game_time():diffSec(epoch)
+end
+
+function sound_factors()
+    local ok, fx, mu = pcall(function()
+
+        return level.get_snd_volume(), level.get_music_volume()
+    end)
+    if not ok then return nil, nil end
+    return tonumber(fx), tonumber(mu)
+end
+
+function set_sound_factors(fx, mu)
+    return pcall(function()
+
+        if fx then level.set_snd_volume(fx) end
+
+        if mu then level.set_music_volume(mu) end
+    end) == true
 end
 
 function clock_ms()

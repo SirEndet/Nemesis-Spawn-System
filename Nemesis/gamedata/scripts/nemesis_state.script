@@ -1,4 +1,4 @@
--- Nemesis State
+-- Nemesis State: the mod's whole saved state in one table, S, and its member records.
 
 SAVE_VERSION = 3
 
@@ -132,7 +132,9 @@ end
 
 local function save_reserved()
     local out = {}
-    for id, v in pairs(S.reserved) do out[#out + 1] = string.format("%d:%d:%s", id, math.floor(v.t), v.sec or "") end
+    for id, v in pairs(S.reserved) do
+        out[#out + 1] = string.format("%d:%d:%s", id, math.floor(v.t), v.sec or "")
+    end
     return table.concat(out, ",")
 end
 
@@ -220,7 +222,9 @@ function clear_members()
 end
 
 function member(id) return id ~= nil and S.m[id] or nil end
+
 function is_member(id) return id ~= nil and S.m[id] ~= nil end
+
 function name_of(id)
     local r = id ~= nil and S.m[id]
     return r and r.name or nil
@@ -235,13 +239,21 @@ function members_left()
     if #S.hunter_ids > 0 then return true end
     local p = S.pending_squad
     if p and (p.left or 0) > 0 then return true end
-    for _, id in ipairs(S.squad_ids) do if regular_alive(id) then return true end end
+    for _, id in ipairs(S.squad_ids) do
+        if regular_alive(id) then
+            return true
+        end
+    end
     return false
 end
 
 function leader()
     if S.hunter_ids[1] then return S.hunter_ids[1] end
-    for _, id in ipairs(S.squad_ids) do if regular_alive(id) then return id end end
+    for _, id in ipairs(S.squad_ids) do
+        if regular_alive(id) then
+            return id
+        end
+    end
     return nil
 end
 
@@ -380,7 +392,10 @@ function load(mdata)
     end
 
     for _, id in ipairs(load_ids(s.dead)) do
-        if S.m[id] then S.m[id].dead = true; S.m[id].death = { teleport = false } end
+        if S.m[id] then
+            S.m[id].dead = true
+            S.m[id].death = { teleport = false }
+        end
     end
     local now = time_global()
     for _, id in ipairs(load_ids(s.retreating)) do

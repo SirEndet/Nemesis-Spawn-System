@@ -11,6 +11,7 @@ local cooldown_logged = nil
 local warned_no_squad = false
 
 function block(gt_ms) block_until = gt_ms end
+
 function retry_later(gt) block_until = gt + SPAWN_RETRY_MS end
 
 ---------------------------------------------------------------------------
@@ -18,6 +19,7 @@ function retry_later(gt) block_until = gt + SPAWN_RETRY_MS end
 ---------------------------------------------------------------------------
 
 local function in_grace(now)
+
     if nemesis_mcm.get_bool("debug_mode", false) or S.spawned_count ~= 0 or not S.first_hunt then return false end
     return now - S.first_hunt < nemesis_mcm.get_number("grace_period", 18) * 86400
 end
@@ -25,7 +27,7 @@ end
 local function spawn_allowed(gt)
     if gt < block_until then return false end
     local debug_mode = nemesis_mcm.get_bool("debug_mode", false)
-    local now = nemesis_utils.game_seconds()
+    local now = nemesis_engine.game_seconds()
     if in_grace(now) then return false end
     if S.last_retreat then
         if now < S.last_retreat then
@@ -62,6 +64,7 @@ local base_bypass_logged = false
 local base_cache, base_cache_level, base_cache_at = nil, nil, 0
 
 function forget_bases() base_cache, base_cache_level = nil, nil end
+
 local function base_smarts_on_level()
     if nemesis_mcm.get_bool("debug_mode", false) then
         if not base_bypass_logged then
@@ -88,7 +91,8 @@ local function base_smarts_on_level()
         local base = false
 
         pcall(function() base = xsmart.is_base(smart) end)
-        if base and smart.position and nemesis_utils.same_level(smart, sim_actor) == true then
+
+        if base and smart.position and nemesis_engine.same_level(smart, sim_actor) == true then
             local name = "?"
             pcall(function() name = smart:name() end)
             local p = smart.position
@@ -96,8 +100,10 @@ local function base_smarts_on_level()
             pos:set(p.x, p.y, p.z)
 
             local declared = {}
+            pcall(function()
 
-            pcall(function() for f in pairs(xsmart.get_declared_factions(smart)) do declared[#declared + 1] = f end end)
+                for f in pairs(xsmart.get_declared_factions(smart)) do declared[#declared + 1] = f end
+            end)
             out[#out + 1] = { position = pos, name = name, id = smart.id, declared = declared }
         end
     end
@@ -112,8 +118,13 @@ local function friendly_base(b)
     local ok, hostile = pcall(xsmart.has_enemy_squad, b.id, me)
     if ok and hostile then return false end
     local stationed = false
+    pcall(function()
 
-    pcall(function() for _ in xsmart.iterate_stationed_squads(b.id) do stationed = true; break end end)
+        for _ in xsmart.iterate_stationed_squads(b.id) do
+            stationed = true
+            break
+        end
+    end)
     if stationed or #b.declared == 0 then return true end
     for _, f in ipairs(b.declared) do
 
@@ -131,6 +142,7 @@ local function near_base(pos, radius, bases, accept)
 end
 
 local blocked_logged = nil
+
 local function spawn_blocked(actor, ignore_bases)
     local reason = nil
     local talking, sleeping = false, false
@@ -142,7 +154,7 @@ local function spawn_blocked(actor, ignore_bases)
         reason = "in a dialogue"
     elseif sleeping then
         reason = "sleeping"
-    elseif nemesis_utils.on_underground_map() then
+    elseif nemesis_engine.on_underground_map() then
         reason = "on an underground map"
     elseif not ignore_bases then
         local base = near_base(actor:position(), SAFE_RADIUS_M, base_smarts_on_level(), friendly_base)
@@ -156,7 +168,7 @@ local function spawn_blocked(actor, ignore_bases)
 end
 
 function extra_allowed(gt, actor)
-    return gt >= block_until and not in_grace(nemesis_utils.game_seconds()) and not spawn_blocked(actor, false)
+    return gt >= block_until and not in_grace(nemesis_engine.game_seconds()) and not spawn_blocked(actor, false)
 end
 
 ---------------------------------------------------------------------------
@@ -169,24 +181,29 @@ local WARN_STALE_MS = 600000
 local warn_spawn_at = nil
 
 local function warning_pda() return nemesis_mcm.get_bool("warning_pda", false) end
+
 local function warning_audio() return nemesis_mcm.get_bool("warning_audio", true) end
+
 function warning_on() return warning_pda() or warning_audio() end
 
 local PERF_SLOW_MS = 20
 local perf_seen = {}
 local perf = nil
+
 local function perf_begin(what)
     perf = nil
     if not nemesis_utils.debug_on() then return end
     local t = nemesis_engine.clock_ms()
     perf = { what = what, t0 = t, last = t, steps = {} }
 end
+
 local function perf_step(name)
     if not perf then return end
     local t = nemesis_engine.clock_ms()
     perf.steps[#perf.steps + 1] = name .. " " .. string.format("%.1f", t - perf.last)
     perf.last = t
 end
+
 local function perf_end()
     if not perf then return end
     local p = perf
@@ -205,18 +222,31 @@ local function give_warning(gt)
     warn_spawn_at = gt + delay * 1000
 
     S.faction = nemesis_utils.faction_for_player()
-    local boss = nemesis_boss.roll_for_warning()
+
+    local boss = nemesis_events.ask("boss_roll", "warning") == true
     local pda, audio = warning_pda(), warning_audio()
     perf_step("faction and boss roll")
-    if boss then
-        if pda then nemesis_utils.send_news(nemesis_utils.boss_warning_line(nemesis_utils.get_npc_name()), nemesis_utils.text("st_nemesis_caption_unknown")) end
-    else
-        if pda then nemesis_utils.send_news(nemesis_utils.warning_line(), nemesis_utils.text("st_nemesis_caption_unknown")) end
-    end
-    perf_step("PDA message")
 
-    if audio then nemesis_sound.warning(boss) end
-    perf_step("sound")
+    local function send_line()
+        if not pda then return end
+        if boss then
+
+            nemesis_lines.send_news(nemesis_lines.boss_warning_line(nemesis_utils.get_npc_name()), nemesis_lines.text("st_nemesis_caption_unknown"))
+        else
+
+            nemesis_lines.send_news(nemesis_lines.warning_line(), nemesis_lines.text("st_nemesis_caption_unknown"))
+        end
+    end
+
+    if audio and nemesis_sound.silence_wanted() and nemesis_sound.silence_begin(boss, send_line) then
+        perf_step("silence begins")
+    else
+        send_line()
+        perf_step("PDA message")
+
+        if audio then nemesis_sound.warning(boss) end
+        perf_step("sound")
+    end
     dbg("Nemesis: arrival warning given%s (PDA %s, audio %s), hunt in %s s.", boss and " (BOSS)" or "",
         pda and "on" or "off", audio and "on" or "off", tostring(delay))
     perf_end()
@@ -242,13 +272,16 @@ end
 
 local SQUAD_PASS_MS = 10000
 local squad_pass_at = -1000000
+
 local function _set_rel(a, rel, b) a:set_relation(rel, b) end
+
 function keep_squad_friendly()
     local objs = {}
     local fresh = false
+
     local function consider(id)
         local obj = nemesis_engine.obj(id)
-        if not obj or not nemesis_fx.alive_obj(obj) then return end
+        if not obj or not nemesis_engine.alive(obj) then return end
         local r = S.m[id]
         if not r.bound then fresh = true end
         r.bound = true
@@ -282,7 +315,7 @@ function has_unbound_member()
     for id, r in pairs(S.m) do
         if not r.bound then
             local o = nemesis_engine.obj(id)
-            if o and nemesis_fx.alive_obj(o) then return true end
+            if o and nemesis_engine.alive(o) then return true end
         end
     end
     return false
@@ -307,6 +340,7 @@ local SQUAD_WEIGHTS = { 50, 25, 14, 10, 6 }
 
 local AREA_SQUAD_CAP = { [0] = 2, [1] = 3 }
 local AREA_NAMED_BONUS = { [4] = 10, [5] = 20 }
+
 function area_tier()
     if not nemesis_mcm.get_bool("area_scaling", true) then return nil end
     local tier = nil
@@ -342,6 +376,17 @@ local function boss_escort()
     return n
 end
 
+local function arrival_presence(id)
+    local se = id and nemesis_engine.se(id)
+    local pos = se and se.position
+    local boost = nemesis_fx.arrival_boost(S.cycle)
+    local called = false
+
+    if pos and S.faction == "monolith" then called = nemesis_sound.arrival_call(pos, boost) end
+    nemesis_fx.arrival_swell(boost)
+    dbg("Nemesis: the arrival (call %s, boost %s %%).", called and "played" or "none", string.format("%.0f", boost * 100))
+end
+
 local function arrival_fx(id)
     local se = id and nemesis_engine.se(id)
     if se and se.position then nemesis_fx.play_retreat_fx(se.position) end
@@ -356,13 +401,7 @@ local function named_chance(tier)
     return chance
 end
 
-local function vertex_pos(lv)
-    local raw = nemesis_engine.vertex_pos(lv)
-    if not raw then return nil end
-    local pos = vector()
-    pos:set(raw.x, raw.y, raw.z)
-    return pos
-end
+local function vertex_pos(lv) return nemesis_engine.vertex_pos(lv) end
 
 local function spawn_extra(job)
     local squad = S.sim_squad_id and nemesis_engine.se(S.sim_squad_id)
@@ -381,6 +420,7 @@ local function spawn_extra(job)
             local pos = vertex_pos(node)
             if pos and pos:distance_to(origin) >= 6 then
                 local ok, res = pcall(function()
+
                     return nemesis_engine.add_squad_member(squad, job.section, pos, node, job.gvid)
                 end)
                 local new_id = nil
@@ -446,7 +486,7 @@ function fill_squad()
         named, ename = fe.named, fe.name
     else
         named = job.all_named or math.random(100) <= named_chance(area_tier())
-        ename = nemesis_utils.next_hunter_name(job.used_names, named)
+        ename = nemesis_lines.next_hunter_name(job.used_names, named)
     end
     nemesis_state.add_member(extra_id, named, ename)
     if fe then
@@ -536,7 +576,7 @@ local function pick_spawn_smart(actor, toward)
     local ring = {}
     for _, smart in pairs(by_name) do
         if smart and smart.position and not near_base(smart.position, BASE_KEEP_OUT_M, bases)
-            and sim_actor and nemesis_utils.same_level(smart, sim_actor) == true then
+            and sim_actor and nemesis_engine.same_level(smart, sim_actor) == true then
             local d = smart.position:distance_to(apos)
             if d >= dmin and d <= dmax then ring[#ring + 1] = smart end
         end
@@ -545,7 +585,9 @@ local function pick_spawn_smart(actor, toward)
     local sx, sz = side_dir(apos, toward)
     if sx then
         local side = {}
-        for _, smart in ipairs(ring) do if on_side(apos, smart.position, sx, sz) then side[#side + 1] = smart end end
+        for _, smart in ipairs(ring) do
+            if on_side(apos, smart.position, sx, sz) then side[#side + 1] = smart end
+        end
         if #side > 0 then return side[math.random(#side)], true end
     end
     return ring[math.random(#ring)], false
@@ -554,7 +596,10 @@ end
 local function pick_ring_vertex(actor, toward, from_lv)
     local dmin, dmax = spawn_range()
     local alv, apos
-    pcall(function() alv = actor:level_vertex_id(); apos = actor:position() end)
+    pcall(function()
+        alv = actor:level_vertex_id()
+        apos = actor:position()
+    end)
     if not alv or alv >= NO_VERTEX or not apos then return nil end
     if from_lv and from_lv < NO_VERTEX then alv = from_lv end
     local best_lv, best_pos, best_d = nil, nil, 0
@@ -688,6 +733,7 @@ local function try_spawn(gt, follow)
         dbg("!Nemesis ERROR: squad %s has no stalkers.", tostring(squad.id))
         nemesis_engine.release_squad(squad)
         S.sim_squad_id = nil
+
         nemesis_fx.queue_squad_cleanup(squad.id)
         S.phase = "idle"
         retry_later(gt)
@@ -701,7 +747,9 @@ local function try_spawn(gt, follow)
     if follow then
 
         follow_rest = {}
-        for i, e in ipairs(follow.members) do if i > 1 then follow_rest[#follow_rest + 1] = e end end
+        for i, e in ipairs(follow.members) do
+            if i > 1 then follow_rest[#follow_rest + 1] = e end
+        end
         for _, e in ipairs(follow.members) do used_names[e.name] = true end
         for i, mid in ipairs(members) do
             local e = (i == 1) and follow.members[1] or table.remove(follow_rest, 1)
@@ -710,29 +758,26 @@ local function try_spawn(gt, follow)
                 local r = nemesis_state.member(mid)
                 if r then r.follow_hp = e.hp end
 
-                if e.boss and nemesis_events.ask("follow_boss", mid, follow) then
-
-                elseif e.boss then
-                    nemesis_boss.make(mid)
-                    S.boss_look = follow.boss_look or S.boss_look
-                end
+                if e.boss then nemesis_events.ask("follow_boss", mid, follow) end
             end
         end
         S.boss_hunt = follow.boss_hunt or S.boss_hunt
         for _, mid in ipairs(members) do arrival_fx(mid) end
-        S.hunt_start = follow.hunt_start or nemesis_utils.game_seconds()
+        S.hunt_start = follow.hunt_start or nemesis_engine.game_seconds()
     else
 
-        local leader_boss = nemesis_boss.take_leader_roll(warning_on())
+        local leader_boss = nemesis_events.ask("boss_roll", "spawn", warning_on()) == true
         for i, mid in ipairs(members) do
             local named = (i == 1) or (math.random(100) <= chance)
-            nemesis_state.add_member(mid, named, nemesis_utils.next_hunter_name(used_names, named))
-            if i == 1 and leader_boss then nemesis_boss.make(mid) end
+            nemesis_state.add_member(mid, named, nemesis_lines.next_hunter_name(used_names, named))
+            if i == 1 and leader_boss then nemesis_events.ask("make_boss", mid) end
         end
-        nemesis_boss.count_hunt(S.boss_id ~= nil)
-        if S.boss_id then for _, mid in ipairs(members) do arrival_fx(mid) end end
+
+        if S.boss_id then
+            for _, mid in ipairs(members) do arrival_fx(mid) end
+        end
         S.spawned_count = S.spawned_count + 1
-        S.hunt_start = nemesis_utils.game_seconds()
+        S.hunt_start = nemesis_engine.game_seconds()
     end
     perf_step("member records")
     S.phase = "hunting"
@@ -779,19 +824,23 @@ local function try_spawn(gt, follow)
     end
 
     perf_step("extras planned")
-    local leader = nemesis_state.name_of(nemesis_state.leader()) or nemesis_utils.text("st_nemesis_caption_hunter")
+
+    local leader = nemesis_state.name_of(nemesis_state.leader()) or nemesis_lines.text("st_nemesis_caption_hunter")
     local sname = "navmesh vertex " .. tostring(ring_lv)
     if spawn_smart then pcall(function() sname = spawn_smart:name() end) end
     nemesis_fx.wd_malfunction(S.boss_id ~= nil)
     perf_step("Wearable Devices")
+    arrival_presence(members[1])
+    perf_step("arrival")
     if follow and S.boss_id then
-        nemesis_boss.news(nemesis_utils.follow_line())
+
+        nemesis_lines.boss_news(nemesis_lines.follow_line())
     elseif follow then
-        nemesis_utils.send_news(nemesis_utils.follow_line(), leader)
+        nemesis_lines.send_news(nemesis_lines.follow_line(), leader)
     elseif S.boss_id then
-        nemesis_boss.news(nemesis_utils.boss_line())
+        nemesis_lines.boss_news(nemesis_lines.boss_line())
     else
-        nemesis_utils.send_news(nemesis_utils.taunt(S.cycle), leader)
+        nemesis_lines.send_news(nemesis_lines.taunt(S.cycle), leader)
     end
     perf_step("PDA message")
     local dist = (spawn_smart and spawn_smart.position or ring_pos):distance_to(actor:position())
@@ -837,18 +886,13 @@ function spawn_lone_boss(faction, from_lvs, who)
         dbg("Nemesis: a hunt is already active; the %s waits.", label)
         return nil
     end
-    local lv, pos, gv = nil, nil, actor:game_vertex_id()
-    local smart = pick_spawn_smart(actor, nil)
-    if smart then
-        pos, lv, gv = smart.position, smart.m_level_vertex_id, smart.m_game_vertex_id
-    else
-        for _, from in ipairs(from_lvs or {}) do
-            lv, pos = pick_ring_vertex(actor, nil, from)
-            if lv then break end
-        end
-        if not lv then lv, pos = pick_ring_vertex(actor, nil) end
+
+    local spot = who.spot or pick_lone_boss_spot(actor, from_lvs)
+    local lv, pos, gv = nil, nil, nil
+    if spot then
+        lv, pos, gv = spot.lv, spot.pos, spot.gv
     end
-    if not lv or not pos then
+    if not lv or not pos or not gv then
         dbg("Nemesis: no smart and no free vertex in the spawn range for the %s, retrying.", label)
         return nil
     end
@@ -870,34 +914,120 @@ function spawn_lone_boss(faction, from_lvs, who)
     end
     local used = {}
     for i, mid in ipairs(members) do
-        local name = (i == 1) and who.name or nemesis_utils.next_hunter_name(used, true)
+        local name = (i == 1) and who.name or nemesis_lines.next_hunter_name(used, true)
         used[name] = true
         nemesis_state.add_member(mid, true, name)
     end
     who.make_boss(members[1])
     S.spawned_count = S.spawned_count + 1
-    S.hunt_start = nemesis_utils.game_seconds()
+    S.hunt_start = nemesis_engine.game_seconds()
     S.phase = "hunting"
     nemesis_events.emit("hunt_started", S.faction, true, S.emission_hunt == true)
     nemesis_fx.wd_malfunction(true)
+    arrival_presence(members[1])
     dbg("Nemesis: %s '%s' spawned (%s) at navmesh vertex %s, %s m away [cycle %s, scripted, off the smart roster]",
         label, tostring(nemesis_state.name_of(members[1])), section, tostring(lv),
         string.format("%.0f", pos:distance_to(actor:position())), tostring(S.cycle))
     return pos
 end
 
+function pick_lone_boss_spot(actor, from_lvs)
+    if not actor then return nil end
+
+    local lv, pos, gv = nil, nil, actor:game_vertex_id()
+    local smart = pick_spawn_smart(actor, nil)
+    if smart then
+        pos, lv, gv = smart.position, smart.m_level_vertex_id, smart.m_game_vertex_id
+    else
+        for _, from in ipairs(from_lvs or {}) do
+            lv, pos = pick_ring_vertex(actor, nil, from)
+            if lv then break end
+        end
+        if not lv then lv, pos = pick_ring_vertex(actor, nil) end
+    end
+    if not lv or not pos then return nil end
+    return { pos = pos, lv = lv, gv = gv }
+end
+
+---------------------------------------------------------------------------
+-- The warm-up after a load (round 147, owner)
+---------------------------------------------------------------------------
+
+local WARM_DELAY_MS = 6000
+local warm_due = nil
+local warm_mods = {}
+
+function add_warm(fn)
+    if type(fn) == "function" then warm_mods[#warm_mods + 1] = fn end
+end
+
+local function far_smart()
+
+    local sim_actor = alife():actor()
+    if not (sim_actor and SIMBOARD and SIMBOARD.smarts) then return nil end
+
+    for _, info in pairs(SIMBOARD.smarts) do
+        local smart = info and info.smrt
+        if smart and smart.position and nemesis_engine.same_level(smart, sim_actor) == false then return smart end
+    end
+    return nil
+end
+
+local function warm_list()
+    local faction = nemesis_utils.faction_for_player()
+
+    local list = { { squad = nemesis_utils.resolve_squad_section(faction), members = nemesis_utils.member_pool(faction) } }
+    for _, fn in ipairs(warm_mods) do
+        local ok, more = pcall(fn)
+        if ok and type(more) == "table" then
+            for _, k in ipairs(more) do list[#list + 1] = k end
+        end
+    end
+    return list
+end
+
+function warm_tick(gt)
+    if not warm_due or gt < warm_due then return end
+    warm_due = nil
+    if S.phase ~= "idle" or S.follow or nemesis_mcm.get_bool("prepare_uninstall", false) then
+        dbg("Nemesis: warm-up skipped (a hunt is on, or the uninstall is being prepared).")
+        return
+    end
+    local smart = far_smart()
+    if not smart then
+        dbg("Nemesis: warm-up skipped (no smart terrain on another map).")
+        return
+    end
+    local t = nemesis_engine.clock_ms()
+    local pos, lv, gv = smart.position, smart.m_level_vertex_id, smart.m_game_vertex_id
+    local made, members = {}, 0
+    for _, k in ipairs(warm_list()) do
+        if k.squad then
+            local ok, sq = pcall(create_squad_at, k.squad, pos, lv, gv)
+            if ok and sq then
+                made[#made + 1] = sq
+                for _, sec in ipairs(k.members or {}) do
+                    if pcall(nemesis_engine.add_squad_member, sq, sec, pos, lv, gv) then members = members + 1 end
+                end
+            end
+        end
+    end
+    for _, sq in ipairs(made) do nemesis_engine.release(sq) end
+    dbg("Nemesis: warm-up after the load: %s squads and %s extra members made offline on another map and removed, %s ms.",
+        tostring(#made), tostring(members), string.format("%.0f", nemesis_engine.clock_ms() - t))
+end
+
 function follow_blocked(actor) return spawn_blocked(actor, true) end
+
 function spawn_follow(gt, follow) try_spawn(gt, follow) end
 
 function reset_runtime()
     warn_spawn_at = nil
+    warm_due = time_global() + WARM_DELAY_MS
+    nemesis_sound.silence_cancel("the warning is dropped")
     squad_pass_at = -1000000
     forget_bases()
 end
-
----------------------------------------------------------------------------
--- Settings (round 122, restructure step 7): this script declares the Hunts page (id "spawning": its old name, so saved values keep their place)
----------------------------------------------------------------------------
 
 function mcm_page()
     return { id = "spawning", sh = true, text = "ui_mcm_nemesis_page_gameplay", gr = {

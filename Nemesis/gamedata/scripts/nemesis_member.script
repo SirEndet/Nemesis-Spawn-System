@@ -1,4 +1,4 @@
--- Nemesis Member (round 107, restructure step 2: one owner for a hunt member's life)
+-- Nemesis Member: the one owner of a hunt member's life. It says which state a member is in and
 
 local S = nemesis_state.S
 
@@ -17,7 +17,7 @@ end
 function is_body(r, obj)
     if not r then return false end
     if r.dead or r.death then return true end
-    return obj ~= nil and not nemesis_fx.alive_obj(obj)
+    return obj ~= nil and not nemesis_engine.alive(obj)
 end
 
 function hittable(npc)
@@ -28,18 +28,12 @@ function hittable(npc)
 end
 
 ASSIST_MS = 2000
+
 function assisted(r)
     return r ~= nil and r.player_hit_at ~= nil and time_global() - r.player_hit_at <= ASSIST_MS
 end
 
 function is_boss(id) return id ~= nil and id == S.boss_id end
-
-function role(id)
-    local r = nemesis_state.member(id)
-    if not r then return nil end
-    if is_boss(id) then return "boss" end
-    return r.named and "named" or "regular"
-end
 
 local function name(id, r) return tostring((r and r.name) or nemesis_state.name_of(id) or id) end
 

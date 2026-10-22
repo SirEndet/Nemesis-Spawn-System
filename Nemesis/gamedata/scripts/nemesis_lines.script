@@ -1,4 +1,4 @@
--- Nemesis Lines (round 112, restructure step 5: split out of nemesis_utils)
+-- Nemesis Lines: what the hunt says and shows; split out of nemesis_utils in round 112.
 
 local function log_msg(...) return nemesis_utils.log_msg(...) end
 
@@ -67,10 +67,10 @@ end
 local FALLBACK_ICON = "ui_inGame2_PD_storonnik_ravnovesiya"
 local NEWS_SHOW_MS = 7000
 
-function send_news(text, caption, icon_override)
+function send_news(msg, caption, icon_override)
     local actor = db.actor
     if not actor then
-        log_msg("!Nemesis: PDA message skipped, no actor yet: %s", tostring(text))
+        log_msg("!Nemesis: PDA message skipped, no actor yet: %s", tostring(msg))
         return false
     end
     if type(caption) ~= "string" or caption == "" then caption = text("st_nemesis_caption") end
@@ -80,23 +80,26 @@ function send_news(text, caption, icon_override)
     end
     if type(icon_override) == "string" and icon_override ~= "" then icon = icon_override end
 
-    local ok, err = pcall(function() actor:give_game_news(caption, text, icon, 0, NEWS_SHOW_MS) end)
+    local ok, err = pcall(function() actor:give_game_news(caption, msg, icon, 0, NEWS_SHOW_MS) end)
     if not ok then
         log_msg("!Nemesis ERROR: PDA message failed with icon %s (%s), retrying with a vanilla icon.", icon, tostring(err))
         icon = FALLBACK_ICON
-        ok, err = pcall(function() actor:give_game_news(caption, text, icon, 0, NEWS_SHOW_MS) end)
+        ok, err = pcall(function() actor:give_game_news(caption, msg, icon, 0, NEWS_SHOW_MS) end)
     end
     if ok then
         nemesis_sound.pda_tip()
-        log_msg("Nemesis: PDA message sent [%s] %s (icon %s).", caption, text, icon)
+        log_msg("Nemesis: PDA message sent [%s] %s (icon %s).", caption, msg, icon)
     else
         log_msg("!Nemesis ERROR: PDA message failed twice (%s).", tostring(err))
     end
     return ok
 end
 
-function pick_sound(...) return nemesis_sound.pick(...) end
-function psy_voices(...) return nemesis_sound.psy_voices(...) end
+function boss_news(msg)
+    local id = nemesis_state.S.boss_id
+
+    return send_news(msg, nemesis_state.name_of(id) or nemesis_utils.get_npc_name(), id and nemesis_engine.character_icon(id))
+end
 
 local function player_name()
     local name = nil
@@ -280,7 +283,9 @@ local LINES = {
 }
 
 local FACTION_NAMES = { monolith = "st_nemesis_faction_monolith", zombied = "st_nemesis_faction_zombied", greh = "st_nemesis_faction_greh" }
+
 local function player_faction_name()
+
     return text(FACTION_NAMES[nemesis_utils.player_community() or ""] or FACTION_NAMES.monolith)
 end
 
@@ -303,18 +308,31 @@ local function pick(kind, boss)
 end
 
 function warning_line() return pick("warning") end
+
 function retreat_line() return pick("retreat") end
+
 function time_up_line() return pick("time_up") end
+
 function boss_line() return pick("boss") end
+
 function boss_warning_line(boss) return pick("boss_warning", boss) end
+
 function boss_stash_line(boss) return pick("boss_stash", boss) end
+
 function boss_escape_line() return pick("boss_escape") end
+
 function dread_line() return pick("dread") end
+
 function sneak_line() return pick("sneak") end
+
 function rush_line() return pick("rush") end
+
 function close_line() return pick("close") end
+
 function known_spot_line() return pick("known_spot") end
+
 function follow_line() return pick("follow") end
+
 function reload_line() return pick("reload") end
 
 function taunt(cycle)

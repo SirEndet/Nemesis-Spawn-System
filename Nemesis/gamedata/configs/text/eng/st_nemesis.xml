@@ -194,5 +194,6 @@
     <string id="st_nemesis_msg_backup_loaded"><text>Your custom settings are loaded from the automatic backup.</text></string>
     <string id="st_nemesis_msg_backup_none"><text>There is no automatic backup yet.</text></string>
     <string id="st_nemesis_msg_escalation_reset"><text>Escalation reset. The next hunt starts at cycle 1.</text></string>
+    <string id="st_nemesis_msg_old_exes"><text>Your modded exes are older than 15 September 2026. With GAMMA ballistics, your shots can kill named hunters instead of making them break off. Update the modded exes to fix it.</text></string>
 
 </string_table>

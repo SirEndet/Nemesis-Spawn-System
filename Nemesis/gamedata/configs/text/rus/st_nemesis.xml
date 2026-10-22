@@ -194,5 +194,6 @@
     <string id="st_nemesis_msg_backup_loaded"><text>¬аши собственные настройки загружены из автоматической копии.</text></string>
     <string id="st_nemesis_msg_backup_none"><text>јвтоматической копии пока нет.</text></string>
     <string id="st_nemesis_msg_escalation_reset"><text>Ёскалаци€ сброшена. —ледующа€ охота начнЄтс€ с цикла 1.</text></string>
+    <string id="st_nemesis_msg_old_exes"><text>¬аши модифицированные exe старше 15 сент€бр€ 2026 года. — баллистикой GAMMA ваши выстрелы могут убить именных охотников, вместо того чтобы заставить их отступить. ќбновите модифицированные exe, чтобы это исправить.</text></string>
 
 </string_table>

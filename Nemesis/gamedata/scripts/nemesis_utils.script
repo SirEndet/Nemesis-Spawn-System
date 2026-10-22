@@ -1,4 +1,4 @@
--- Nemesis Utilities
+-- Nemesis Utilities: the debug log, the settings readers and the hunt's squad sections.
 
 local function default_name(kind) return nemesis_lines.text("st_nemesis_boss_name_" .. kind) end
 
@@ -6,7 +6,9 @@ function debug_on() return nemesis_mcm.get_bool("debug_logs", false) end
 
 local IMPORTANT_EVERY_MS = 60000
 local important_at = {}
+
 local function stamp(tag, now) return "[" .. tag .. " " .. string.format("%.1f", now / 1000) .. "s] " end
+
 function log_tag(tag, fmt, ...)
     if type(fmt) ~= "string" then return end
     if fmt:sub(1, 2) == "!!" then
@@ -39,30 +41,23 @@ function log_msg(fmt, ...)
 end
 
 ---------------------------------------------------------------------------
--- Time
----------------------------------------------------------------------------
-
-function game_seconds() return nemesis_engine.game_seconds() end
-
-function on_underground_map() return nemesis_engine.on_underground_map() end
-
-function same_level(se_a, se_b) return nemesis_engine.same_level(se_a, se_b) end
-
----------------------------------------------------------------------------
 -- Settings-derived values
 ---------------------------------------------------------------------------
 
-local UP, LOW = "[%u\192-\223\168]", "[%l\224-\255\184]"
+local UP, LOW = "[%u\192-\223\168\165\170\175\178]", "[%l\224-\255\184\180\186\191\179]"
 local SPACE_AT = "(" .. UP .. LOW .. LOW .. "+)(" .. UP .. ")"
+
 function spaced_name(name)
     if type(name) ~= "string" then return name end
     return (string.gsub(name, SPACE_AT, "%1 %2"))
 end
 
 function monolith_boss_name() return spaced_name(nemesis_mcm.get_string("npc_name", default_name("monolith"))) end
+
 function isg_boss_name() return spaced_name(nemesis_mcm.get_string("isg_boss_name", default_name("isg"))) end
 
 function default_boss_name(kind) return default_name(kind) end
+
 function get_npc_name()
     if nemesis_state.S.faction == "isg" then return isg_boss_name() end
     return monolith_boss_name()
@@ -71,8 +66,6 @@ end
 function is_boss_name(n)
     return n ~= nil and (n == monolith_boss_name() or n == isg_boss_name())
 end
-
-function set_health(obj, v) return nemesis_engine.set_health(obj, v) end
 
 function clamped(id, def, lo, hi)
     local v = tonumber(nemesis_mcm.get_number(id, def)) or def
@@ -95,19 +88,17 @@ function br_bonus()
     return clamped("br_bonus", 0, 0, 0.5), clamped("pct_bonus", 0, 0, 50) / 100
 end
 
-function obrien_item_stats(sec, cond) return nemesis_compat.obrien_item_stats(sec, cond) end
-function reset_obrien() return nemesis_compat.reset_obrien() end
-function obrien_on(outfit_sec, helmet_sec) return nemesis_compat.obrien_on(outfit_sec, helmet_sec) end
-
 local function clamp_br(v)
     if not v or v < 0 then return 0 end
     return v
 end
+
 local function clamp_pct(v)
     if not v or v < 0 then return 0 end
     if v > 0.90 then return 0.90 end
     return v
 end
+
 local function clamp_hf(v)
     if not v or v > 1 then return 1 end
     if v < 0.05 then return 0.05 end
@@ -122,11 +113,14 @@ local function read_br_stats(actor, outfit, helmet, obrien)
 
             local cond = outfit:condition() or 1
             if obrien then
-                body_br, body_pct = obrien_item_stats(outfit:section(), cond)
+                body_br, body_pct = nemesis_compat.obrien_item_stats(outfit:section(), cond)
             else
 
                 local hf = ini_sys:r_float_ex(outfit:section(), "hit_fraction_actor")
-                if hf then body_br = (1 - hf) * cond; body_hf = hf end
+                if hf then
+                    body_br = (1 - hf) * cond
+                    body_hf = hf
+                end
 
                 local c = outfit:cast_CustomOutfit()
                 if c and BoneID and BoneID["bip01_spine"] then
@@ -138,10 +132,13 @@ local function read_br_stats(actor, outfit, helmet, obrien)
         if helmet then
             local cond = helmet:condition() or 1
             if obrien then
-                head_br, head_pct = obrien_item_stats(helmet:section(), cond)
+                head_br, head_pct = nemesis_compat.obrien_item_stats(helmet:section(), cond)
             else
                 local hf = ini_sys:r_float_ex(helmet:section(), "hit_fraction_actor")
-                if hf then head_br = (1 - hf) * cond; head_hf = hf end
+                if hf then
+                    head_br = (1 - hf) * cond
+                    head_hf = hf
+                end
 
                 local c = helmet:cast_Helmet()
                 if c and BoneID and BoneID["bip01_head"] then
@@ -158,15 +155,18 @@ local BR_CACHE_MS = 500
 local br_cache = { at = -1000000 }
 
 local function _item_id(o) return o:id() end
+
 local function _item_sec(o) return o:section() end
 
 local function _slot(a, n) return a:item_in_slot(n) end
+
 local function item_key(item)
     if not item then return "-" end
     local ok1, id = pcall(_item_id, item)
     local ok2, sec = pcall(_item_sec, item)
     return tostring(ok1 and id or "?") .. "/" .. tostring(ok2 and sec or "?")
 end
+
 function player_br_stats()
     local actor = db.actor
     if not actor then return 0, 0, 0, 0, 1, 1 end
@@ -177,7 +177,7 @@ function player_br_stats()
     local oid, hid = item_key(outfit), item_key(helmet)
     local okso, so = pcall(_item_sec, outfit)
     local oksh, sh = pcall(_item_sec, helmet)
-    local obrien = obrien_on(okso and so or nil, oksh and sh or nil)
+    local obrien = nemesis_compat.obrien_on(okso and so or nil, oksh and sh or nil)
     local now = time_global()
     local c = br_cache
     if not (c.v and c.oid == oid and c.hid == hid and c.obrien == obrien and now - c.at < BR_CACHE_MS) then
@@ -202,11 +202,10 @@ function player_community()
 end
 
 local UNISG_HUNTS = { monolith = true, zombied = true, greh = true }
+
 function faction_for_player()
     return UNISG_HUNTS[player_community()] and "isg" or "monolith"
 end
-
-local function hunt_faction() return nemesis_state.S.faction == "isg" and "isg" or "monolith" end
 
 local SQUADS = { monolith = "nemesis_hunter_squad", isg = "nemesis_hunter_squad_isg" }
 
@@ -223,6 +222,12 @@ local MEMBER_POOL = {
     isg = { "sim_default_isg_3", "sim_default_isg_4", "sim_default_isg_2", "sim_default_isg_1" },
 }
 
+function member_pool(faction)
+    local out = {}
+    for i, sec in ipairs(MEMBER_POOL[faction] or MEMBER_POOL.monolith) do out[i] = sec end
+    return out
+end
+
 function pick_member_section(faction)
     local pool = {}
     for _, sect in ipairs(MEMBER_POOL[faction] or MEMBER_POOL.monolith) do
@@ -231,14 +236,6 @@ function pick_member_section(faction)
     if #pool == 0 then return nil end
     return pool[math.random(#pool)]
 end
-
-function no_downed(id) return nemesis_compat.no_downed(id) end
-
-function sound_exists(path) return nemesis_engine.sound_exists(path) end
-
-function ap() return nemesis_compat.alifeplus() end
-
-function volume_setting(id, default) return nemesis_sound.volume(id, default) end
 
 function reset_chase(id)
     if id then
@@ -254,59 +251,4 @@ function forget_fight(id)
     if not id then return end
     nemesis_combat.forget(id)
     nemesis_chase.forget_tactics(id)
-    nemesis_sneak.forget(id)
 end
-function drive_chase(...) return nemesis_chase.drive_chase(...) end
-function pick_dest(...) return nemesis_chase.pick_dest(...) end
-function retreat_arrived(...) return nemesis_chase.retreat_arrived(...) end
-function set_role(...) return nemesis_chase.set_role(...) end
-function set_retreat_dest(...) return nemesis_chase.set_retreat_dest(...) end
-function get_retreat_dest(...) return nemesis_chase.get_retreat_dest(...) end
-
-function combat_owns(...) return nemesis_combat.combat_owns(...) end
-function combat_owns_now(...) return nemesis_combat.combat_owns_now(...) end
-function drops_enemy(...) return nemesis_combat.drops_enemy(...) end
-function contact_hold(...) return nemesis_combat.contact_hold(...) end
-function set_focus(...) return nemesis_combat.set_focus(...) end
-function stall_check(...) return nemesis_combat.stall_check(...) end
-
-function set_sneak(...) return nemesis_sneak.set_sneak(...) end
-function sneak_active(...) return nemesis_sneak.sneak_active(...) end
-function set_sneak_hold(...) return nemesis_sneak.set_sneak_hold(...) end
-function player_running(...) return nemesis_sneak.player_running(...) end
-function end_sneak(...) return nemesis_sneak.end_sneak(...) end
-
-function set_player_indoor(...) return nemesis_siege.set_player_indoor(...) end
-function player_indoor(...) return nemesis_siege.player_indoor(...) end
-function break_siege(...) return nemesis_siege.break_siege(...) end
-function siege_active(...) return nemesis_siege.siege_active(...) end
-function set_known_spot(...) return nemesis_siege.set_known_spot(...) end
-
-function send_news(...) return nemesis_lines.send_news(...) end
-function text(...) return nemesis_lines.text(...) end
-function pick_sound(...) return nemesis_sound.pick(...) end
-function psy_voices(...) return nemesis_sound.psy_voices(...) end
-function next_hunter_name(...) return nemesis_lines.next_hunter_name(...) end
-function fill_line(...) return nemesis_lines.fill_line(...) end
-function taunt(...) return nemesis_lines.taunt(...) end
-function warning_line() return nemesis_lines.warning_line() end
-function retreat_line() return nemesis_lines.retreat_line() end
-function time_up_line() return nemesis_lines.time_up_line() end
-function boss_line() return nemesis_lines.boss_line() end
-function boss_warning_line(boss) return nemesis_lines.boss_warning_line(boss) end
-function boss_stash_line(boss) return nemesis_lines.boss_stash_line(boss) end
-function boss_escape_line() return nemesis_lines.boss_escape_line() end
-function dread_line() return nemesis_lines.dread_line() end
-function sneak_line() return nemesis_lines.sneak_line() end
-function rush_line() return nemesis_lines.rush_line() end
-function close_line() return nemesis_lines.close_line() end
-function known_spot_line() return nemesis_lines.known_spot_line() end
-function follow_line() return nemesis_lines.follow_line() end
-function reload_line() return nemesis_lines.reload_line() end
-
-function exe_ai_on() return nemesis_compat.exe_ai_on() end
-function register_post(...) return nemesis_compat.register_post(...) end
-function hold_still(...) return nemesis_compat.hold_still(...) end
-function is_held(...) return nemesis_compat.is_held(...) end
-function apply_ai(...) return nemesis_compat.apply_ai(...) end
-function release_hold(...) return nemesis_compat.release_hold(...) end

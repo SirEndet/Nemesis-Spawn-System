@@ -50,12 +50,32 @@
 
     <string id="ui_mcm_nemesis_warning_audio"><text>Arrival warning audio</text></string>
 
-    <string id="ui_mcm_nemesis_warning_audio_desc"><text>Radio static (for the boss also psy voices) 30 to 120 seconds before a hunt starts. With this or the PDA warning on, the hunt follows the warning; with both off it starts without one. Default on.</text></string>
+    <string id="ui_mcm_nemesis_warning_audio_desc"><text>Radio static 30 to 120 seconds before a hunt starts. With this or the PDA warning on, the hunt follows the warning; with both off it starts without one. Default on.</text></string>
 
     <string id="ui_mcm_nemesis_warning_pda"><text>Arrival warning PDA</text></string>
 
     <string id="ui_mcm_nemesis_warning_pda_desc"><text>A PDA message from an unknown frequency 30 to 120 seconds before a hunt starts. With this or the audio warning on, the hunt follows the warning; with both off it starts without one. Default off.</text></string>
 
+    <string id="ui_mcm_nemesis_heartbeat_volume"><text>Heartbeat volume (%)</text></string>
+    <string id="ui_mcm_nemesis_heartbeat_volume_desc"><text>A heartbeat in your head while the boss is within 80 m. The closer he is, the faster it beats: 85 beats a minute at 80 m, up to Heartbeat top rate when he is on you. Either boss. 0 mutes it. Default 30.</text></string>
+    <string id="ui_mcm_nemesis_heartbeat_top"><text>Heartbeat top rate (bpm)</text></string>
+    <string id="ui_mcm_nemesis_heartbeat_top_desc"><text>How fast your heart beats when the boss is on you. Default 140.</text></string>
+    <string id="ui_mcm_nemesis_whispers_volume"><text>Whispers volume (%)</text></string>
+    <string id="ui_mcm_nemesis_whispers_volume_desc"><text>Whispers from where the cloaked boss is, while he is within 25 m of you. Turn your head, and they are over there. 0 mutes them. Default 25.</text></string>
+    <string id="ui_mcm_nemesis_arrival_call_volume"><text>Arrival call volume (%)</text></string>
+    <string id="ui_mcm_nemesis_arrival_call_volume_desc"><text>A Monolith hunt arrives: you hear the Monolith's call from where its leader steps out of the air. Louder with every cycle (Arrival escalation per cycle), never above 100. 0 mutes it. Default 50.</text></string>
+    <string id="ui_mcm_nemesis_arrival_ppe"><text>Arrival screen effect (%)</text></string>
+    <string id="ui_mcm_nemesis_arrival_ppe_desc"><text>A hunt arrives: the screen breathes a short psy swell. Stronger with every cycle (Arrival escalation per cycle). 0 turns it off. Default 40.</text></string>
+    <string id="ui_mcm_nemesis_arrival_escalation"><text>Arrival escalation per cycle (%)</text></string>
+    <string id="ui_mcm_nemesis_arrival_escalation_desc"><text>How much heavier the arrival call and screen effect get with each cycle after the first. Default 10.</text></string>
+    <string id="ui_mcm_nemesis_arrival_max"><text>Arrival maximum increase (%)</text></string>
+    <string id="ui_mcm_nemesis_arrival_max_desc"><text>The most the arrival can grow over its sliders, however high the cycle. Default 50.</text></string>
+    <string id="ui_mcm_nemesis_boss_jolt"><text>Jolt when the boss strikes</text></string>
+    <string id="ui_mcm_nemesis_boss_jolt_desc"><text>The screen jolts the moment the boss stops sneaking and opens fire. Off by default.</text></string>
+    <string id="ui_mcm_nemesis_silence_before"><text>Silence before the warning</text></string>
+    <string id="ui_mcm_nemesis_silence_before_desc"><text>Before the arrival warning the world goes quiet: sounds and music fade out over 3 s, a moment of dead air, then the radio crackles and the world comes back up under it. Only with Arrival warning audio on. The game's volume settings are not touched; everything is put back. Default on.</text></string>
+    <string id="ui_mcm_nemesis_silence_length"><text>Silence length (s)</text></string>
+    <string id="ui_mcm_nemesis_silence_length_desc"><text>How long the dead air lasts before the warning. Default 0.75.</text></string>
     <string id="ui_mcm_nemesis_lightning_volume"><text>Lightning strike volume (%)</text></string>
     <string id="ui_mcm_nemesis_lightning_volume_desc"><text>Loudness of the lightning strike sound when the emission boss arrives. The emission is already loud, so it is off by default; his teleport burst (Teleport volume) marks his arrival. 0 mutes it. Default 0.</text></string>
     <string id="ui_mcm_nemesis_npc_name"><text>Boss name</text></string>

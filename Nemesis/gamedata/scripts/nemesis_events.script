@@ -1,4 +1,4 @@
--- Nemesis Events (round 111, restructure step 4: a small event bus; round 115: questions)
+-- Nemesis Events: the mod's small event bus (made in round 111; questions added in round 115).
 
 local function dbg(...) nemesis_utils.log_tag("EVENT", ...) end
 
@@ -6,14 +6,23 @@ local listeners = {}
 local answers = {}
 local seq = 0
 
-local function by_order(a, b) if a.order ~= b.order then return a.order < b.order end return a.seq < b.seq end
+local function by_order(a, b)
+    if a.order ~= b.order then
+        return a.order < b.order
+    end
+    return a.seq < b.seq
+end
 
 local function add(book, key, name, fn, order)
     if type(fn) ~= "function" then return end
     local list = book[key] or {}
     book[key] = list
     local found = false
-    for _, l in ipairs(list) do if l.name == name then l.fn, l.order, found = fn, order or 100, true end end
+    for _, l in ipairs(list) do
+        if l.name == name then
+            l.fn, l.order, found = fn, order or 100, true
+        end
+    end
     if not found then
         seq = seq + 1
         list[#list + 1] = { name = name, fn = fn, order = order or 100, seq = seq }
@@ -52,4 +61,5 @@ function ask(question, ...)
 end
 
 function count(event) return listeners[event] and #listeners[event] or 0 end
+
 function count_answers(question) return answers[question] and #answers[question] or 0 end

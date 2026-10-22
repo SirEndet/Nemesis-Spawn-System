@@ -13,6 +13,7 @@ Every so often, a hunter comes for you. He spawns out of sight, sprints after yo
 - **What you kill is yours.** Regular squad members and the boss leave a body to loot when you kill them, even when someone else lands the last shot right after yours. Those killed by others vanish. An option (on by default) keeps NPCs off your kills.
 - **He learns.** Named hunters wear armour like yours, and every hunt you beat makes the next one a little tougher. Outlast a hunt and he comes back one step weaker. If he kills you, he loses half his strength.
 - **Psy hum.** A named hunter carries a psy hum with him: you can hear where he is, and it grows as he comes closer.
+- **You hear them land.** When a hunt arrives, the Monolith's call sounds from where they appear (Monolith hunts), and a psy swell crosses your screen, heavier each cycle. Before the radio warning, the world falls silent for a moment.
 - **He remembers.** Beat a hunter somewhere and they remember the spot for a week. Fight from there again and they know exactly where you are.
 - **Buildings.** Hide inside and they don't come in after you straight away. They wait outside for a minute and a half, then storm in. Shoot at them from inside and they storm in at once.
 - **Escaping.** Survive long enough (5 in-game hours by default) and the hunters give up.
@@ -24,11 +25,11 @@ Every so often, a hunter comes for you. He spawns out of sight, sprints after yo
 
 ### The boss
 
-Rarely, a hunter is the boss: **Bogdan Kravets**, or for UNISG hunts **Lyutomyr Kat** (you can rename both). He is tougher, always cloaked, has his own look and messages, and wants you above everyone else. He never comes alone: four named hunters keep you busy while he hunts you, and you'll know he's here when they teleport in. While cloaked he slips past everyone unnoticed; only your shot gives him away. Stand still and he sneaks around behind you; run and he runs you down. He tells you before he strikes, and his first two shots at you always miss. He never retreats: he fights to the death, and his body is yours to loot. Kill him yourself and a rare stash is marked on your PDA. The longer he stays away, the likelier he gets.
+Rarely, a hunter is the boss: **Bogdan Kravets**, or for UNISG hunts **Lyutomyr Kat** (you can rename both). He is tougher, always cloaked, has his own look and messages, and wants you above everyone else. He never comes alone: four named hunters keep you busy while he hunts you, and you'll know he's here when they teleport in. While cloaked he slips past everyone unnoticed; only your shot gives him away. Stand still and he sneaks around behind you; run and he runs you down. Within 80 m a heartbeat starts in your head, faster the closer he gets. He tells you before he strikes, and his first two shots at you always miss. He never retreats: he fights to the death, and his body is yours to loot. Kill him yourself and a rare stash is marked on your PDA. The longer he stays away, the likelier he gets.
 
 ### The emission boss
 
-When an emission meets a hunt (and rarely, in any emission), the hunt is called off and **Ilarion Hrech**, a Sin (UNISG if you play Monolith, Zombified or Sin), comes instead. Get into a building that shelters you from the emission and stay inside a few seconds: a ring of ghosts rises around you, and two or three more stand across every door. Try to leave and they push you back, each push costing a little psy health. Then lightning strikes outside and he teleports in. He walks in through the emission that kills everyone else, and a horde of zombies (snorks further north) comes in after you. Other stalkers barely scratch him. The ghosts keep you in until his hunt ends. Like the other boss, he fights to the death. Either boss will notice when you reload close to him.
+When an emission meets a hunt (and rarely, in any emission), the hunt is called off and **Ilarion Hrech**, a Sin (UNISG if you play Monolith, Zombified or Sin), comes instead. Get into a building that shelters you from the emission and stay inside a few seconds: a ring of ghosts rises around you, and two or three more stand across every door. Try to leave and they push you back, each push costing a little psy health. They hold you there while the emission rages. As its roar dies down, lightning strikes outside and he teleports in. Twenty seconds before him, a horde of zombies (snorks further north) comes out of the dark beyond the ghosts and closes in, some of them from the other side of your shelter, and they tear into anyone they meet on the way. He walks in through the emission that kills everyone else. Other stalkers barely scratch him. The ghosts keep you in until his hunt ends. Like the other boss, he fights to the death. Either boss will notice when you reload close to him.
 
 ## Settings
 
@@ -66,6 +67,7 @@ The **Difficulty** setting at the top of the General page picks Easy, Medium (th
 | Emission boss damage reduction (%) | 20 | 30 | 40 |
 | Emission boss NPC damage reduction (%) | 55 | 70 | 85 |
 | Emission boss horde size | 3 | 4 | 5 |
+| Horde flank share (%) | 20 | 30 | 40 |
 | Ghost psy damage (%) | 3 | 4 | 5 |
 
 ### General
@@ -74,12 +76,21 @@ The **Difficulty** setting at the top of the General page picks Easy, Medium (th
 | Difficulty | Medium | Easy, Medium or Hard; sets the settings in the table above. |
 | Load settings from Automatic Backup | – | Puts back your own settings from before a difficulty replaced them. The box unticks itself. |
 | HD icon | Off | Sharper portrait on the PDA messages. |
-| Arrival warning audio | On | Radio static shortly before a hunt (for the boss, psy voices too). |
+| Arrival warning audio | On | Radio static shortly before a hunt. |
 | Arrival warning PDA | Off | A PDA message from an unknown frequency shortly before a hunt. |
 | Arrival warning volume | 70 | Loudness of the warning static. |
 | Teleport sound volume | 40 | Loudness of the teleport sound. 0 mutes it. |
 | Psy hum volume | 10 | Loudness of the psy hum the nearest named hunter carries. |
 | Lightning strike volume | 0 | The lightning strike when the emission boss arrives (off by default: the emission is loud enough). |
+| Heartbeat volume (%) | 30 | The heartbeat near the boss. 0 = off. |
+| Heartbeat top rate (bpm) | 140 | How fast it beats when he is on you (120 to 180). |
+| Arrival call volume (%) | 50 | The Monolith's call where a hunt lands. 0 = off. |
+| Arrival screen effect (%) | 40 | The psy swell when a hunt lands. 0 = off. |
+| Arrival escalation per cycle (%) | 10 | How much heavier the arrival gets each cycle. |
+| Arrival maximum increase (%) | 50 | The cap on that. |
+| Silence before the warning | On | The world goes quiet before the radio warning. |
+| Silence length (s) | 0.75 | The dead air before the radio (0.5 to 1). |
+| Jolt when the boss strikes | Off | A short screen jolt when the boss opens fire (a test switch). |
 | Wearable Devices mod Malfunction | On | With the Wearable Devices mod: your device screens flicker when a hunt spawns, and go black for 2 s when the boss comes. |
 
 ### Hunts
@@ -141,7 +152,8 @@ The **Difficulty** setting at the top of the General page picks Easy, Medium (th
 | Emission boss name | Ilarion Hrech | The emission boss's name. |
 | Emission boss damage reduction (%) | 30 | How much less damage he takes. |
 | Emission boss NPC damage reduction (%) | 70 | How much less damage other stalkers and mutants do to him. |
-| Emission boss horde size | 4 | Mutants that come in after him. 0 = none. |
+| Emission boss horde size | 4 | Mutants that come 20 seconds before him and close in on you. 0 = none. |
+| Horde flank share (%) | 30 | How much of the horde comes from the other side of your shelter, when it has two doors or more. 0 = all from his side. |
 | Ghost psy damage (%) | 4 | The share of your psy bar you lose each time the ghosts push you back, whatever you wear. 0 = none. |
 
 ### Debug & tools
@@ -156,7 +168,7 @@ The **Difficulty** setting at the top of the General page picks Easy, Medium (th
 ## Requirements
 
 - **G.A.M.M.A.** (or Anomaly 1.5.3 with MCM).
-- **The latest modded exes** by **themrdemonized** ([GitHub](https://github.com/themrdemonized/xray-monolith)). GAMMA's installer keeps them up to date.
+- **The latest modded exes** by **themrdemonized** ([GitHub](https://github.com/themrdemonized/xray-monolith)). GAMMA's installer keeps them up to date. You need at least the build of 15 September 2026. On an older one, with GAMMA's ballistics, your shots can kill named hunters instead of making them break off, and the mod tells you so once on your PDA.
 - **xlibs 1.9.0 or newer** by **Damian Sirbu** ([GitHub](https://github.com/damiansirbu-stalker/xlibs) · [ModDB](https://www.moddb.com/mods/stalker-anomaly/addons/xlibs-1001)). GAMMA already includes it as **482- Xlib - damian_sirbu**, switched off: tick it in Mod Organizer.
 
 Works alongside AlifePlus, AlifeTactics, Wearable Devices and Obrien GAMMA Overhaul, but does not need them.

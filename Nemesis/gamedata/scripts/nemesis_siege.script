@@ -1,4 +1,4 @@
--- Nemesis Siege (round 112, restructure step 5: split out of nemesis_utils)
+-- Nemesis Siege: what the hunters do while you hide indoors. They wait outside, each on his own
 
 local NO_VERTEX = 4294967295
 
@@ -30,17 +30,21 @@ function set_player_indoor(on, now)
         end
     end
 end
+
 function player_indoor() return indoor_now end
+
 function break_siege()
     if indoor_now and indoor_since and not siege_broken then
         siege_broken = true
         log_msg("Nemesis: you opened fire from inside; the hunters storm in.")
     end
 end
+
 function siege_active(now)
     local wait = nemesis_state.S.boss_hunt and SIEGE_BOSS_MS or SIEGE_MS
     return indoor_now and not siege_broken and indoor_since ~= nil and (now or time_global()) - indoor_since < wait
 end
+
 function set_known_spot(on) known_spot_on = on and true or false end
 
 function vertex(npc, actor)
@@ -63,7 +67,10 @@ function vertex(npc, actor)
             local inside = true
 
             pcall(function() inside = xcombat.is_indoor(nemesis_engine.vertex_pos(v)) end)
-            if not inside then lv = v; break end
+            if not inside then
+                lv = v
+                break
+            end
         end
     end
     siege_spot[id] = { lv = lv, ax = apos.x, az = apos.z }

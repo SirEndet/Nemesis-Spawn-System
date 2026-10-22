@@ -1,4 +1,4 @@
--- Nemesis Config (round 117): the player's own file, gamedata/configs/nwss_player.ltx.
+-- Nemesis Config: the player's own small file, gamedata/configs/nwss_player.ltx, which this mod
 
 local function dbg(...) nemesis_utils.log_tag("CONFIG", ...) end
 

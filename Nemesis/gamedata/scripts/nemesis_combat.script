@@ -1,6 +1,7 @@
--- Nemesis Combat (round 112, restructure step 5: split out of nemesis_utils)
+-- Nemesis Combat: who fights, the chase or combat AI; split out of nemesis_utils in round 112.
 
 local function debug_on() return nemesis_utils.debug_on() end
+
 local function log_msg(...) return nemesis_utils.log_msg(...) end
 
 local CLOSE_THREAT_M = 15
@@ -25,6 +26,7 @@ local STALL_MS, STALL_START_MS, STALL_MOVE_M = 3000, 8000, 1
 local stall = {}
 
 local fight_range_cache, fight_range_at = 100, -1000000
+
 local function fight_range()
     local now = time_global()
     if now - fight_range_at >= 1000 then
@@ -37,8 +39,6 @@ local function fight_range()
     return fight_range_cache
 end
 
-local function _dist(a, b) return a:position():distance_to(b:position()) end
-
 local function _see(a, b) return a:see(b) end
 
 local function _best_enemy(npc) return npc:best_enemy() end
@@ -46,14 +46,15 @@ local function _best_enemy(npc) return npc:best_enemy() end
 local function sees_player(npc, range)
     local actor = db.actor
     if not actor then return false end
-    local ok, d = pcall(_dist, npc, actor)
-    if not ok or d > range then return false end
+    local d = nemesis_engine.dist(npc, actor)
+    if not d or d > range then return false end
     local ok2, seen = pcall(_see, npc, actor)
     return ok2 and seen == true
 end
 
 local SHOOTER_MS = 20000
 local UNDER_FIRE_MS = 10000
+
 local function _threat(npc, be, range)
     if be:id() == 0 or not be:alive() then return false end
 
@@ -77,6 +78,7 @@ local function hostile_near(npc, range)
 end
 
 local OWNS_CACHE_MS = 100
+
 function combat_owns(npc)
     if not npc then return false end
     local id = npc:id()
@@ -94,7 +96,12 @@ function combat_owns(npc)
     if memo.res ~= was and debug_on() then
         local be_name = "none"
 
-        pcall(function() local be = npc:best_enemy(); if be then be_name = be:id() == 0 and "you" or (be:character_name() .. " (" .. be:id() .. ")") end end)
+        pcall(function()
+            local be = npc:best_enemy()
+            if be then
+                be_name = be:id() == 0 and "you" or (be:character_name() .. " (" .. be:id() .. ")")
+            end
+        end)
         log_msg("Nemesis: %s %s (enemy: %s).", tostring(nemesis_state.name_of(id) or id),
             memo.res and "fights" or "is back on the chase", be_name)
     end
@@ -110,13 +117,14 @@ local function _show_enemy(npc, enemy) return xcombat.show_enemy(npc, enemy) end
 
 function combat_owns_now(npc, memo, now)
     local id = npc:id()
-    if nemesis_sneak.sneak_active(id) then return false end
+
+    if nemesis_events.ask("sneak_move", id) then return false end
     local range = fight_range()
     local sees = sees_player(npc, range)
 
     if not sees and focus[id] and db.actor then
-        local okd, d = pcall(_dist, npc, db.actor)
-        sees = okd and d <= math.min(range, BOSS_FOCUS_M)
+        local d = nemesis_engine.dist(npc, db.actor)
+        sees = d ~= nil and d <= math.min(range, BOSS_FOCUS_M)
     end
     local hit = hit_contact(id, now)
     local contact = sees or hit
@@ -187,7 +195,7 @@ function combat_owns_now(npc, memo, now)
     if not player_contact and hit and r and not r.hit_by_player and r.hit_from then
         local shooter = nemesis_engine.obj(r.hit_from)
 
-        if shooter and (nemesis_engine.is_stalker(shooter) or nemesis_engine.is_mutant(shooter)) and nemesis_fx.alive_obj(shooter) then
+        if shooter and (nemesis_engine.is_stalker(shooter) or nemesis_engine.is_mutant(shooter)) and nemesis_engine.alive(shooter) then
             if now - (memo.shown_at or -1000000) >= SHOW_EVERY_MS then
                 memo.shown_at = now
                 pcall(_show_enemy, npc, shooter)
@@ -226,14 +234,20 @@ function contact_hold(id)
     return memo ~= nil and memo.holding == true
 end
 
-function set_focus(id, on) if id then focus[id] = on and true or nil end end
+function set_focus(id, on)
+    if id then focus[id] = on and true or nil end
+end
+
 function has_focus(id) return id ~= nil and focus[id] == true end
 
 function sneak_over(id, fight)
     if not id then return end
     local memo = id and fight_memo[id]
     if fight then
-        if not memo then memo = { scan_at = 0, scan_hit = false, last_fight = 0 }; fight_memo[id] = memo end
+        if not memo then
+            memo = { scan_at = 0, scan_hit = false, last_fight = 0 }
+            fight_memo[id] = memo
+        end
         memo.last_fight = time_global()
     end
     if memo then memo.res_at = -1000000 end
@@ -262,7 +276,12 @@ function stall_check(npc, gt)
     if memo and memo.res then
         local be_name = "none"
 
-        pcall(function() local be = npc:best_enemy(); if be then be_name = be:id() == 0 and "you" or (be:character_name() .. " (" .. be:id() .. ")") end end)
+        pcall(function()
+            local be = npc:best_enemy()
+            if be then
+                be_name = be:id() == 0 and "you" or (be:character_name() .. " (" .. be:id() .. ")")
+            end
+        end)
         owner = "combat AI (enemy: " .. be_name .. ")"
     elseif memo and memo.holding then
         owner = "the chase, holding for the engine to pick you"
@@ -272,12 +291,14 @@ function stall_check(npc, gt)
     log_msg("Nemesis STALL: %s has stood still for 3 s. Driven by %s; target %s, %s to it; state %s%s%s.",
         tostring(nemesis_state.name_of(id) or id), owner, tostring(slot and slot.mode or "-"), dest,
         tostring(slot and slot.state or "-"),
-        nemesis_siege.siege_active() and ", siege (you are indoors)" or "", nemesis_sneak.sneak_active(id) and ", sneaking" or "")
+        nemesis_siege.siege_active() and ", siege (you are indoors)" or "", nemesis_events.ask("sneak_move", id) and ", sneaking" or "")
 end
 
 function reset()
     fight_memo = {}
     npc_drop, stall = {}, {}
+
+    focus = {}
 end
 
 function forget(id)

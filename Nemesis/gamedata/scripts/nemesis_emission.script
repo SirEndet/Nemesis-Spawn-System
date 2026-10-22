@@ -8,6 +8,7 @@ local function dbg(...) nemesis_utils.log_tag("EMISSION", ...) end
 local H = { horde_done = nil,
             released = nil,
             squads = nil }
+
 local function clear_hunt_state() H.horde_done, H.released, H.squads = nil, nil, nil end
 local saved_flow = nil
 
@@ -15,6 +16,7 @@ local SQUADS = { greh = "nemesis_emission_squad", isg = "nemesis_emission_squad_
 local OWN_SECTIONS = { "nemesis_emission_squad", "nemesis_emission_squad_isg", "nemesis_emission_boss",
                        "nemesis_emission_boss_isg", "nemesis_horde_zombied", "nemesis_horde_snork",
                        "nemesis_horde_snork_normal", "nemesis_phantom" }
+
 local function squad_section(faction)
     local sec = SQUADS[faction] or SQUADS.greh
     if nemesis_engine.section_exists(sec) then return sec end
@@ -25,6 +27,7 @@ end
 local WAIT_INSIDE_MS  = 60000
 local HAUNT_LEAD_MS   = 20000
 local HORDE_DELAY_MS  = 15000
+local HORDE_LEAD_MS   = 20000
 local RETRY_MS        = 5000
 local GIVE_UP_MS      = 60000
 
@@ -92,7 +95,8 @@ local immune = nil
 function force()
     if em or S.emission_hunt or own_follow_now() or force_next then
         nemesis_utils.log_tag("EMISSION", "Nemesis: the emission boss is already on his way; a second one is refused (MCM).")
-        nemesis_utils.send_news(nemesis_utils.text("st_nemesis_em_msg_on_his_way"), nemesis_utils.text("st_nemesis_caption"))
+
+        nemesis_lines.send_news(nemesis_lines.text("st_nemesis_em_msg_on_his_way"), nemesis_lines.text("st_nemesis_caption"))
         return false
     end
     force_next = true
@@ -105,7 +109,8 @@ function own_follow_now() return S.follow ~= nil and S.follow.emission_hunt == t
 -- Settings
 ---------------------------------------------------------------------------
 
-local function default_name() return nemesis_utils.text("st_nemesis_em_boss_name") end
+local function default_name() return nemesis_lines.text("st_nemesis_em_boss_name") end
+
 function boss_name() return nemesis_utils.spaced_name(nemesis_mcm.get_string("emission_name", default_name())) end
 
 local function enabled() return nemesis_mcm.get_bool("emission_enabled", true) end
@@ -119,15 +124,21 @@ local function chance() return enabled() and setting("emission_chance", 100, 0, 
 local function extra_chance() return enabled() and setting("emission_extra", 6, 0, 100) or 0 end
 
 function npc_cut() return setting("emission_npc_cut", 70, 0, 95) / 100 end
+
 local function psy_damage() return setting("emission_psy", 4, 0, 20) / 100 end
+
 local function horde_size() return math.floor(setting("emission_horde", 4, 0, 8) + 0.5) end
+
+local function flank_share() return setting("emission_flank", 30, 0, 50) / 100 end
 
 function faction_for_player()
     return nemesis_utils.faction_for_player() == "isg" and "isg" or "greh"
 end
 
 local function surge() return nemesis_compat.surge_on() end
+
 local function deadly() return nemesis_compat.surge_deadly() end
+
 local function level_name() return nemesis_engine.level_name() end
 
 local LINES = {
@@ -193,7 +204,7 @@ local LINES = {
 function line(kind)
     local set = LINES[S.faction == "isg" and "isg" or "greh"][kind]
     if not set then return nil end
-    return nemesis_utils.fill_line(nemesis_utils.text(set[math.random(#set)]), boss_name())
+    return nemesis_lines.fill_line(nemesis_lines.text(set[math.random(#set)]), boss_name())
 end
 
 ---------------------------------------------------------------------------
@@ -207,6 +218,22 @@ end
 
 function no_fight(a, e)
     return allies_any and allies[a] == true and allies[e] == true
+end
+
+local SEE_ENEMY_M = 40
+
+function sees_enemy(npc, enemy)
+    if not allies_any then return false end
+    local ok, a, e = pcall(function() return npc:id(), enemy:id() end)
+    if not ok or not allies[a] or a == S.boss_id or e == 0 or allies[e] then return false end
+    local yes = false
+    pcall(function()
+
+        yes = enemy:alive() and npc:relation(enemy) == game_object.enemy
+            and npc:position():distance_to_sqr(enemy:position()) <= SEE_ENEMY_M * SEE_ENEMY_M
+            and npc:see(enemy)
+    end)
+    return yes == true
 end
 
 local function ignore_list() return nemesis_compat.surge_ignore_list() end
@@ -241,6 +268,7 @@ end
 ---------------------------------------------------------------------------
 
 local function exists(sec) return nemesis_engine.section_exists(sec) end
+
 local function vpos(lv) return nemesis_engine.vertex_pos(lv) end
 
 local function indoor(pos) return nemesis_engine.is_building(pos) end
@@ -248,6 +276,7 @@ local function indoor(pos) return nemesis_engine.is_building(pos) end
 local function shelter_reading(pos)
     local enc = nemesis_engine.enclosure(pos)
     if not enc then return (indoor(pos) and "indoors" or "not indoors") .. " (no enclosure probe in this xlibs)" end
+
     local function m(v) return v and string.format("%.1f", v) or "-" end
     local w = enc.walls or {}
     return string.format("%s (roof %s m; walls E %s, W %s, N %s, S %s m)", indoor(pos) and "a building" or "not a building",
@@ -289,6 +318,7 @@ end
 
 local function log_scan(scan)
     if not nemesis_utils.debug_on() then return end
+
     local function m(v) return string.format("%.0f", v) end
     local found = {}
     for _, e in ipairs(scan.exits) do
@@ -314,10 +344,17 @@ local function cast(scan, lv, ang, max_m, reach)
     local d = SCAN_STEP_M
     while d <= max_m do
         local v = nil
+
         pcall(function() v = nemesis_engine.vertex_toward(lv, dir, d) end)
-        if not v or v >= NO_VERTEX then if reach then reach[#reach + 1] = last_in end return last_lv end
+        if not v or v >= NO_VERTEX then
+            if reach then reach[#reach + 1] = last_in end
+            return last_lv
+        end
         local p = vpos(v)
-        if not p then if reach then reach[#reach + 1] = last_in end return last_lv end
+        if not p then
+            if reach then reach[#reach + 1] = last_in end
+            return last_lv
+        end
         if not indoor(p) and not deep_inside(scan.walls, p) then
             add_exit(scan.exits, p, last_in)
             if reach then reach[#reach + 1] = last_in end
@@ -325,7 +362,10 @@ local function cast(scan, lv, ang, max_m, reach)
         end
 
         local got = math.sqrt((p.x - origin.x) ^ 2 + (p.z - origin.z) ^ 2)
-        if got < d - 1 then if reach then reach[#reach + 1] = last_in end return last_lv end
+        if got < d - 1 then
+            if reach then reach[#reach + 1] = last_in end
+            return last_lv
+        end
         last_in, last_lv = p, v
         d = d + SCAN_STEP_M
     end
@@ -361,7 +401,12 @@ local function burst_spots(scan)
     for _, p in ipairs(far) do
         if #spots > BURST_SPOTS or dist(p, o) < 2 * SCAN_STEP_M then break end
         local ok = true
-        for k = 2, #spots do if dist(p, spots[k]) < BURST_SPOT_GAP_M then ok = false; break end end
+        for k = 2, #spots do
+            if dist(p, spots[k]) < BURST_SPOT_GAP_M then
+                ok = false
+                break
+            end
+        end
         if ok then spots[#spots + 1] = p end
     end
     return spots
@@ -374,7 +419,10 @@ local function burst_door(scan, B, o, ang)
     while d <= last do
         local lv = nemesis_engine.vertex_at(vector():set(o.x + dx * d, o.y, o.z + dz * d))
         local p = lv and vpos(lv)
-        if p and not indoor(p) and not deep_inside(scan.walls, p) then add_exit(B.exits, p, o); return end
+        if p and not indoor(p) and not deep_inside(scan.walls, p) then
+            add_exit(B.exits, p, o)
+            return
+        end
         d = d + SCAN_STEP_M
     end
 end
@@ -382,7 +430,12 @@ end
 local function burst_openings(scan, B, o)
     local n, open = BURST_HEADINGS, B.open
     local start = nil
-    for k = 1, n do if not open[k] then start = k; break end end
+    for k = 1, n do
+        if not open[k] then
+            start = k
+            break
+        end
+    end
     if not start then return end
     local step = 2 * math.pi / n
     local run = nil
@@ -407,6 +460,7 @@ local function burst_step(scan)
         local ang = (B.k - 1) * 2 * math.pi / BURST_HEADINGS
         local dx, dz = math.cos(ang), math.sin(ang)
         local l = box_edge(scan, o, dx, dz) + BURST_PAST_M
+
         B.open[B.k] = nemesis_engine.line_blocked(o, vector():set(o.x + dx * l, o.y, o.z + dz * l), BURST_Y) == false
         B.rays, n = B.rays + 1, n + 1
         B.k = B.k + 1
@@ -461,7 +515,10 @@ end
 
 local function new_scan(actor)
     local lv, apos = nil, nil
-    pcall(function() lv = actor:level_vertex_id(); apos = actor:position() end)
+    pcall(function()
+        lv = actor:level_vertex_id()
+        apos = actor:position()
+    end)
     if not lv or lv >= NO_VERTEX or not apos then return nil end
     local scan = { lv = lv, apos = apos, i = 1, h = 1, j = 1, hops = {}, exits = {}, reach = {} }
     local enc = nemesis_engine.enclosure(apos)
@@ -488,10 +545,12 @@ end
 local function flat_dist(a, b) return nemesis_engine.flat_dist(a, b) end
 
 local function ring_m() return (em and em.ring and em.ring.r) or RING_M end
+
 local function ring_spots(c)
     local spots, skipped, moved = {}, 0, 0
     local r = ring_m()
     local step = 2 * math.pi / RING_GHOSTS
+
     local function spot(dr, da, k)
         local a = step * (k + da)
         local lv = nemesis_engine.vertex_at(vector():set(c.x + (r + dr) * math.cos(a), c.y, c.z + (r + dr) * math.sin(a)))
@@ -502,7 +561,10 @@ local function ring_spots(c)
         if not p then
             for _, f in ipairs(RING_FILL) do
                 p = spot(f[1], f[2], k)
-                if p then moved = moved + 1; break end
+                if p then
+                    moved = moved + 1
+                    break
+                end
             end
         end
         if p then spots[#spots + 1] = p else skipped = skipped + 1 end
@@ -516,6 +578,7 @@ local function door_spots(e)
     local l = math.sqrt(dx * dx + dz * dz)
     if l < 0.1 then return spots end
     dx, dz = dx / l, dz / l
+
     local function on_mesh(x, z)
         local lv = nemesis_engine.vertex_at(vector():set(x, e.out.y, z))
         local p = lv and vpos(lv)
@@ -581,6 +644,7 @@ end
 -- The shove
 ---------------------------------------------------------------------------
 local ppe_ok = nil
+
 local function shove_ppe()
     if ppe_ok == nil then
         ppe_ok = false
@@ -606,6 +670,7 @@ end
 local function psy_rework() return nemesis_compat.psy_rework() end
 
 local PSY_COOLDOWN_MS = 800
+
 local function psy_hit(actor)
     local power = psy_damage()
     if power <= 0 then return end
@@ -652,6 +717,7 @@ local function push_toward_centre(actor, pos, dist, indoors)
     if p and flat_dist(p, pos) > 0.5 and (not indoors or in_building(p)) then return p end
     return nil
 end
+
 local function skip_push(gt, why)
     if gt - (em.skip_log_at or -1000000) < SKIP_LOG_MS then return end
     em.skip_log_at = gt
@@ -673,7 +739,10 @@ local function guard_tick(gt, actor)
     elseif not (em.room and em.room.small) then
         local near = nil
         for _, g in ipairs(em.ghosts or {}) do
-            if g.kind == "door" and flat_dist(g.pos, pos) <= GHOST_PUSH_M then near = g; break end
+            if g.kind == "door" and flat_dist(g.pos, pos) <= GHOST_PUSH_M then
+                near = g
+                break
+            end
         end
         if not near then return end
         to = push_away(actor, pos, near.pos)
@@ -705,6 +774,7 @@ end
 -- His arrival
 ---------------------------------------------------------------------------
 local fx_keep = {}
+
 local function keep(o)
     fx_keep[#fx_keep + 1] = o
     if #fx_keep > 4 then table.remove(fx_keep, 1) end
@@ -733,25 +803,43 @@ function make_boss(id)
     dbg("Nemesis: '%s' is the EMISSION BOSS of this hunt (%s).", tostring(r and r.name), tostring(S.faction))
 end
 
-local function arrive(gt)
-
+local function exit_vertices()
     local from = {}
-    for _, e in ipairs(em.exits or {}) do
+    for _, e in ipairs(em and em.exits or {}) do
         local v = nil
         pcall(function() v = nemesis_engine.vertex_at(e.out) end)
         if v and v < NO_VERTEX then from[#from + 1] = v end
     end
+    return from
+end
+
+local arriving = false
+
+local function arrive(gt)
     local faction = faction_for_player()
-    local pos = nemesis_spawn.spawn_lone_boss(faction, from,
-        { section = squad_section(faction), name = boss_name(), make_boss = make_boss, label = "emission boss" })
-    if not pos then return false end
+
+    arriving = true
+
+    local ok, pos = pcall(nemesis_spawn.spawn_lone_boss, faction, exit_vertices(),
+        { section = squad_section(faction), name = boss_name(), make_boss = make_boss, label = "emission boss",
+          spot = em.boss_spot })
+    arriving = false
+    if not ok then
+        dbg("!Nemesis ERROR: his arrival failed (%s).", tostring(pos))
+        pos = nil
+    end
+    if not pos then
+        em.boss_spot = nil
+        return false
+    end
     immune_by_id()
     lightning(pos)
     nemesis_fx.play_retreat_fx(pos)
-    nemesis_boss.news(line("arrival"))
+    nemesis_lines.boss_news(line("arrival"))
     em.stage = "boss"
     em.boss_at = gt
-    H.horde_done = em.again or nil
+
+    H.horde_done = H.horde_done or em.again or nil
     H.released = nil
     dbg("Nemesis: the emission boss arrives with a lightning strike, %s m away.",
 
@@ -776,9 +864,46 @@ local function horde_plan()
 end
 
 local HORDE_OUT_MIN_M, HORDE_OUT_MAX_M = 5, 15
+
+local function outside_spot(p, c)
+    if not p then return false end
+    if c and flat_dist(p, c) <= ring_m() then return false end
+    local inside = true
+    pcall(function() inside = indoor(p) end)
+    return not inside
+end
+
+local function beyond_ghost(g, c)
+    local dx, dz = g.x - c.x, g.z - c.z
+    local l = math.sqrt(dx * dx + dz * dz)
+    if l < 0.1 then return nil end
+    local lv = nemesis_engine.vertex_at(g)
+    if not lv then return nil end
+    local reach = math.random(HORDE_OUT_MIN_M, HORDE_OUT_MAX_M)
+    local v = nemesis_engine.vertex_toward(lv, vector():set(dx / l, 0, dz / l), reach)
+    local p = v and vpos(v)
+    if outside_spot(p, c) then return p end
+    return nil
+end
+
+local function ghost_side_spot(toward)
+    local c = em and em.ring and em.ring.c
+    if not (c and toward) then return nil end
+    local list = {}
+    for _, g in ipairs(em.ghosts or {}) do
+        if g.kind == "ring" and g.pos then list[#list + 1] = g.pos end
+    end
+    table.sort(list, function(a, b) return flat_dist(a, toward) < flat_dist(b, toward) end)
+    for _, g in ipairs(list) do
+        local p = beyond_ghost(g, c)
+        if p then return p end
+    end
+    return nil
+end
+
 local function horde_spot(actor)
-    local bpos = nil
-    pcall(function() bpos = nemesis_engine.se(S.boss_id).position end)
+    local bpos = em and em.boss_spot and em.boss_spot.pos
+    if not bpos then pcall(function() bpos = nemesis_engine.se(S.boss_id).position end) end
     local best, best_d = nil, nil
     for _, e in ipairs(em and em.exits or {}) do
         local d = bpos and e.out:distance_to(bpos) or 0
@@ -819,6 +944,27 @@ local function horde_spot(actor)
     return apos
 end
 
+local function horde_spots(actor)
+    local toward = em and em.boss_spot and em.boss_spot.pos
+    local main = toward and ghost_side_spot(toward)
+    if not main then return horde_spot(actor), nil end
+    local exits = em.exits or {}
+    if #exits < 2 then return main, nil end
+
+    local near, far = nil, nil
+    for _, e in ipairs(exits) do
+        if not near or flat_dist(e.out, toward) < flat_dist(near.out, toward) then near = e end
+    end
+    for _, e in ipairs(exits) do
+        if not far or flat_dist(e.out, near.out) > flat_dist(far.out, near.out) then far = e end
+    end
+    if far == near then return main, nil end
+    local flank = ghost_side_spot(far.out)
+
+    if flank and flat_dist(flank, main) >= ring_m() then return main, flank end
+    return main, nil
+end
+
 local function new_squad(section, pos)
     local lv, gv = nil, nil
     pcall(function() lv = nemesis_engine.vertex_at(pos) end)
@@ -841,6 +987,7 @@ local function new_squad(section, pos)
     end)
     if not ok then
         dbg("!Nemesis ERROR: the horde squad %s failed (%s).", section, tostring(err))
+
         if sq then pcall(function() nemesis_fx.queue_squad_cleanup(sq.id) end) end
         return nil
     end
@@ -853,23 +1000,35 @@ local function remember_squad(sq)
     for _, mid in ipairs(nemesis_spawn.member_ids(sq)) do set_ally(mid, true) end
 end
 
-local function spawn_horde(actor)
+local function spawn_horde(actor, gt)
     H.horde_done = true
     local zombies, snorks, tier, snork_squad = horde_plan()
     if #zombies + #snorks == 0 then
         dbg("Nemesis: no horde (Emission boss horde is 0).")
         return
     end
-    local spot = horde_spot(actor)
+    if em then em.horde_at = gt end
+    local spot, flank_spot = horde_spots(actor)
+    local flank = {}
+    local total = #zombies + #snorks
+    if flank_spot and flank_share() > 0 then
+        local want = math.floor(total * flank_share() + 0.5)
+        if want < 1 and total >= 2 then want = 1 end
+        if want > total - 1 then want = total - 1 end
+        if want > #zombies then want = #zombies end
+        for _ = 1, want do flank[#flank + 1] = table.remove(zombies) end
+    end
 
     horde_job = { spot = spot, left = {}, next_at = nil }
-    if #zombies > 0 then horde_job.left[#horde_job.left + 1] = { start = HORDE_SQUAD_ZOMBIE, list = zombies } end
-    if #snorks > 0 then horde_job.left[#horde_job.left + 1] = { start = snork_squad, list = snorks } end
+    if #zombies > 0 then horde_job.left[#horde_job.left + 1] = { start = HORDE_SQUAD_ZOMBIE, list = zombies, spot = spot } end
+    if #snorks > 0 then horde_job.left[#horde_job.left + 1] = { start = snork_squad, list = snorks, spot = spot } end
+    if #flank > 0 then horde_job.left[#horde_job.left + 1] = { start = HORDE_SQUAD_ZOMBIE, list = flank, spot = flank_spot } end
     fill_horde()
-    dbg("Nemesis: the horde comes through the door: %s zombies, %s snorks (tier %s).", tostring(#zombies), tostring(#snorks), tostring(tier))
+    dbg("Nemesis: the horde comes: %s zombies and %s snorks from his side, %s zombies on the flank (tier %s).",
+        tostring(#zombies), tostring(#snorks), tostring(#flank), tostring(tier))
 end
 
-local function start_horde_squad(job, section, list)
+local function start_horde_squad(job, section, list, spot)
     local lead = nil
 
     pcall(function() lead = ini_sys:r_string_ex(section, "npc") end)
@@ -878,7 +1037,7 @@ local function start_horde_squad(job, section, list)
         dbg("!Nemesis ERROR: horde section %s or %s is missing; that part of the horde stays away.", section, tostring(list[1]))
         return
     end
-    local sq, lv, gv = new_squad(section, job.spot)
+    local sq, lv, gv = new_squad(section, spot or job.spot)
     if not sq then
         dbg("!Nemesis ERROR: the horde squad %s could not be created.", section)
         return
@@ -896,7 +1055,7 @@ function fill_horde()
     if not e then horde_job = nil return end
     job.next_at = nemesis_spawn.stagger_next(job.next_at, now)
     if e.start then
-        start_horde_squad(job, e.start, e.list)
+        start_horde_squad(job, e.start, e.list, e.spot)
         return
     end
     local sq = nemesis_engine.se(e.sq)
@@ -904,7 +1063,9 @@ function fill_horde()
     local ang = math.random() * 6.28318
     local v = nil
     pcall(function() v = nemesis_engine.vertex_toward(e.lv, vector():set(math.cos(ang), 0, math.sin(ang)), 2 + math.random() * 4) end)
-    if not v or v >= NO_VERTEX then v = e.lv end
+
+    local c = em and em.ring and em.ring.c
+    if not v or v >= NO_VERTEX or not outside_spot(vpos(v), c) then v = e.lv end
     local p = vpos(v) or job.spot
     local id = nil
     pcall(function()
@@ -925,7 +1086,7 @@ local function hold_horde(actor)
                 set_ally(mid, true)
                 local o = nemesis_engine.obj(mid)
 
-                if o and nemesis_engine.is_stalker(o) and nemesis_fx.alive_obj(o) then
+                if o and nemesis_engine.is_stalker(o) and nemesis_engine.alive(o) then
                     pcall(function() o:set_relation(game_object.enemy, actor) end)
                     pcall(function() actor:set_relation(game_object.enemy, o) end)
                 end
@@ -935,7 +1096,9 @@ local function hold_horde(actor)
 end
 
 function hold_tick(actor)
-    if S.phase == "hunting" and S.emission_hunt and actor then hold_horde(actor) end
+
+    local his = (S.phase == "hunting" and S.emission_hunt) or (em ~= nil and H.squads ~= nil)
+    if his and actor then hold_horde(actor) end
 end
 
 local function release_horde()
@@ -952,17 +1115,92 @@ local function release_horde()
 end
 
 ---------------------------------------------------------------------------
+-- His own clock: he arrives as the event's sound fades
+---------------------------------------------------------------------------
+
+local QUIET_S = { emission = 200, psi_storm = 228 }
+local END_GRACE_MS = 5000
+local ev = nil
+local loaded_clock = nil
+local after_load = false
+local clock_held_logged = false
+
+local function event_seconds(gt)
+    if not (ev and ev.base) then return nil end
+    return ev.base + (gt - ev.seen_at) / 1000
+end
+
+local function event_tick(gt, on)
+    if nemesis_mcm.get_bool("prepare_uninstall", false) then
+        ev, loaded_clock, after_load = nil, nil, false
+        return
+    end
+    local kind = nil
+    if on then kind = nemesis_compat.surge_kind() end
+
+    if on and ev and (ev.ended_at or ev.kind ~= kind) then ev = nil end
+    if on and not ev then
+        local base = 0
+        if after_load then
+            base = nil
+            if loaded_clock and loaded_clock.kind == tostring(kind) then base = loaded_clock.s end
+        end
+        ev = { kind = kind, seen_at = gt, base = base }
+        clock_held_logged = false
+        dbg("Nemesis: %s on; his clock: %s.", tostring(kind or "an event"),
+            base and string.format("%.0f s in", base) or "not known after the load, he waits for its end")
+    elseif not on and ev and not ev.ended_at then
+        ev.ended_at = gt
+        local s = event_seconds(gt)
+        dbg("Nemesis: the %s ended (%s s in).", tostring(ev.kind or "event"), s and string.format("%.0f", s) or "?")
+    elseif not on and ev and not em and gt - ev.ended_at >= END_GRACE_MS then
+        ev = nil
+    end
+    after_load = false
+    loaded_clock = nil
+end
+
+local function clock_open(gt)
+    if not ev then return true end
+    if ev.ended_at then return gt - ev.ended_at >= END_GRACE_MS end
+    local quiet = QUIET_S[ev.kind or ""]
+    local s = event_seconds(gt)
+    if quiet and s and s >= quiet then return true end
+    if not clock_held_logged then
+        clock_held_logged = true
+        dbg("Nemesis: the ghosts hold; he comes when the %s's sound fades (%s s in, now %s), or %s s after it ends.",
+            tostring(ev.kind or "event"), tostring(quiet or "?"), s and string.format("%.0f s", s) or "not known",
+            tostring(END_GRACE_MS / 1000))
+    end
+    return false
+end
+
+local function clock_due_in(gt)
+    if not ev then return 0 end
+    if ev.ended_at then return math.max(0, END_GRACE_MS - (gt - ev.ended_at)) end
+    local quiet = QUIET_S[ev.kind or ""]
+    local s = event_seconds(gt)
+    if not (quiet and s) then return nil end
+    return math.max(0, (quiet - s) * 1000)
+end
+
+---------------------------------------------------------------------------
 -- The flow
 ---------------------------------------------------------------------------
+
 local function begin(gt, why, forced)
     em = { stage = "wait", t0 = gt, lvl = level_name(), exits = nil, ghosts = {}, ghosts_on = false, forced = forced }
     roll, extra = false, true
+
+    H.horde_done = nil
     dbg("Nemesis: emission boss: %s.", why)
 end
 
 function cancel(why)
     if not em then return end
     ghosts_off(why)
+
+    if H.squads or horde_job then release_horde() end
     em = nil
     dbg("Nemesis: emission boss called off (%s).", why or "?")
 end
@@ -1000,6 +1238,7 @@ end
 
 function update(gt, actor, slow)
     local on = surge()
+    event_tick(gt, on)
     if not on and not em then roll, extra = nil, nil end
 
     if S.phase == "hunting" and S.emission_hunt then
@@ -1028,7 +1267,8 @@ function update(gt, actor, slow)
         end
         ghosts_tick()
         guard_tick(gt, actor)
-        if S.boss_id and not H.horde_done and gt - (em.boss_at or gt) >= HORDE_DELAY_MS then spawn_horde(actor) end
+
+        if S.boss_id and not H.horde_done and gt - (em.boss_at or gt) >= HORDE_DELAY_MS then spawn_horde(actor, gt) end
 
         return nil
     end
@@ -1039,7 +1279,8 @@ function update(gt, actor, slow)
     end
 
     if own_follow_now() then H.released = true end
-    if H.squads and not S.emission_hunt then release_horde() end
+
+    if H.squads and not S.emission_hunt and not em then release_horde() end
     if not (S.boss_id and S.emission_hunt) then end_immunity() end
 
     if not em and (on or force_next) and (S.phase == "hunting" or S.follow) and not S.emission_hunt and not own_follow_now() then
@@ -1084,7 +1325,7 @@ function update(gt, actor, slow)
             return nil
         end
 
-        if nemesis_boss.exists() then return true end
+        if nemesis_events.ask("boss_exists") then return true end
 
         if not em.forced and not deadly() then return true end
         if not em.deadly then em.deadly, em.t0 = true, gt end
@@ -1139,12 +1380,27 @@ function update(gt, actor, slow)
         end
         ghosts_tick()
         guard_tick(gt, actor)
-        if em.done_scan and gt - em.haunt_at >= HAUNT_LEAD_MS and gt >= (em.retry_at or 0) then
-            if arrive(gt) then return nil end
-            em.retry_at = gt + RETRY_MS
-            if gt - em.haunt_at >= HAUNT_LEAD_MS + GIVE_UP_MS then
-                cancel("no place for him to arrive")
-                return nil
+        if horde_job then fill_horde() end
+
+        local due = clock_due_in(gt)
+        if em.done_scan and not em.again and not H.horde_done and gt - em.haunt_at >= HAUNT_LEAD_MS
+            and due ~= nil and due <= HORDE_LEAD_MS then
+
+            em.boss_spot = em.boss_spot or nemesis_spawn.pick_lone_boss_spot(actor, exit_vertices())
+
+            if em.boss_spot then spawn_horde(actor, gt) end
+        end
+
+        local horde_ok = not em.horde_at or gt - em.horde_at >= HORDE_LEAD_MS
+        if em.done_scan and gt - em.haunt_at >= HAUNT_LEAD_MS and clock_open(gt) and horde_ok then
+            em.due_at = em.due_at or gt
+            if gt >= (em.retry_at or 0) then
+                if arrive(gt) then return nil end
+                em.retry_at = gt + RETRY_MS
+                if gt - em.due_at >= GIVE_UP_MS then
+                    cancel("no place for him to arrive")
+                    return nil
+                end
             end
         end
         return true
@@ -1155,7 +1411,7 @@ end
 function boss_update(obj, r, gt, actor)
     make_immune(obj)
 
-    nemesis_utils.set_focus(r.id, true)
+    nemesis_combat.set_focus(r.id, true)
 end
 
 function walks(id)
@@ -1174,16 +1430,19 @@ function on_offline_call_off()
 end
 
 local function vstr(p) return string.format("%.2f:%.2f:%.2f", p.x, p.y, p.z) end
+
 local function strv(t)
     local x, y, z = string.match(t or "", "^(-?[%d%.]+):(-?[%d%.]+):(-?[%d%.]+)$")
     if not x then return nil end
     return vector():set(tonumber(x), tonumber(y), tonumber(z))
 end
+
 local function exits_str(exits)
     local out = {}
     for _, e in ipairs(exits or {}) do out[#out + 1] = vstr(e.out) .. "/" .. vstr(e.inside) end
     return table.concat(out, "|")
 end
+
 local function str_exits(t)
     if type(t) ~= "string" or t == "" then return nil end
     local out = {}
@@ -1197,10 +1456,16 @@ end
 function save_flow()
     local gt = time_global()
     local t = {}
-    local function put(k, v) if v ~= nil and v ~= false then t[#t + 1] = k .. "=" .. tostring(v) end end
+
+    local function put(k, v)
+        if v ~= nil and v ~= false then t[#t + 1] = k .. "=" .. tostring(v) end
+    end
     if roll ~= nil then put("roll", roll and "1" or "0") end
     if extra ~= nil then put("extra", extra and "1" or "0") end
-    if again then put("again", "1"); put("again_exits", again_exits and exits_str(again_exits)) end
+    if again then
+        put("again", "1")
+        put("again_exits", again_exits and exits_str(again_exits))
+    end
     if em then
         put("stage", em.stage)
         put("lvl", em.lvl)
@@ -1208,6 +1473,10 @@ function save_flow()
         if em.haunt_at then put("hel", math.floor(gt - em.haunt_at)) end
         if em.boss_at then put("bel", math.floor(gt - em.boss_at)) end
         if em.retry_at then put("rel", math.floor(em.retry_at - gt)) end
+        if em.horde_at then put("hoel", math.floor(gt - em.horde_at)) end
+        if em.boss_spot and em.boss_spot.pos then
+            put("bsp", vstr(em.boss_spot.pos) .. "/" .. tostring(em.boss_spot.lv) .. "/" .. tostring(em.boss_spot.gv))
+        end
         put("forced", em.forced and "1")
         put("deadly", em.deadly and "1")
         put("scanned", em.done_scan and "1")
@@ -1217,24 +1486,31 @@ function save_flow()
         if em.ring and em.ring.c then put("ringc", vstr(em.ring.c)) end
         if em.ring and em.ring.r then put("ringr", string.format("%.1f", em.ring.r)) end
         if em.walls and em.walls.c then
+
             local function m(v) return v and string.format("%.1f", v) or "-" end
             put("walls", string.format("%s:%s:%s:%s", m(em.walls.e), m(em.walls.w), m(em.walls.n), m(em.walls.s)))
             put("wallc", vstr(em.walls.c))
         end
         if em.exits then put("exits", exits_str(em.exits)) end
-        if em.room then put("rc", vstr(em.room.c)); put("ra", string.format("%.1f", em.room.area)) end
+        if em.room then
+            put("rc", vstr(em.room.c))
+            put("ra", string.format("%.1f", em.room.area))
+        end
         put("shoves", em.shoves)
     end
 
     if horde_job and #horde_job.left > 0 then
         local h = {}
         for _, e in ipairs(horde_job.left) do
-            if e.start then h[#h + 1] = "S," .. e.start .. "," .. table.concat(e.list, ".")
+            if e.start then h[#h + 1] = "S," .. e.start .. "," .. table.concat(e.list, ".") .. "," .. (e.spot and vstr(e.spot) or "")
             else h[#h + 1] = "M," .. tostring(e.sq) .. "," .. e.sec .. "," .. tostring(e.lv) .. "," .. tostring(e.gv) end
         end
         put("horde", table.concat(h, "|"))
         put("hspot", vstr(horde_job.spot))
     end
+
+    local s = ev and not ev.ended_at and event_seconds(gt)
+    if s then put("clock", string.format("%.0f", s) .. "," .. tostring(ev.kind)) end
     if #t == 0 then return nil end
     return table.concat(t, ";")
 end
@@ -1254,12 +1530,15 @@ local function restore_flow(str)
             if f[1] == "S" and f[3] then
                 local list = {}
                 for x in string.gmatch(f[3], "[^.]+") do list[#list + 1] = x end
-                horde_job.left[#horde_job.left + 1] = { start = f[2], list = list }
+                horde_job.left[#horde_job.left + 1] = { start = f[2], list = list, spot = strv(f[4]) }
             elseif f[1] == "M" and tonumber(f[2]) and tonumber(f[4]) and tonumber(f[5]) then
                 horde_job.left[#horde_job.left + 1] = { sq = tonumber(f[2]), sec = f[3], lv = tonumber(f[4]), gv = tonumber(f[5]) }
             end
         end
     end
+
+    local cs, ck = string.match(v.clock or "", "^(%d+),(.+)$")
+    if cs then loaded_clock = { s = tonumber(cs), kind = ck } end
     if not v.stage then return end
     em = { stage = v.stage, lvl = v.lvl, t0 = gt - (tonumber(v.el) or 0), ghosts = {}, ghosts_on = false,
            forced = v.forced == "1" or nil, deadly = v.deadly == "1" or nil, done_scan = v.scanned == "1" or nil,
@@ -1273,6 +1552,9 @@ local function restore_flow(str)
     if v.hel then em.haunt_at = gt - (tonumber(v.hel) or 0) end
     if v.bel then em.boss_at = gt - (tonumber(v.bel) or 0) end
     if v.rel then em.retry_at = gt + (tonumber(v.rel) or 0) end
+    if v.hoel then em.horde_at = gt - (tonumber(v.hoel) or 0) end
+    local bp, blv, bgv = string.match(v.bsp or "", "^([^/]+)/(%d+)/(%d+)$")
+    if bp and strv(bp) then em.boss_spot = { pos = strv(bp), lv = tonumber(blv), gv = tonumber(bgv) } end
     if not em.done_scan and em.stage ~= "wait" and db.actor then em.scan = new_scan(db.actor) end
     if strv(v.rc) and tonumber(v.ra) then
         local a = tonumber(v.ra)
@@ -1283,10 +1565,15 @@ local function restore_flow(str)
 end
 
 function reset_runtime(loaded)
-    if not loaded then clear_hunt_state(); saved_flow = nil end
+    if not loaded then
+        clear_hunt_state()
+        saved_flow = nil
+    end
 
     if em then for _, g in pairs(em.ghosts or {}) do if g.fx then pcall(function() g.fx:stop() end) end end end
     em = nil
+    ev, loaded_clock = nil, nil
+    after_load = loaded and true or false
     roll, extra, psy_at = nil, nil, nil
     again, again_exits = false, nil
     horde_job = nil
@@ -1299,6 +1586,7 @@ end
 
 function prepare_uninstall()
     cancel("preparing for uninstall")
+    ev, loaded_clock, after_load = nil, nil, false
     roll, extra, force_next, psy_at = nil, nil, false, nil
     again, again_exits = false, nil
     release_horde()
@@ -1325,6 +1613,7 @@ local function ids_str(list)
     for _, id in ipairs(list) do t[#t + 1] = tostring(id) end
     return table.concat(t, ",")
 end
+
 local function str_ids(str)
     if type(str) ~= "string" or str == "" then return nil end
     local out = {}
@@ -1376,8 +1665,16 @@ function on_game_start()
     local name = "the emission boss"
     local na, nl = 0, 0
     local E = {
-        answer = function(q, _, fn, order) na = na + 1; nemesis_events.answer(q, name, fn, order) end,
-        on = function(ev, _, fn, order) nl = nl + 1; nemesis_events.on(ev, name, fn, order) end,
+
+        answer = function(q, _, fn, order)
+            na = na + 1
+            nemesis_events.answer(q, name, fn, order)
+        end,
+
+        on = function(ev, _, fn, order)
+            nl = nl + 1
+            nemesis_events.on(ev, name, fn, order)
+        end,
     }
     E.answer("take_hunt", name, function(gt) return take_hunt(gt) or nil end)
     E.answer("take_tick", name, function(gt, actor, slow) return update(gt, actor, slow) or nil end)
@@ -1394,6 +1691,17 @@ function on_game_start()
     E.answer("boss_no_cloak", name, function() return own_hunt() or nil end)
     E.answer("walks", name, function(id) return walks(id) or nil end)
     E.answer("no_fight", name, function(a, e) return no_fight(a, e) or nil end)
+    E.answer("sees_enemy", name, function(npc, enemy) return sees_enemy(npc, enemy) or nil end)
+
+    nemesis_spawn.add_warm(function()
+        if not enabled() then return {} end
+        return {
+            { squad = squad_section(faction_for_player()), members = {} },
+            { squad = HORDE_SQUAD_ZOMBIE, members = HORDE_ZOMBIES },
+            { squad = HORDE_SQUAD_SNORK, members = { HORDE_SNORK_WEAK } },
+            { squad = HORDE_SQUAD_SNORK_NORMAL, members = { HORDE_SNORK } },
+        }
+    end)
     E.answer("own_line", name, function(kind, boss)
         if own_hunt() or (kind == "boss_stash" and boss ~= nil and boss == boss_name()) then return line(kind) end
     end)
@@ -1412,9 +1720,14 @@ function on_game_start()
         if ok then dbg("Nemesis: the emission boss comes now, emission or not (MCM).") end
         return ok and true or false
     end)
-    E.on("hunt_started", name, function() clear_hunt_state() end)
 
-    E.on("member_died", name, function(id) if nemesis_member.is_boss(id) then on_boss_killed(id) end end, 15)
+    E.on("hunt_started", name, function()
+        if not arriving then clear_hunt_state() end
+    end)
+
+    E.on("member_died", name, function(id)
+        if nemesis_member.is_boss(id) then on_boss_killed(id) end
+    end, 15)
     E.on("runtime_reset", name, function(loaded) reset_runtime(loaded) end)
     E.on("saving", name, on_saving)
     E.on("loaded", name, on_loaded)
@@ -1428,7 +1741,7 @@ function on_game_start()
 end
 
 ---------------------------------------------------------------------------
--- Settings (round 122, restructure step 7): this script declares the Emission boss page
+-- Settings: this script declares the Emission boss page (since round 122, the restructure's step 7)
 ---------------------------------------------------------------------------
 
 function mcm_page()
@@ -1441,15 +1754,16 @@ function mcm_page()
             { id = "emission_dr", type = "track", val = 2, def = 30, min = 0, max = 85, step = 5, prec = 0, hint = "nemesis_emission_dr" },
             { id = "emission_npc_cut", type = "track", val = 2, def = 70, min = 0, max = 95, step = 5, prec = 0, hint = "nemesis_emission_npc_cut" },
             { id = "emission_horde", type = "track", val = 2, def = 4, min = 0, max = 8, step = 1, prec = 0, hint = "nemesis_emission_horde" },
+            { id = "emission_flank", type = "track", val = 2, def = 30, min = 0, max = 50, step = 5, prec = 0, hint = "nemesis_emission_flank" },
             { id = "emission_psy", type = "track", val = 2, def = 4, min = 0, max = 20, step = 1, prec = 0, hint = "nemesis_emission_psy" },
         } }
 end
 
 function mcm_presets()
     return {
-        easy = { emission_chance = 80, emission_extra = 4, emission_dr = 20, emission_npc_cut = 55, emission_horde = 3, emission_psy = 3 },
-        medium = { emission_chance = 100, emission_extra = 6, emission_dr = 30, emission_npc_cut = 70, emission_horde = 4, emission_psy = 4 },
-        hard = { emission_chance = 100, emission_extra = 8, emission_dr = 40, emission_npc_cut = 85, emission_horde = 5, emission_psy = 5 },
+        easy = { emission_chance = 80, emission_extra = 4, emission_dr = 20, emission_npc_cut = 55, emission_horde = 3, emission_psy = 3, emission_flank = 20 },
+        medium = { emission_chance = 100, emission_extra = 6, emission_dr = 30, emission_npc_cut = 70, emission_horde = 4, emission_psy = 4, emission_flank = 30 },
+        hard = { emission_chance = 100, emission_extra = 8, emission_dr = 40, emission_npc_cut = 85, emission_horde = 5, emission_psy = 5, emission_flank = 40 },
     }
 end
 

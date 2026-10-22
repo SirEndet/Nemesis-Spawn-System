@@ -1,4 +1,4 @@
--- Nemesis Compat (round 109, restructure step 3: the other mods' doorway)
+-- Nemesis Compat: the doorway to every other mod (made in round 109). Each part is detected at
 
 local function dbg(...) nemesis_utils.log_tag("COMPAT", ...) end
 
@@ -33,6 +33,7 @@ end
 ---------------------------------------------------------------------------
 
 local wd_api, wd_api_file = nil, nil
+
 function wearable()
     if wd_api == nil then
         wd_api = false
@@ -50,8 +51,8 @@ function wearable_file() return wd_api_file == true end
 ---------------------------------------------------------------------------
 -- AlifePlus
 ---------------------------------------------------------------------------
-
 local ap_found, ap_next_try = nil, 0
+
 function alifeplus()
     if ap_found then return ap_found end
     local now = time_global()
@@ -77,6 +78,7 @@ end
 local obrien_found = false
 local obrien_checked = {}
 local OBRIEN_PROBES = { "novice_outfit", "stalker_outfit", "helm_respirator" }
+
 local function obrien_check(sec)
     if obrien_found or not sec or obrien_checked[sec] then return end
     obrien_checked[sec] = true
@@ -107,6 +109,24 @@ function surge_on()
 
     pcall(function() on = xlevel.is_surge() == true end)
     return on
+end
+
+function surge_kind()
+    local kind = nil
+    pcall(function()
+        local p = _G["psi_storm_manager"]
+
+        if type(p) == "table" and p.is_loaded and p.is_loaded() and p.is_started() then
+            kind = "psi_storm"
+            return
+        end
+        local m = _G["surge_manager"]
+
+        if type(m) == "table" and m.is_loaded and m.is_loaded() and m.is_started() then
+            kind = "emission"
+        end
+    end)
+    return kind
 end
 
 function surge_deadly()
@@ -182,6 +202,7 @@ end
 
 local held = {}
 local hold_logged = false
+
 function hold_still(obj)
     if not obj or not exe_ai_on() then return false end
 
@@ -194,6 +215,7 @@ function hold_still(obj)
     end
     return true
 end
+
 function is_held(id) return id ~= nil and held[id] == true end
 
 local BIAS_ACTOR = 1800
@@ -207,6 +229,7 @@ local function attack_pull(boss)
 end
 local AI_REFRESH_MS = 2000
 local ai_logged = false
+
 function apply_ai(obj, r, gt)
     if not (obj and r and r.named) then return end
     if exe_ai_on() then
@@ -228,6 +251,7 @@ function apply_ai(obj, r, gt)
         pcall(xcombat.set_hit_redirect, obj, -1, 0)
     end
 end
+
 function release_hold(id, obj)
     if not (id and held[id]) then return end
     held[id] = nil

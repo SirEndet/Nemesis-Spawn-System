@@ -33,7 +33,7 @@ function absorb(obj, r, prev, hp)
     local mult = damage_mult(r.id, 0)
     if r.hp_armed and prev and mult < 1 and hp < prev and hp > LETHAL_FLOOR then
         hp = math.min(1, prev - (prev - hp) * mult)
-        nemesis_utils.set_health(obj, hp)
+        nemesis_engine.set_health(obj, hp)
     end
     return hp
 end
@@ -41,7 +41,7 @@ end
 local function ask_retreat(npc, r)
     if r.dead or r.death then return end
     r.pending = true
-    nemesis_utils.set_health(npc, 1)
+    nemesis_engine.set_health(npc, 1)
 end
 
 local function in_grace(r)
@@ -50,7 +50,9 @@ end
 
 function hunter_br_now(id)
     local add_br, add_pct = nemesis_utils.br_bonus()
+
     local body, head, body_pct, head_pct, body_hf, head_hf = nemesis_utils.player_br_stats()
+
     local function cap_pct(v)
         v = (v or 0) + add_pct
         if v > 0.90 then v = 0.90 end
@@ -71,6 +73,7 @@ local function worst_loss(power, bone_id)
 end
 
 local function _from_player(shit) return shit.draftsman:id() == db.actor:id() end
+
 local function from_player(shit)
     local ok, yes = pcall(_from_player, shit)
     return ok and yes == true
@@ -91,7 +94,9 @@ end
 ---------------------------------------------------------------------------
 -- Engine hits
 ---------------------------------------------------------------------------
-local gbo_wrapped = false
+
+local gbo_state = nil
+local settle_chain
 
 ---------------------------------------------------------------------------
 -- One bullet, one hit (round 118, owner: a hunter hit twice by one bullet skews the difficulty)
@@ -100,6 +105,7 @@ local gbo_wrapped = false
 local SAME_BULLET_FRAMES = 1
 local IMPACTS_KEPT = 16
 local frame_no = 0
+
 function count_frame() frame_no = frame_no + 1 end
 local impact = {}
 local buck_cache = {}
@@ -110,7 +116,10 @@ function on_bullet_impact(bullet)
     local tid = bullet.target_id
     if not tid or tid == 65535 or not S.m[tid] then return end
     local list = impact[tid]
-    if not list then list = {}; impact[tid] = list end
+    if not list then
+        list = {}
+        impact[tid] = list
+    end
     if #list >= IMPACTS_KEPT then table.remove(list, 1) end
     list[#list + 1] = { id = bullet.bullet_id, sec = bullet.section, frame = frame_no }
 end
@@ -158,9 +167,15 @@ local function same_bullet(r, shit, flags)
     return false
 end
 
+local function skip_impact(r, shit)
+    local ok, fire = pcall(function() return shit.type == hit.fire_wound end)
+    if ok and fire then next_impact(r.id) end
+end
+
 function forget_bullets() impact = {} end
 
 local function _draft_id(shit) return shit.draftsman and shit.draftsman:id() end
+
 local function boss_npc_hit(shit)
     local ok, did = pcall(_draft_id, shit)
     if not (ok and did == S.boss_id) then return end
@@ -187,7 +202,8 @@ local function note_hit(r, power, hit_from, by_player, siege)
     if by_player then
         r.player_struck = true
         r.player_hit_at = now
-        if siege then nemesis_utils.break_siege() end
+
+        if siege then nemesis_siege.break_siege() end
     end
 end
 
@@ -225,19 +241,32 @@ function on_before_hit(npc, shit, bone_id, flags)
         if S.boss_id and shit then boss_npc_hit(shit) end
         return
     end
-    if not nemesis_member.hittable(npc) then return end
-
-    if not gbo_wrapped and same_bullet(r, shit, flags) then return end
-    r.bh_frame = time_global()
     local by_player = shit ~= nil and from_player(shit)
-    if shit then note_hit(r, shit.power, shooter_id(shit.draftsman), by_player, true) end
+
+    local settled = nil
+    if by_player then settled = settle_chain(npc, r, bone_id) end
+
+    if not nemesis_member.hittable(npc) then
+
+        if settled and shit then note_hit(r, settled, shooter_id(shit.draftsman), by_player, true) end
+        return
+    end
+
+    if settled then
+        skip_impact(r, shit)
+    elseif same_bullet(r, shit, flags) then
+        return
+    end
+    r.bh_frame = time_global()
+
+    if shit then note_hit(r, settled or shit.power, shooter_id(shit.draftsman), by_player, true) end
 
     if by_player and r.cloak_vis and r.player_hit_at == time_global() and nemesis_member.is_boss(id) then
         nemesis_fx.reveal(npc, r, time_global(), "hit")
     end
     if not r.named then
 
-        if S.phase == "hunting" and shit and not (gbo_wrapped and by_player) then
+        if S.phase == "hunting" and shit then
             local m = hit_mult(id, bone_id, by_player)
             if m < 1 then shit.power = (shit.power or 0) * m end
         end
@@ -250,7 +279,12 @@ function on_before_hit(npc, shit, bone_id, flags)
     end
     if S.phase ~= "hunting" then return end
 
-    if gbo_wrapped and by_player then return end
+    if by_player and gbo_state == "old_exes" then return end
+
+    if settled then
+        if (shit and shit.power or 0) <= 0.001 then return end
+        dbg("Nemesis: a hook after GAMMA ballistics left %.3f power on your hit on '%s'; checked against the floor.", shit.power, r.name or "?")
+    end
 
     if shit then shit.power = (shit.power or 0) * hit_mult(id, bone_id, by_player) end
     r.hit_cut = true
@@ -268,6 +302,7 @@ function on_before_hit(npc, shit, bone_id, flags)
 end
 
 local bypass_logged = {}
+
 local function bypass_hit(npc, r, amount, who, bone)
     if S.phase ~= "hunting" or r.retreat_at or not r.named or nemesis_member.is_boss(r.id) then return end
     local wid = shooter_id(who)
@@ -400,6 +435,7 @@ local br_seeded = {}
 local function seed(gbo, id, body_br, head_br, body_hf, head_hf)
     if br_seeded[id] then return end
     br_seeded[id] = true
+
     local function store(br)
         if not br or br < 0.001 then return 0.001 end
         return br
@@ -419,6 +455,7 @@ local function seed(gbo, id, body_br, head_br, body_hf, head_hf)
 end
 
 local br_bonused = {}
+
 function add_native_br(gbo, id, add)
     for _, group in ipairs({ "_2", "_11", "_15" }) do
         local key = tostring(id) .. group
@@ -449,132 +486,167 @@ function unseed_br()
     br_seeded, br_bonused = {}, {}
 end
 
-local gbo_checked = false
-function install_br_wrap()
-    if gbo_wrapped or gbo_checked then return end
-    gbo_checked = true
+local armed = {}
+local pba_own = nil
+local pba_listener = nil
+local odc_own = nil
+local odc_listener = nil
 
+local function listen_pba(gbo)
+    if pba_own then return end
+    local own = gbo.PBA_ohc
+    if type(own) ~= "function" then return end
+    pba_own = own
+
+    pba_listener = function(n, amount, ...)
+        local ok, id = pcall(function() return n:id() end)
+        local a = ok and armed[id]
+        if a and type(amount) == "number" then a.seen = amount end
+        return own(n, amount, ...)
+    end
+    gbo.PBA_ohc = pba_listener
+
+    local own_d = gbo.PBA_odc
+    if type(own_d) ~= "function" then return end
+    odc_own = own_d
+
+    odc_listener = function(n, who, ...)
+        local ok, id = pcall(function() return n:id() end)
+        local a = ok and armed[id]
+        if a then
+            a.odc = { who = who }
+            return
+        end
+        return own_d(n, who, ...)
+    end
+    gbo.PBA_odc = odc_listener
+end
+
+local function unlisten_pba()
+    if not pba_own or next(armed) ~= nil then return end
     local gbo = nemesis_compat.grok_bo()
-    if not gbo then
+    if gbo and gbo.PBA_ohc == pba_listener then gbo.PBA_ohc = pba_own end
+    if gbo and odc_own and gbo.PBA_odc == odc_listener then gbo.PBA_odc = odc_own end
+    pba_own = nil
+    pba_listener = nil
+    odc_own, odc_listener = nil, nil
+end
+
+local function pre_hit(npc, shit, bone_id, flags)
+    if S.phase ~= "hunting" or not npc or not shit then return end
+    local r = nemesis_member.hittable(npc)
+    if not r or not from_player(shit) then return end
+
+    if not r.named and hit_mult(r.id, bone_id, true) >= 0.999 and nemesis_utils.br_bonus() <= 0 then return end
+    local gbo = nemesis_compat.grok_bo()
+    if not gbo then return end
+    if r.named then
+        local body_br, head_br, _, _, body_hf, head_hf = hunter_br_now(r.id)
+
+        if nemesis_compat.obrien_on() then br_seeded[r.id] = nil end
+        pcall(seed, gbo, r.id, body_br, head_br, body_hf, head_hf)
+    end
+    armed[r.id] = {
+        hp0 = tonumber(npc.health) or 1,
+        at = time_global(),
+        leaving = r.named and r.retreat_at ~= nil,
+    }
+    listen_pba(gbo)
+    nemesis_engine.set_health(npc, 1)
+end
+
+settle_chain = function(npc, r, bone_id)
+    local a = armed[r.id]
+    if not a then return nil end
+    armed[r.id] = nil
+    local odc = a.odc and odc_own
+    unlisten_pba()
+    if a.at ~= time_global() then
+
+        nemesis_engine.set_health(npc, a.hp0)
+        return nil
+    end
+    local dmg = 1 - (tonumber(npc.health) or 1)
+    if type(a.seen) == "number" and a.seen > dmg then dmg = a.seen end
+    if dmg < 0 then dmg = 0 end
+
+    if a.leaving then
+        nemesis_engine.set_health(npc, a.hp0)
+        return dmg
+    end
+    local hp = a.hp0 - dmg * hit_mult(r.id, bone_id, true)
+    if not r.named or nemesis_member.is_boss(r.id) then
+
+        if hp < 0 then hp = 0 end
+        nemesis_engine.set_health(npc, hp)
+        if hp <= 0 and odc then pcall(odc, npc, a.odc.who) end
+        if hp > 0 and r.named then r.last_hp = hp end
+        if not r.named then
+
+            local add_br = nemesis_utils.br_bonus()
+            local gbo = nemesis_compat.grok_bo()
+            if add_br > 0 and gbo then pcall(add_native_br, gbo, r.id, add_br) end
+        end
+        return dmg
+    end
+    if hp < LETHAL_FLOOR then hp = LETHAL_FLOOR end
+    nemesis_engine.set_health(npc, hp)
+    r.last_hp = hp
+    if not in_grace(r) and (hp <= LETHAL_FLOOR + 0.001 or hp <= nemesis_utils.get_retreat_health(S.cycle)) then
+        ask_retreat(npc, r)
+    end
+    return dmg
+end
+
+local stale_logged = false
+
+function settle_stale()
+    if next(armed) == nil then return end
+    local now = time_global()
+    for id, a in pairs(armed) do
+        if a.at ~= now then
+            armed[id] = nil
+            local o = nemesis_engine.obj(id)
+            if o and nemesis_engine.alive(o) then nemesis_engine.set_health(o, a.hp0) end
+            if not stale_logged then
+                stale_logged = true
+                dbg("!Nemesis ERROR: a hit on hunter %s never reached its last step (another mod's hit hook failed first); his health is put back.", tostring(id))
+            end
+        end
+    end
+    unlisten_pba()
+end
+
+local old_exes_told = false
+
+function install_br_hooks()
+    if gbo_state then return end
+    if not nemesis_compat.grok_bo() then
+        gbo_state = "none"
         dbg("Nemesis: GAMMA ballistics (grok_bo) not found; the mitigation percent is applied by cutting the hit.")
         return
     end
 
-    local function is_grok(f)
-        local ok, env = pcall(getfenv, f)
-        return ok and env == gbo
-    end
-    local function find_grok(f, depth)
-        if type(f) ~= "function" then return nil end
-        if is_grok(f) then return f end
-        if depth <= 0 or not (debug and debug.getupvalue) then return nil end
-        for i = 1, 30 do
-            local ok, name, v = pcall(debug.getupvalue, f, i)
-            if not ok or name == nil then break end
-            local found = find_grok(v, depth - 1)
-            if found then return found end
-        end
-        return nil
-    end
-    local field = gbo.npc_on_before_hit
-    local orig = find_grok(field, 3)
-    if not orig then
-        dbg("!Nemesis ERROR: grok_bo's own hit function was not found (another mod wraps it); GAMMA ballistics are left alone.")
-        return
-    end
-    if orig ~= field then
-        dbg("Nemesis: grok_bo's hit function is wrapped by another script; hooking the original, the wrapper stays out of NPC hits as in stock GAMMA.")
+    if type(RegisterScriptCallbackPre) == "function" and nemesis_core.hit_runs_last() then
 
-        pcall(function() UnregisterScriptCallback("npc_on_before_hit", field) end)
-    end
-
-    local function grok_from_full(npc, shit, bone_id, flags)
-        local seen = nil
-        local pba = gbo.PBA_ohc
-        if type(pba) == "function" then
-            gbo.PBA_ohc = function(n, amount, ...) seen = amount; return pba(n, amount, ...) end
-        end
-        nemesis_utils.set_health(npc, 1)
-        local ok, err = pcall(orig, npc, shit, bone_id, flags)
-        if type(pba) == "function" then gbo.PBA_ohc = pba end
-        local dmg = 1 - (tonumber(npc.health) or 1)
-        if type(seen) == "number" and seen > dmg then dmg = seen end
-        if dmg < 0 then dmg = 0 end
-        return ok, err, dmg
-    end
-
-    local function wrapped(npc, shit, bone_id, flags)
-        local r = npc and nemesis_state.member(npc:id())
-
-        if r and nemesis_member.hittable(npc) and same_bullet(r, shit, flags) then return end
-
-        if r and not nemesis_member.hittable(npc) then return orig(npc, shit, bone_id, flags) end
-
-        if r and r.named and r.retreat_at then return end
-
-        if r and not r.named and S.phase == "hunting" and from_player(shit) then
-            local add_br = nemesis_utils.br_bonus()
-            local m = hit_mult(r.id, bone_id, true)
-            local ok, err
-            if m >= 0.999 then
-                ok, err = pcall(orig, npc, shit, bone_id, flags)
-            else
-                local hp0 = tonumber(npc.health) or 1
-                local dmg
-                ok, err, dmg = grok_from_full(npc, shit, bone_id, flags)
-                local hp = hp0 - dmg * m
-                if hp <= 0 then
-                    nemesis_utils.set_health(npc, hp0)
-                    ok, err = pcall(orig, npc, shit, bone_id, flags)
-                else
-                    nemesis_utils.set_health(npc, hp)
-                end
-            end
-            if add_br > 0 then pcall(add_native_br, gbo, r.id, add_br) end
-            if not ok then dbg("!Nemesis ERROR: grok_bo hit failed (%s).", tostring(err)) end
+        if pcall(RegisterScriptCallbackPre, "npc_on_before_hit", pre_hit) then
+            gbo_state = "hooked"
+            dbg("Nemesis: GAMMA ballistics: your hits on hunters go through GAMMA's own chain; their protection is put around it (Pre and Post tiers).")
             return
         end
-        if not (r and r.named and S.phase == "hunting") or not from_player(shit) then
-            return orig(npc, shit, bone_id, flags)
-        end
-        local id = r.id
-        local body_br, head_br, body_pct, head_pct, body_hf, head_hf = hunter_br_now(id)
-
-        if nemesis_utils.obrien_on() then br_seeded[id] = nil end
-        pcall(seed, gbo, id, body_br, head_br, body_hf, head_hf)
-        local hp0 = tonumber(npc.health) or 1
-        local ok, err, dmg = grok_from_full(npc, shit, bone_id, flags)
-        local hp = hp0 - dmg * hit_mult(id, bone_id, true)
-        if nemesis_member.is_boss(id) then
-
-            if hp <= 0 then
-                nemesis_utils.set_health(npc, hp0)
-                ok, err = pcall(orig, npc, shit, bone_id, flags)
-            else
-                nemesis_utils.set_health(npc, hp)
-                r.last_hp = hp
-            end
-            if not ok then dbg("!Nemesis ERROR: grok_bo hit failed (%s).", tostring(err)) end
-            return
-        end
-        if hp < LETHAL_FLOOR then hp = LETHAL_FLOOR end
-        nemesis_utils.set_health(npc, hp)
-        r.last_hp = hp
-        if not in_grace(r) and (hp <= LETHAL_FLOOR + 0.001 or hp <= nemesis_utils.get_retreat_health(S.cycle)) then
-            ask_retreat(npc, r)
-        end
-        if not ok then dbg("!Nemesis ERROR: grok_bo hit failed (%s).", tostring(err)) end
     end
-    pcall(function() UnregisterScriptCallback("npc_on_before_hit", orig) end)
-    gbo.npc_on_before_hit = wrapped
+    gbo_state = "old_exes"
 
-    RegisterScriptCallback("npc_on_before_hit", wrapped)
-    gbo_wrapped = true
-    dbg("Nemesis: GAMMA ballistics hooked (hunter BR and mitigation follow the player).")
+    printf("~Nemesis: these modded exes have no callback tiers (added 15 September 2026). With GAMMA ballistics, your shots can kill named hunters instead of making them break off. Update the modded exes.")
+    if not old_exes_told then
+        old_exes_told = true
+
+        nemesis_lines.send_news(nemesis_lines.text("st_nemesis_msg_old_exes"), nemesis_lines.text("st_nemesis_caption"))
+    end
 end
 
 ---------------------------------------------------------------------------
--- Settings (round 122, restructure step 7): this script declares the Combat page
+-- Settings: this script declares the Combat page (since round 122, the restructure's step 7)
 ---------------------------------------------------------------------------
 
 function mcm_page()

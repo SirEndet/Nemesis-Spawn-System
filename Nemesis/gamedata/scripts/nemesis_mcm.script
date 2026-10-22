@@ -8,6 +8,7 @@ local PAGES = { "general", "nemesis_spawn", "nemesis_damage", "nemesis_boss", "n
 
 provider = function(name)
     local m = rawget(_G, name)
+
     if m == nil and nemesis_engine and nemesis_engine.file_exists("$game_scripts$", name .. ".script") then
         pcall(function() m = _G[name] end)
     end
@@ -36,10 +37,13 @@ local function sound_section()
     local ok, t = pcall(m.mcm_sound_section)
     return ok and type(t) == "table" and t or {}
 end
+
 local function with_sound(items)
     local out = {}
     for _, o in ipairs(items) do
-        if o.id == "line_effects" then for _, x in ipairs(sound_section()) do out[#out + 1] = x end end
+        if o.id == "line_effects" then
+            for _, x in ipairs(sound_section()) do out[#out + 1] = x end
+        end
         out[#out + 1] = o
     end
     return out
@@ -109,6 +113,7 @@ end
 
 local PAGE_OF = {}
 local built = false
+
 function build()
     if built then return end
     local list, missing = pages()
@@ -123,7 +128,9 @@ function build()
             local ok, t = pcall(m.mcm_presets)
             if ok and type(t) == "table" then
                 for level, vals in pairs(t) do
-                    if DIFFICULTY[level] then for id, v in pairs(vals) do DIFFICULTY[level][id] = v end end
+                    if DIFFICULTY[level] then
+                        for id, v in pairs(vals) do DIFFICULTY[level][id] = v end
+                    end
                 end
             end
         end
@@ -192,6 +199,7 @@ local function current_difficulty()
 end
 
 local function log(...)
+
     if nemesis_utils and nemesis_utils.log_tag then nemesis_utils.log_tag("MCM", ...)
     elseif printf and get_bool("debug_logs", false) then printf(...) end
 end
@@ -208,7 +216,11 @@ local function backup_custom(why)
     local want, n = {}, 0
     for id in pairs(DIFFICULTY.medium) do
         local v = raw_number(id)
-        if v ~= nil then nemesis_config.set(BACKUP_SECTION, id, v); want[id] = v; n = n + 1 end
+        if v ~= nil then
+            nemesis_config.set(BACKUP_SECTION, id, v)
+            want[id] = v
+            n = n + 1
+        end
     end
     if n == 0 then return end
     nemesis_config.set(BACKUP_SECTION, "from", why)
@@ -227,7 +239,10 @@ function load_custom_backup()
     local n = 0
     for id in pairs(DIFFICULTY.medium) do
         local v = nemesis_config.get(BACKUP_SECTION, id, 2, nil)
-        if v ~= nil then set_value(id, v); n = n + 1 end
+        if v ~= nil then
+            set_value(id, v)
+            n = n + 1
+        end
     end
     if n == 0 then
         log("Nemesis: Load settings from Automatic Backup: there is no backup yet (one is made when a difficulty replaces your own settings).")
@@ -285,6 +300,7 @@ function on_option_change()
 end
 
 local main_menu_ref = nil
+
 local function remember_main_menu(mm) main_menu_ref = mm end
 
 local function mcm_window()
@@ -370,6 +386,7 @@ function get_bool(id, default)
 end
 
 NAME_MAX = 48
+
 function get_string(id, default)
     local v = get_setting(id, default)
     if type(v) ~= "string" then return default end

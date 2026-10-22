@@ -50,12 +50,32 @@
 
     <string id="ui_mcm_nemesis_warning_audio"><text>Звуковое предупреждение</text></string>
 
-    <string id="ui_mcm_nemesis_warning_audio_desc"><text>Радиопомехи (для босса ещё и пси-голоса) за 30–120 секунд до начала охоты. Если включено это или предупреждение на КПК, охота начинается после предупреждения; если оба выключены, она начинается без него. По умолчанию включено.</text></string>
+    <string id="ui_mcm_nemesis_warning_audio_desc"><text>Радиопомехи за 30–120 секунд до начала охоты. Если включено это или предупреждение на КПК, охота начинается после предупреждения; если оба выключены, она начинается без него. По умолчанию включено.</text></string>
 
     <string id="ui_mcm_nemesis_warning_pda"><text>Предупреждение на КПК</text></string>
 
     <string id="ui_mcm_nemesis_warning_pda_desc"><text>Сообщение на КПК с неизвестной частоты за 30–120 секунд до начала охоты. Если включено это или звуковое предупреждение, охота начинается после предупреждения; если оба выключены, она начинается без него. По умолчанию выключено.</text></string>
 
+    <string id="ui_mcm_nemesis_heartbeat_volume"><text>Громкость сердцебиения (%)</text></string>
+    <string id="ui_mcm_nemesis_heartbeat_volume_desc"><text>Сердцебиение у вас в голове, пока босс в пределах 80 м. Чем он ближе, тем чаще оно бьётся: 85 ударов в минуту на 80 м, до максимальной частоты сердцебиения, когда он рядом с вами. Для обоих боссов. 0 отключает звук. По умолчанию 30.</text></string>
+    <string id="ui_mcm_nemesis_heartbeat_top"><text>Максимальная частота сердцебиения (уд/мин)</text></string>
+    <string id="ui_mcm_nemesis_heartbeat_top_desc"><text>Как быстро бьётся ваше сердце, когда босс рядом с вами. По умолчанию 140.</text></string>
+    <string id="ui_mcm_nemesis_whispers_volume"><text>Громкость шёпота (%)</text></string>
+    <string id="ui_mcm_nemesis_whispers_volume_desc"><text>Шёпот оттуда, где невидимый босс, пока он в пределах 25 м от вас. Повернёте голову, и он там. 0 отключает звук. По умолчанию 25.</text></string>
+    <string id="ui_mcm_nemesis_arrival_call_volume"><text>Громкость зова при прибытии (%)</text></string>
+    <string id="ui_mcm_nemesis_arrival_call_volume_desc"><text>Прибывает охота Монолита: вы слышите зов Монолита оттуда, где её вожак выходит из воздуха. С каждым циклом громче (рост прибытия за цикл), но не выше 100. 0 отключает звук. По умолчанию 50.</text></string>
+    <string id="ui_mcm_nemesis_arrival_ppe"><text>Эффект на экране при прибытии (%)</text></string>
+    <string id="ui_mcm_nemesis_arrival_ppe_desc"><text>Прибывает охота: по экрану проходит короткая пси-волна. С каждым циклом сильнее (рост прибытия за цикл). 0 отключает эффект. По умолчанию 40.</text></string>
+    <string id="ui_mcm_nemesis_arrival_escalation"><text>Рост прибытия за цикл (%)</text></string>
+    <string id="ui_mcm_nemesis_arrival_escalation_desc"><text>Насколько сильнее становятся зов и эффект на экране с каждым циклом после первого. По умолчанию 10.</text></string>
+    <string id="ui_mcm_nemesis_arrival_max"><text>Наибольший рост прибытия (%)</text></string>
+    <string id="ui_mcm_nemesis_arrival_max_desc"><text>Насколько больше своих ползунков может стать прибытие, каким бы высоким ни был цикл. По умолчанию 50.</text></string>
+    <string id="ui_mcm_nemesis_boss_jolt"><text>Толчок, когда бьёт босс</text></string>
+    <string id="ui_mcm_nemesis_boss_jolt_desc"><text>Экран вздрагивает в тот миг, когда босс перестаёт подкрадываться и открывает огонь. По умолчанию выключено.</text></string>
+    <string id="ui_mcm_nemesis_silence_before"><text>Тишина перед предупреждением</text></string>
+    <string id="ui_mcm_nemesis_silence_before_desc"><text>Перед предупреждением о прибытии мир затихает: звуки и музыка гаснут за 3 с, миг мёртвой тишины, затем трещит рация, и мир возвращается под её звук. Только со звуком предупреждения о прибытии. Настройки громкости игры не меняются; всё возвращается как было. По умолчанию включено.</text></string>
+    <string id="ui_mcm_nemesis_silence_length"><text>Длительность тишины (с)</text></string>
+    <string id="ui_mcm_nemesis_silence_length_desc"><text>Сколько длится мёртвая тишина перед предупреждением. По умолчанию 0,75.</text></string>
     <string id="ui_mcm_nemesis_lightning_volume"><text>Громкость удара молнии (%)</text></string>
     <string id="ui_mcm_nemesis_lightning_volume_desc"><text>Громкость удара молнии, когда прибывает босс выброса. Выброс и так громкий, поэтому по умолчанию звук выключен; его прибытие отмечает вспышка телепорта (громкость телепорта). 0 отключает звук. По умолчанию 0.</text></string>
     <string id="ui_mcm_nemesis_npc_name"><text>Имя босса</text></string>

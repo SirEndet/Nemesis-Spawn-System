@@ -15,7 +15,9 @@
     <string id="ui_mcm_nemesis_emission_npc_cut"><text>Emission boss NPC damage reduction (%)</text></string>
     <string id="ui_mcm_nemesis_emission_npc_cut_desc"><text>How much less damage the emission boss takes from other stalkers and mutants, so they are little help against him. Your own hits are not affected. Him only. Default 70.</text></string>
     <string id="ui_mcm_nemesis_emission_horde"><text>Emission boss horde size</text></string>
-    <string id="ui_mcm_nemesis_emission_horde_desc"><text>Mutants that come through the door 15 seconds after the emission boss arrives and rush in after you: zombified stalkers, with a snork on mid maps and two tougher snorks on late maps. 0 sends none. Default 4.</text></string>
+    <string id="ui_mcm_nemesis_emission_flank"><text>Horde flank share (%)</text></string>
+    <string id="ui_mcm_nemesis_emission_flank_desc"><text>The part of the horde that comes from the other side of your shelter, past the ghosts at the door farthest from his, to take you from behind. Only zombified stalkers, and only when your shelter has two doors or more. 0 sends everyone with him. Default 30.</text></string>
+    <string id="ui_mcm_nemesis_emission_horde_desc"><text>Mutants that come 20 seconds before the emission boss, from beyond the ghosts on his side, and rush in after you: zombified stalkers, with a snork on mid maps and two tougher snorks on late maps. They fight any enemy they see on the way. 0 sends none. Default 4.</text></string>
     <string id="ui_mcm_nemesis_emission_psy"><text>Ghost psy damage (%)</text></string>
     <string id="ui_mcm_nemesis_emission_psy_desc"><text>The share of your whole psy bar you lose each time the emission boss's ghosts push you back (at their ring or a door). Psy protection does not lower it. 0 turns it off. Default 4.</text></string>
     <string id="ui_mcm_nemesis_force_next_emission"><text>Emission boss</text></string>

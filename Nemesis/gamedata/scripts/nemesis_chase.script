@@ -11,7 +11,10 @@ local refs = {}
 
 local function extra_ids()
     local ids = {}
-    local function add(v) if type(v) == "number" then ids[#ids + 1] = v end end
+
+    local function add(v)
+        if type(v) == "number" then ids[#ids + 1] = v end
+    end
     pcall(function() add(stalker_ids.action_gather_items) end)
     pcall(function() add(xr_actions_id.corpse_exist) end)
     pcall(function() add(xr_actions_id.wounded_exist) end)
@@ -20,6 +23,7 @@ end
 
 local planner_list = nil
 local planner_warned = false
+
 local function planner_ids()
     if planner_list then return planner_list end
 
@@ -27,6 +31,7 @@ local function planner_ids()
     if not (ok and type(list) == "table" and #list > 0) then
         if not planner_warned then
             planner_warned = true
+
             nemesis_utils.log_tag("CHASE", "!Nemesis ERROR: xgraft returned no planner list; vanilla AI may override the chase.")
         end
         return {}
@@ -192,7 +197,9 @@ function has_run(id)
 end
 
 local NO_VERTEX = 4294967295
+
 local function debug_on() return nemesis_utils.debug_on() end
+
 local function log_msg(...) return nemesis_utils.log_msg(...) end
 
 local CHASE_REFRESH_MS = 6000
@@ -216,6 +223,7 @@ function retreat_arrived(npc)
     if not vid then return true end
     local here = false
     pcall(function()
+
         here = npc:level_vertex_id() == vid or npc:position():distance_to(nemesis_engine.vertex_pos(vid)) < 1.5
     end)
     return here
@@ -224,8 +232,14 @@ end
 local LKP_GIVE_UP_MS = 60000
 local FLANK_MIN_M = 30
 
-function set_role(id, role) if id then roles[id] = role end end
-function set_retreat_dest(id, vid) if id then retreat_dest[id] = vid end end
+function set_role(id, role)
+    if id then roles[id] = role end
+end
+
+function set_retreat_dest(id, vid)
+    if id then retreat_dest[id] = vid end
+end
+
 function get_retreat_dest(id) return id and retreat_dest[id] or nil end
 
 function pick_dest(npc, pos, lv)
@@ -249,8 +263,6 @@ function pick_dest(npc, pos, lv)
     if not lv or lv >= NO_VERTEX or not pos then return nil end
     return lv, copy_vec(pos)
 end
-
-local function _dist(a, b) return a:position():distance_to(b:position()) end
 
 local function _prep_path(npc)
 
@@ -285,6 +297,7 @@ local function player_target(npc, actor)
 end
 
 local FLANK_WIDE_DEG = 75
+
 local function flank_vertex(npc, tpos, role)
     local npos = npc:position()
     local dx, dz = tpos.x - npos.x, tpos.z - npos.z
@@ -302,22 +315,21 @@ local function flank_vertex(npc, tpos, role)
 end
 
 local function chase_target(npc, actor)
+
     if nemesis_siege.siege_active() and not nemesis_combat.has_focus(npc:id()) then
         local lv = nemesis_siege.vertex(npc, actor)
         if lv then return nemesis_engine.vertex_pos(lv), lv, "waiting outside" end
     end
-    if nemesis_sneak.sneak_active(npc:id()) then
 
-        if nemesis_sneak.sneak_holding(npc:id()) then
-            return npc:position(), npc:level_vertex_id(), "holding, about to open fire"
-        end
+    local move = nemesis_events.ask("sneak_move", npc:id())
 
-        if not nemesis_sneak.player_running(actor) then
-            local p, phase = nemesis_sneak.target(npc, actor)
-            if p then return p, nil, phase end
-        else
-            nemesis_sneak.stop_closing(npc:id())
-        end
+    if move == "hold" then
+        return npc:position(), npc:level_vertex_id(), "holding, about to open fire"
+    end
+
+    if move == "still" then
+        local t = nemesis_events.ask("sneak_target", npc, actor)
+        if t then return t.pos, nil, t.mode end
     end
     local tpos, tlv, mode = player_target(npc, actor)
     local role = roles[npc:id()]
@@ -342,13 +354,17 @@ local STATE_ORDER = {
     walk = { "raid", "patrol", "walk" },
 }
 local picked_state = {}
+
 local function pick_state(far, sneaky, walking)
     local key = walking and "walk" or (sneaky and "sneak" or (far and "far" or "near"))
     local name = picked_state[key]
     if name == nil then
         name = false
         for _, n in ipairs(STATE_ORDER[key]) do
-            if state_exists(n) then name = n; break end
+            if state_exists(n) then
+                name = n
+                break
+            end
         end
         if name then picked_state[key] = name end
     end
@@ -356,6 +372,7 @@ local function pick_state(far, sneaky, walking)
 end
 
 local route_logged = {}
+
 local function apply_state(npc, slot, far, sneaky)
     local walking = nemesis_events.ask("walks", npc:id()) == true
     local name = pick_state(far, sneaky, walking)
@@ -454,12 +471,13 @@ function drive_chase(npc, actor)
 
     local gt = time_global()
     local refreshed = false
-    local sneaking = nemesis_sneak.sneak_active(id)
+    local move = nemesis_events.ask("sneak_move", id)
+    local sneaking = move ~= nil
     local refresh_ms = sneaking and SNEAK_REFRESH_MS or CHASE_REFRESH_MS
 
-    if sneaking then
-        local how = (nemesis_sneak.sneak_holding(id) and "hold") or (nemesis_sneak.player_running(actor) and "run") or "still"
-        if slot.sneak_how ~= how then slot.sneak_how = how; slot.lv = nil end
+    if sneaking and slot.sneak_how ~= move then
+        slot.sneak_how = move
+        slot.lv = nil
     end
     if not slot.lv or gt - slot.at >= refresh_ms then
         local tpos, tlv, mode = chase_target(npc, actor)
@@ -479,11 +497,10 @@ function drive_chase(npc, actor)
         return true, false
     end
 
-    local okd, dist = pcall(_dist, npc, actor)
-    if not okd then dist = 9999 end
+    local dist = nemesis_engine.dist(npc, actor) or 9999
     local far = dist > SPRINT_FROM_M
 
-    local sneaky = sneaking and nemesis_sneak.sneak_closing(id) and not nemesis_sneak.sneak_holding(id) and not nemesis_sneak.player_running(actor)
+    local sneaky = move == "still" and nemesis_events.ask("sneak_closing", id) == true
 
     pcall(_prep_path, npc)
     local used = send_to(npc, slot.lv)
@@ -495,7 +512,9 @@ end
 
 function chase_slot(id) return id and chase[id] or nil end
 
-function reset_slot(id) if id then chase[id] = nil end end
+function reset_slot(id)
+    if id then chase[id] = nil end
+end
 
 function reset_slots() chase = {} end
 
