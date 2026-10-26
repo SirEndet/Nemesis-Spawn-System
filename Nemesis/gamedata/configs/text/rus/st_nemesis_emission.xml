@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="windows-1251"?>
 <string_table>
-    <!-- Nemesis Wave Spawn System: the emission boss's own lines and name (round 134) -->
+    <!-- Nemesis Spawn System: the emission boss's own lines and name (round 134) -->
     <string id="st_nemesis_em_greh_arrival_1"><text>Зона дышит, %name%. Я иду в её дыхании.</text></string>
     <string id="st_nemesis_em_greh_arrival_2"><text>Небо горит ради тебя. Я — то, что оно посылает.</text></string>
     <string id="st_nemesis_em_greh_arrival_3"><text>Ты прячешься от дыхания Зоны. А я в нём родился.</text></string>
@@ -36,5 +36,21 @@
     <string id="st_nemesis_em_isg_reload_1"><text>Перезаряжаешься, %name%?</text></string>
     <string id="st_nemesis_em_boss_name"><text>Иларион Грех</text></string>
     <string id="st_nemesis_em_msg_on_his_way"><text>Босс выброса уже в пути.</text></string>
+
+    <string id="st_nemesis_em_army_arrival_1"><text>Защитный костюм держит. Захожу, %name%.</text></string>
+    <string id="st_nemesis_em_army_arrival_2"><text>Думал, выброс тебя укроет? Он укрывает меня.</text></string>
+    <string id="st_nemesis_em_army_arrival_3"><text>Учения на выброс: они прячутся, мы собираем. Ты спрятался.</text></string>
+    <string id="st_nemesis_em_army_arrival_4"><text>Твоё укрытие светится у меня на тепловизоре, %name%.</text></string>
+    <string id="st_nemesis_em_army_arrival_5"><text>Все выходы перекрыты. Что-то здесь на моей стороне.</text></string>
+    <string id="st_nemesis_em_army_arrival_6"><text>В лаборатории это называют полевым испытанием. Я называю это сезоном охоты.</text></string>
+    <string id="st_nemesis_em_army_arrival_7"><text>Зона держит тебя внутри. Я иду внутрь.</text></string>
+    <string id="st_nemesis_em_army_arrival_8"><text>Во время выброса эвакуации нет. Для тебя — вообще нет.</text></string>
+    <string id="st_nemesis_em_army_boss_escape_1"><text>Буря кончилась, и моё окно тоже. В следующий раз, %name%.</text></string>
+    <string id="st_nemesis_em_army_boss_escape_2"><text>Отозван после выброса. Ты всё ещё в списке.</text></string>
+    <string id="st_nemesis_em_army_follow_1"><text>Ушёл из укрытия, %name%? Плохая мысль в такую погоду.</text></string>
+    <string id="st_nemesis_em_army_follow_2"><text>Цель сменила позицию посреди выброса. Я всё ещё иду.</text></string>
+    <string id="st_nemesis_em_army_boss_stash_1"><text>Полковник %boss% убит. Координаты его тайника ушли в армейскую сеть.</text></string>
+    <string id="st_nemesis_em_army_boss_stash_2"><text>Армейский канал: «%boss% — двухсотый». Потом координаты: его тайник.</text></string>
+    <string id="st_nemesis_em_army_reload_1"><text>Перезаряжаешься, %name%?</text></string>
 
 </string_table>

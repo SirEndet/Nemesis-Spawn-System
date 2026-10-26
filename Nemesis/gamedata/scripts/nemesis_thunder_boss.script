@@ -1,0 +1,1082 @@
+-- Nemesis Thunder Boss: the mod's fifth module (round 165, the owner's design of 23 October 2026:
+
+local hunt_state = nemesis_state.S
+
+local function debug_line(...) nemesis_utils.log_tag("THUNDER", ...) end
+
+local SAVE_KEY = "nemesis_thunder_boss"
+local NAME_TEXT = "st_nemesis_thunder_boss_name"
+local SAVE_VERSION = 1
+
+---------------------------------------------------------------------------
+-- State
+---------------------------------------------------------------------------
+local casters = {}
+local force_pending = false
+local storm_rolled = false
+local last_visit_seconds = nil
+local last_surge_ms = nil
+local casts = {}
+local next_cast_at = {}
+local cast_installed = {}
+local planners_held = {}
+local aura_next_at = {}
+local surge_falls = {}
+local charges = {}
+local suppression_ends_at = {}
+local planner_refs = {}
+local target_history = {}
+local live_effects = {}
+local travel_strikes = {}
+local effect_failed = {}
+local communities = nil
+local community_given = {}
+local hostility_next_at = {}
+
+---------------------------------------------------------------------------
+-- Settings (this page's sliders; see mcm_page below)
+---------------------------------------------------------------------------
+
+local function enabled() return nemesis_mcm.get_bool("thunder_enabled", true) end
+
+local function setting(id, default, minimum, maximum) return nemesis_utils.clamped(id, default, minimum, maximum) end
+
+local function lightning_range_m() return setting("thunder_range", 30, 10, 60) end
+
+local function npc_range_m() return setting("thunder_npc_range", 45, 10, 80) end
+
+local function npc_cut() return setting("thunder_npc_dr", 60, 0, 95) / 100 end
+
+local function lightning_share() return setting("thunder_damage", 7, 1, 20) / 100 end
+
+local function regen_per_second() return setting("thunder_regen", 4, 0, 10) / 100 end
+
+local function caster_cut() return setting("thunder_dr", 90, 50, 95) / 100 end
+
+local function storm_chance() return setting("thunder_chance", 15, 0, 100) end
+
+local function gap_days() return setting("thunder_gap_days", 5, 0, 14) end
+
+---------------------------------------------------------------------------
+-- Relations
+---------------------------------------------------------------------------
+
+local HOSTILE_GOODWILL = -5000
+local HIS_GOODWILL = -3000
+local LIVING_COMMUNITY = "stalker"
+local DEATH_COMMUNITY = "arena_enemy"
+local LOW_HEALTH_DEATH_COMMUNITY = 0.2
+local HEALTH_BACK_TO_LONER = 0.3
+local HOSTILITY_STEP_MS = 2000
+local HOSTILITY_RANGE_M = 100
+local HOSTILITY_MAX = 40
+
+local function all_communities()
+    if communities then return communities end
+    communities = {}
+    local text = nemesis_engine.system_string("game_relations", "communities")
+    for token in string.gmatch(text or "", "[^,]+") do
+        local word = string.match(token, "^%s*(.-)%s*$")
+        if word ~= "" and not tonumber(word) then communities[#communities + 1] = word end
+    end
+    return communities
+end
+
+local function hostile_to_all(id)
+    local set = 0
+    for _, community in ipairs(all_communities()) do
+
+        if nemesis_engine.set_community_goodwill_toward(community, id, HOSTILE_GOODWILL) then set = set + 1 end
+    end
+    debug_line("Nemesis: the Thunder Boss is everyone's enemy (%s of %s communities).", tostring(set), tostring(#all_communities()))
+end
+
+local function give_community(caster, id, community)
+    if community_given[id] == community then return end
+    if nemesis_engine.set_community(caster, community) then
+        community_given[id] = community
+        debug_line("Nemesis: the Thunder Boss's community is %s now.", community)
+    end
+end
+
+local function hostility_step(caster, id, now)
+    if now < (hostility_next_at[id] or 0) then return end
+    hostility_next_at[id] = now + HOSTILITY_STEP_MS
+    local actor = db.actor
+    local actor_id = actor and actor:id()
+    if actor then nemesis_engine.force_set_goodwill(caster, HIS_GOODWILL, actor) end
+    local origin = caster:position()
+    local reach_sq = HOSTILITY_RANGE_M * HOSTILITY_RANGE_M
+    local done = 0
+
+    for npc_id, npc in xcreature.iterate_online() do
+        if done >= HOSTILITY_MAX then break end
+
+        if npc and npc_id ~= id and npc_id ~= actor_id and xcreature.is_stalker(npc) and not nemesis_state.member(npc_id) then
+            local spot = npc:position()
+            local dx, dz = spot.x - origin.x, spot.z - origin.z
+
+            if dx * dx + dz * dz <= reach_sq and xcreature.is_unscriptable(npc) ~= true and xcreature.is_trader(npc) ~= true then
+                nemesis_engine.force_set_goodwill(caster, HIS_GOODWILL, npc)
+                done = done + 1
+            end
+        end
+    end
+end
+
+local function community_step(caster, id)
+    local health = caster.health or 1
+    if health <= LOW_HEALTH_DEATH_COMMUNITY then
+        give_community(caster, id, DEATH_COMMUNITY)
+    elseif health > HEALTH_BACK_TO_LONER or community_given[id] == nil then
+        give_community(caster, id, LIVING_COMMUNITY)
+    end
+end
+
+---------------------------------------------------------------------------
+-- Effects
+---------------------------------------------------------------------------
+
+local ARC_SEGMENT_M = 2.2
+local ARC_SEGMENTS_MAX = 12
+local ARC_SWAY_M = 0.25
+local ARC_PARTICLES = "anomaly2\\effects\\electra2_trails"
+local HAND_PARTICLES = "anomaly2\\electra2_blast"
+local HIT_BODY_PARTICLES = "crommcruac\\electrocute_human"
+local HIT_GROUND_PARTICLES = "anomaly2\\electra_entrance_small"
+local PARTICLE_LIFE_MS = 700
+local BOLT_SOUND = "anomaly\\electra_blast1"
+local HIT_SOUND = "anomaly\\electra_hit"
+local LIGHT_COLOUR = { 0.8, 0.9, 1.0 }
+local LIGHT_RANGE_M = 9
+local LIGHT_LIFE_MS = 160
+local LIGHT_FLICKER = "koster_01_electra"
+
+local SKY_STRIKE_SOUND = "anomaly\\psi_storm_01"
+local SKY_LIGHT_RANGE_M = 25
+local SKY_LIGHT_LIFE_MS = 350
+local SKY_BOLT_HEIGHT_M = 25
+
+local AURA_PARTICLES = "anomaly2\\effects\\anomaly_electra_idle_sparks"
+local AURA_STEP_MS = 300
+local AURA_LIFE_MS = 700
+local AURA_RADIUS_M = 0.6
+local AURA_LOW_M, AURA_HIGH_M = -0.15, 0.35
+
+local SURGE_RISE_MS = 2000
+local SURGE_STEP_MS = 80
+local SURGE_TOP_M = 1.3
+local SURGE_RADIUS_M = 0.35
+
+local CHARGE_MS = 1500
+local CHARGE_STEP_MS = 90
+local CHARGE_HIGH_M = 0.9
+local CHARGE_SOUND = "anomaly\\electra_idle1"
+local CHARGE_SOUND_STEP_MS = 1600
+
+local TRAVEL_STRIKES = 5
+local TRAVEL_WINDOW_MS = 700
+local TRAVEL_SPREAD_M = 0.5
+
+local function play_effect(name, position, life_ms)
+    local ok, err = pcall(function()
+
+        local effect = particles_object(name)
+        effect:play_at_pos(position)
+        live_effects[#live_effects + 1] = { object = effect, stop_at = time_global() + life_ms }
+    end)
+
+    if not ok and not effect_failed[name] then
+        effect_failed[name] = true
+        debug_line("Nemesis FX: the effect %s could not be played (%s).", name, tostring(err))
+    end
+end
+
+local function flash_light(position, range_m, life_ms)
+    pcall(function()
+
+        local light = script_light()
+        light.type = 1
+        light.range = range_m or LIGHT_RANGE_M
+        light.lanim = LIGHT_FLICKER
+        light.hud_mode = false
+        light.shadow = true
+        light.volumetric = false
+        light.color = fcolor():set(LIGHT_COLOUR[1], LIGHT_COLOUR[2], LIGHT_COLOUR[3], 1)
+        light:set_position(position)
+        light.enabled = true
+        light:update()
+        live_effects[#live_effects + 1] = { object = light, stop_at = time_global() + (life_ms or LIGHT_LIFE_MS), is_light = true }
+    end)
+end
+
+local function play_sound(name, position)
+    local path = nemesis_sound.pick("thunder_boss " .. name, { name })
+    local volume = nemesis_sound.volume("lightning_volume", 60)
+    if path and volume > 0 then nemesis_sound.play_at(path, position, volume) end
+end
+
+local function stop_effects(now)
+    for index = #live_effects, 1, -1 do
+        local entry = live_effects[index]
+        if now >= entry.stop_at then
+            pcall(function()
+                if entry.is_light then
+                    entry.object.enabled = false
+                    entry.object:update()
+                else
+                    entry.object:stop()
+                end
+            end)
+            table.remove(live_effects, index)
+        end
+    end
+end
+
+local function lay_sparks(start, finish)
+    local dx, dy, dz = finish.x - start.x, finish.y - start.y, finish.z - start.z
+    local length = math.sqrt(dx * dx + dy * dy + dz * dz)
+    if length < 0.5 then return false end
+    local segments = math.max(3, math.min(ARC_SEGMENTS_MAX, math.floor(length / ARC_SEGMENT_M)))
+    for step = 1, segments do
+        local along = step / segments
+        local sway = (step < segments) and ARC_SWAY_M or 0
+        local spark = vector():set(start.x + dx * along + (math.random() * 2 - 1) * sway,
+                                   start.y + dy * along + (math.random() * 2 - 1) * sway,
+                                   start.z + dz * along + (math.random() * 2 - 1) * sway)
+        play_effect(ARC_PARTICLES, spark, PARTICLE_LIFE_MS)
+    end
+    return true
+end
+
+local function draw_arc(start, finish)
+    if not lay_sparks(start, finish) then return end
+    play_effect(HAND_PARTICLES, start, PARTICLE_LIFE_MS)
+    flash_light(start)
+    play_sound(BOLT_SOUND, start)
+end
+
+local function draw_sky_bolt(spot)
+    lay_sparks(vector():set(spot.x, spot.y + SKY_BOLT_HEIGHT_M, spot.z), spot)
+    play_effect(HAND_PARTICLES, spot, PARTICLE_LIFE_MS)
+    flash_light(vector():set(spot.x, spot.y + 1, spot.z), SKY_LIGHT_RANGE_M, SKY_LIGHT_LIFE_MS)
+end
+
+local function aura_step(caster, id, now)
+    if now < (aura_next_at[id] or 0) then return end
+    aura_next_at[id] = now + AURA_STEP_MS
+    local feet = caster:position()
+    local angle = math.random() * 2 * math.pi
+    local out = math.random() * AURA_RADIUS_M
+    local spot = vector():set(feet.x + math.cos(angle) * out, feet.y + AURA_LOW_M + math.random() * (AURA_HIGH_M - AURA_LOW_M),
+                              feet.z + math.sin(angle) * out)
+    play_effect(AURA_PARTICLES, spot, AURA_LIFE_MS)
+end
+
+local function charge_step(caster, charge, now)
+    if now >= charge.spark_at then
+        charge.spark_at = now + CHARGE_STEP_MS
+        local feet = caster:position()
+        local angle = math.random() * 2 * math.pi
+        local out = math.random() * AURA_RADIUS_M
+        play_effect(AURA_PARTICLES, vector():set(feet.x + math.cos(angle) * out, feet.y + AURA_LOW_M + math.random() * (CHARGE_HIGH_M - AURA_LOW_M),
+                                                 feet.z + math.sin(angle) * out), AURA_LIFE_MS)
+    end
+    if now >= charge.sound_at then
+        charge.sound_at = now + CHARGE_SOUND_STEP_MS
+        play_sound(CHARGE_SOUND, caster:position())
+    end
+    return now >= charge.ends_at
+end
+
+local function surge_spark(caster, share)
+    local feet = caster:position()
+    local angle = math.random() * 2 * math.pi
+    play_effect(AURA_PARTICLES, vector():set(feet.x + math.cos(angle) * SURGE_RADIUS_M, feet.y + SURGE_TOP_M * share,
+                                             feet.z + math.sin(angle) * SURGE_RADIUS_M), AURA_LIFE_MS)
+end
+
+local function queue_travel_strikes(spot)
+    local now = time_global()
+    local moments = {}
+    for strike = 1, TRAVEL_STRIKES do moments[strike] = now + math.random(0, TRAVEL_WINDOW_MS) end
+    table.sort(moments)
+    for strike, at in ipairs(moments) do
+        local x = spot.x + (math.random() * 2 - 1) * TRAVEL_SPREAD_M
+        local z = spot.z + (math.random() * 2 - 1) * TRAVEL_SPREAD_M
+        travel_strikes[#travel_strikes + 1] = { at = at, spot = vector():set(x, spot.y, z), loud = strike == 1 }
+    end
+    table.sort(travel_strikes, function(a, b) return a.at < b.at end)
+end
+
+---------------------------------------------------------------------------
+-- Targets
+---------------------------------------------------------------------------
+
+local AIM_DELAY_MS = 500
+local HISTORY_STEP_MS = 100
+local HISTORY_KEEP_MS = 1500
+local CANDIDATES_MAX = 12
+
+local function remember_position(id, object, now)
+    local list = target_history[id]
+    if not list then
+        list = {}
+        target_history[id] = list
+    end
+    local last = list[#list]
+    if last and now - last.at < HISTORY_STEP_MS then return end
+    local position = object:position()
+    list[#list + 1] = { at = now, x = position.x, y = position.y, z = position.z }
+    while #list > 1 and now - list[1].at > HISTORY_KEEP_MS do table.remove(list, 1) end
+end
+
+local function position_before(id, now, fallback)
+    local list = target_history[id]
+    if not list or #list == 0 then return fallback end
+    local wanted_at = now - AIM_DELAY_MS
+    local chosen = list[1]
+    for _, spot in ipairs(list) do
+        if spot.at <= wanted_at then chosen = spot else break end
+    end
+    return vector():set(chosen.x, chosen.y, chosen.z)
+end
+
+local function pick_target(caster)
+    local range = lightning_range_m()
+    local actor = db.actor
+    local seen = false
+
+    if actor then pcall(function() seen = caster:see(actor) end) end
+    if seen and caster:position():distance_to(actor:position()) <= range then return actor end
+    local enemy = nil
+
+    pcall(function() enemy = caster:best_enemy() end)
+
+    if not enemy or (actor and enemy:id() == actor:id()) or nemesis_state.member(enemy:id()) then return nil end
+    local protected = true
+
+    pcall(function() protected = xcreature.is_unscriptable(enemy) == true or xcreature.is_trader(enemy) == true end)
+    if protected then return nil end
+    local usable = false
+    pcall(function() usable = enemy:alive() and caster:see(enemy) and caster:position():distance_to(enemy:position()) <= npc_range_m() end)
+    if usable then return enemy end
+    return nil
+end
+
+local function strikable(caster, npc)
+    local ok = false
+    pcall(function()
+        if nemesis_state.member(npc:id()) then return end
+
+        if xcreature.is_unscriptable(npc) == true or xcreature.is_trader(npc) == true then return end
+
+        local enemies = caster:relation(npc) == game_object.enemy or npc:relation(caster) == game_object.enemy
+        ok = npc:alive() and enemies and caster:see(npc)
+            and caster:position():distance_to(npc:position()) <= npc_range_m()
+    end)
+    return ok
+end
+
+local function volley_target(caster, number)
+    local actor = db.actor
+    local you_in_reach = false
+    if actor then
+        pcall(function() you_in_reach = caster:see(actor) and caster:position():distance_to(actor:position()) <= lightning_range_m() end)
+    end
+    if number == 1 and you_in_reach then return actor end
+    local best, best_score = nil, nil
+    local actor_id = actor and actor:id()
+    local caster_id = caster:id()
+    local origin = caster:position()
+    local reach_sq = npc_range_m() * npc_range_m()
+    local looked_at = 0
+
+    for id, npc in xcreature.iterate_online() do
+        if npc and id ~= actor_id and id ~= caster_id and looked_at < CANDIDATES_MAX
+            and (xcreature.is_stalker(npc) or xcreature.is_mutant(npc)) then
+            local spot = npc:position()
+            local dx, dz = spot.x - origin.x, spot.z - origin.z
+            if dx * dx + dz * dz <= reach_sq then
+                looked_at = looked_at + 1
+                if strikable(caster, npc) then
+                    local score = actor and spot:distance_to(actor:position()) or math.sqrt(dx * dx + dz * dz)
+                    if not best_score or score < best_score then best, best_score = npc, score end
+                end
+            end
+        end
+    end
+    if best then return best end
+    if you_in_reach then return actor end
+    return nil
+end
+
+---------------------------------------------------------------------------
+-- The cast
+---------------------------------------------------------------------------
+
+local CAST_VOLLEYS = 3
+local VOLLEY_INTERVAL_MS = 3000
+local FIRST_VOLLEY_DELAY_MS = 1500
+local HAND_RAISE_WAIT_MS = 1500
+local BOLTS_MIN, BOLTS_MAX = 2, 5
+local BOLT_GAP_MS = 120
+local COOLDOWN_MS = 20000
+local WIND_DOWN_MS = 600
+
+local HAND_BONE = "bip01_r_hand"
+local AIM_HEIGHT_M = 1.2
+local BOLT_JITTER_M = 0.35
+local BOLT_HIT_RADIUS_M = 1.0
+
+local KILL_HIT_POWER = 1000
+
+local SUPPRESSION_CHANCE = 0.5
+local SUPPRESSION_MS = 2500
+local SUPPRESSION_BURST_SCALE = 8
+local SUPPRESSION_SPREAD = 4
+
+local function hand_position(caster)
+    local position = nil
+
+    pcall(function() position = caster:bone_position(HAND_BONE) end)
+    if position then return position end
+    local feet = caster:position()
+    return vector():set(feet.x, feet.y + AIM_HEIGHT_M, feet.z)
+end
+
+local function wall_between(start, player)
+    local is_blocked = false
+    pcall(function()
+        local feet = player:position()
+
+        is_blocked = xcombat.is_line_blocked(vector():set(start.x, feet.y, start.z), feet,
+                                             { from_y = start.y - feet.y, to_y = AIM_HEIGHT_M }) == true
+    end)
+    return is_blocked
+end
+
+local function fire_bolt(caster, at_player, aim)
+    local start = hand_position(caster)
+    local finish = vector():set(aim.x + (math.random() * 2 - 1) * BOLT_JITTER_M, aim.y + AIM_HEIGHT_M,
+                                aim.z + (math.random() * 2 - 1) * BOLT_JITTER_M)
+    draw_arc(start, finish)
+    local actor = db.actor
+    if at_player and actor then
+        local feet = actor:position()
+        local flat = math.sqrt((feet.x - finish.x) ^ 2 + (feet.z - finish.z) ^ 2)
+        if flat <= BOLT_HIT_RADIUS_M and not wall_between(start, actor) then
+            local share = lightning_share()
+            nemesis_engine.drain_player_health(share)
+            play_effect(HIT_BODY_PARTICLES, vector():set(feet.x, feet.y + AIM_HEIGHT_M, feet.z), PARTICLE_LIFE_MS)
+            play_sound(HIT_SOUND, feet)
+            debug_line("Nemesis: a bolt hits you (%s %% of your health).", string.format("%.0f", share * 100))
+            return
+        end
+    end
+    play_effect(at_player and HIT_GROUND_PARTICLES or HIT_BODY_PARTICLES, finish, PARTICLE_LIFE_MS)
+end
+
+local function kill_target(caster, target)
+    pcall(function()
+        if not target:alive() then return end
+
+        local blow = hit()
+        blow.type = hit.shock
+        blow.power = KILL_HIT_POWER
+        blow.impulse = 0
+        blow.draftsman = caster
+        blow.direction = vector():set(0, -1, 0)
+
+        target:hit(blow)
+    end)
+    debug_line("Nemesis: the last zap kills %s.", tostring(target:id()))
+end
+
+local function start_cast(caster, target, now)
+    local actor = db.actor
+    casts[caster:id()] = { target_id = target:id(), at_player = actor ~= nil and target:id() == actor:id(),
+                           next_volley_at = nil, raise_deadline = now + HAND_RAISE_WAIT_MS, hand_raised = false,
+                           volleys_done = 0, bolts_due = {}, ends_at = nil }
+    debug_line("Nemesis: %s casts at %s.", tostring(nemesis_state.name_of(caster:id())), actor and target:id() == actor:id() and "you" or tostring(target:id()))
+end
+
+local function start_suppression(id, now)
+
+    local caster = level.object_by_id(id)
+    local record = nemesis_state.member(id)
+    if not (caster and record) then return end
+    record.spread_mult = SUPPRESSION_SPREAD
+
+    pcall(function() xcombat.set_fire_queue_scale(caster, SUPPRESSION_BURST_SCALE, -1) end)
+    suppression_ends_at[id] = now + SUPPRESSION_MS
+    debug_line("Nemesis: %s opens up: a suppression burst.", tostring(nemesis_state.name_of(id)))
+end
+
+local function end_suppression(id)
+    suppression_ends_at[id] = nil
+    local record = nemesis_state.member(id)
+    if record then record.spread_mult = nil end
+    local caster = level.object_by_id(id)
+    if caster then pcall(function() xcombat.set_fire_queue_scale(caster, 1, -1) end) end
+end
+
+local function end_cast(id, now)
+    if casts[id] and casts[id].hand_raised then surge_falls[id] = { from = now, next_at = now } end
+    casts[id] = nil
+    next_cast_at[id] = now + COOLDOWN_MS
+    if math.random() < SUPPRESSION_CHANCE then start_suppression(id, now) end
+end
+
+local function on_hand_raised(caster, cast)
+    if cast.hand_raised then return end
+    cast.hand_raised = true
+    cast.raised_at = time_global()
+    cast.next_volley_at = cast.raised_at + FIRST_VOLLEY_DELAY_MS
+    local feet = caster:position()
+    draw_sky_bolt(hand_position(caster))
+    play_sound(SKY_STRIKE_SOUND, feet)
+end
+
+local function step_cast(caster, cast, now)
+    if not cast.hand_raised and now >= cast.raise_deadline then on_hand_raised(caster, cast) end
+
+    if cast.hand_raised and now >= (cast.surge_next_at or 0) then
+        cast.surge_next_at = now + SURGE_STEP_MS
+        surge_spark(caster, math.min(1, (now - cast.raised_at) / SURGE_RISE_MS))
+    end
+
+    if cast.hand_raised then
+        local seconds = (now - (cast.healed_at or now)) / 1000
+        cast.healed_at = now
+        local gain = regen_per_second() * seconds
+        if gain > 0 and caster.health < 1 then
+            nemesis_engine.set_health(caster, math.min(1, caster.health + gain))
+        end
+    end
+    if cast.next_volley_at and now >= cast.next_volley_at and cast.volleys_done < CAST_VOLLEYS then
+
+        local volley_at = volley_target(caster, cast.volleys_done + 1)
+        if not volley_at then
+
+            debug_line("Nemesis: volley %s has no target: the cast ends early.", tostring(cast.volleys_done + 1))
+            cast.volleys_done = CAST_VOLLEYS - 1
+        end
+        if volley_at then
+            local actor = db.actor
+            local at_player = actor ~= nil and volley_at:id() == actor:id()
+            local aim = at_player and position_before(volley_at:id(), now, volley_at:position()) or volley_at:position()
+            local count = math.random(BOLTS_MIN, BOLTS_MAX)
+            for bolt = 1, count do
+                cast.bolts_due[#cast.bolts_due + 1] = { at = now + (bolt - 1) * BOLT_GAP_MS, aim = aim, at_player = at_player,
+                                                        kills = (not at_player and bolt == count) and volley_at:id() or nil }
+            end
+            debug_line("Nemesis: volley %s at %s.", tostring(cast.volleys_done + 1), at_player and "you" or tostring(volley_at:id()))
+        end
+        cast.volleys_done = cast.volleys_done + 1
+        cast.next_volley_at = cast.volleys_done < CAST_VOLLEYS and now + VOLLEY_INTERVAL_MS or nil
+    end
+    while cast.bolts_due[1] and now >= cast.bolts_due[1].at do
+        local bolt = table.remove(cast.bolts_due, 1)
+        fire_bolt(caster, bolt.at_player, bolt.aim)
+        if bolt.kills then
+
+            local victim = level.object_by_id(bolt.kills)
+            if victim then kill_target(caster, victim) end
+        end
+    end
+    if cast.volleys_done >= CAST_VOLLEYS and #cast.bolts_due == 0 then
+        if not cast.ends_at then
+            cast.ends_at = now + WIND_DOWN_MS
+        elseif now >= cast.ends_at then
+            end_cast(caster:id(), now)
+        end
+    end
+end
+
+local CAST_ID = 188591
+
+class "nemesis_cast_gate" (property_evaluator)
+
+function nemesis_cast_gate:__init(name) super(nil, name) end
+
+function nemesis_cast_gate:evaluate()
+    local ok, open = pcall(function() return self.object ~= nil and casts[self.object:id()] ~= nil end)
+    return ok and open == true
+end
+
+class "nemesis_cast_action" (action_base)
+
+function nemesis_cast_action:__init(name) super(nil, name) end
+
+function nemesis_cast_action:initialize()
+    action_base.initialize(self)
+    local caster = self.object
+    pcall(function()
+
+        caster:clear_animations()
+
+        caster:set_desired_position()
+        caster:set_desired_direction()
+        caster:set_movement_type(move.stand)
+        caster:set_body_state(move.standing)
+        caster:set_mental_state(anim.danger)
+
+        caster:set_item(object.idle, nil)
+    end)
+
+    pcall(function()
+        local cast = caster and casts[caster:id()]
+        if cast then
+            debug_line("Nemesis: his cast action takes him (weapon away, hand up).")
+            on_hand_raised(caster, cast)
+        end
+    end)
+end
+
+function nemesis_cast_action:execute()
+    action_base.execute(self)
+    local caster = self.object
+
+    pcall(function()
+        if not caster or not caster:alive() then return end
+        local cast = casts[caster:id()]
+        if not cast then return end
+        local target = level.object_by_id(cast.target_id)
+
+        if target then caster:set_sight(target, true, false, false) end
+
+        caster:set_item(object.idle, nil)
+
+        caster:set_movement_type(move.stand)
+        caster:set_body_state(move.standing)
+        caster:set_desired_position()
+
+        if caster:animation_count() == 0 then caster:add_animation("hand_up_0", true, false) end
+    end)
+end
+
+function nemesis_cast_action:finalize()
+    action_base.finalize(self)
+    pcall(function() self.object:clear_animations() end)
+    debug_line("Nemesis: his cast action lets him go.")
+end
+
+local function apply_blocks(caster)
+    local id = caster:id()
+    local done = planners_held[id] or {}
+    planners_held[id] = done
+    pcall(function()
+        local manager = caster:motivation_action_manager()
+        local list = {}
+        for _, planner_id in ipairs(nemesis_chase.takeover_planner_ids()) do list[#list + 1] = planner_id end
+
+        if xgraft and type(xgraft.TAKEOVER_ID) == "number" then list[#list + 1] = xgraft.TAKEOVER_ID end
+        for _, planner_id in ipairs(list) do
+            if not done[planner_id] then
+
+                local planner = manager:action(planner_id)
+                if planner then
+                    planner:add_precondition(world_property(CAST_ID, false))
+                    done[planner_id] = true
+                end
+            end
+        end
+    end)
+end
+
+local function install_cast(caster)
+    local id = caster:id()
+    if cast_installed[id] then return true end
+    local ok, err = pcall(function()
+
+        local manager = caster:motivation_action_manager()
+        local gate = nemesis_cast_gate("eva_nemesis_cast")
+        local action = nemesis_cast_action("act_nemesis_cast")
+
+        action:add_precondition(world_property(stalker_ids.property_alive, true))
+        action:add_precondition(world_property(CAST_ID, true))
+        action:add_effect(world_property(CAST_ID, false))
+
+        manager:add_evaluator(CAST_ID, gate)
+        manager:add_action(CAST_ID, action)
+        planner_refs[id] = { gate, action }
+    end)
+    if not ok then
+        debug_line("!Nemesis ERROR: the cast action could not be installed (%s).", tostring(err))
+        return false
+    end
+    cast_installed[id] = true
+    apply_blocks(caster)
+    return true
+end
+
+---------------------------------------------------------------------------
+-- The frame job
+---------------------------------------------------------------------------
+
+local function travel_strikes_step(now)
+    while travel_strikes[1] and now >= travel_strikes[1].at do
+        local strike = table.remove(travel_strikes, 1)
+        draw_sky_bolt(strike.spot)
+        if strike.loud then play_sound(SKY_STRIKE_SOUND, strike.spot) end
+    end
+end
+
+local function surge_fall_step(caster, id, now)
+    local fall = surge_falls[id]
+    if not fall then return end
+    local share = 1 - (now - fall.from) / SURGE_RISE_MS
+    if share <= 0 then
+        surge_falls[id] = nil
+    elseif now >= fall.next_at then
+        fall.next_at = now + SURGE_STEP_MS
+        surge_spark(caster, share)
+    end
+end
+
+local function ready_step(caster, id, record, now)
+    if now < (next_cast_at[id] or 0) or record.retreat_at or not install_cast(caster) then return end
+    local in_cover = false
+
+    pcall(function() in_cover = caster:in_smart_cover() end)
+    local target = not in_cover and pick_target(caster) or nil
+    local charge = charges[id]
+    if not charge then
+
+        if target then
+            charges[id] = { ends_at = now + CHARGE_MS, spark_at = now, sound_at = now }
+            debug_line("Nemesis: %s charges (the warning, %s s).", tostring(nemesis_state.name_of(id)), tostring(CHARGE_MS / 1000))
+        end
+    elseif charge_step(caster, charge, now) then
+        charges[id] = nil
+        if target then
+            apply_blocks(caster)
+            start_cast(caster, target, now)
+        else
+            debug_line("Nemesis: the charge fades: no target in sight.")
+        end
+    end
+end
+
+local function caster_step(caster, id, record, now)
+    aura_step(caster, id, now)
+    hostility_step(caster, id, now)
+    community_step(caster, id)
+    if suppression_ends_at[id] and now >= suppression_ends_at[id] then end_suppression(id) end
+    surge_fall_step(caster, id, now)
+    local cast = casts[id]
+    if cast then
+        local target = level.object_by_id(cast.target_id)
+        if target then remember_position(cast.target_id, target, now) end
+        step_cast(caster, cast, now)
+    else
+        ready_step(caster, id, record, now)
+    end
+end
+
+local function frame_job(now)
+    stop_effects(now)
+    travel_strikes_step(now)
+    if not enabled() then return end
+    local actor = db.actor
+    if actor then remember_position(actor:id(), actor, now) end
+    for id in pairs(casters) do
+        local caster = level.object_by_id(id)
+        local record = nemesis_state.member(id)
+        if caster and record and caster:alive() then
+            caster_step(caster, id, record, now)
+        else
+            casts[id] = nil
+            charges[id] = nil
+        end
+    end
+end
+
+---------------------------------------------------------------------------
+-- Coming and going
+---------------------------------------------------------------------------
+local THUNDER_SECTION = "nemesis_thunder_boss"
+local THUNDER_SQUAD = "nemesis_thunder_squad"
+
+local STORM_QUIET_AFTER_SURGE_MS = 300000
+local SECONDS_PER_DAY = 86400
+
+local LONER_LOOKS = { "actors\\stalker_neutral\\stalker_neutral_exoseva", "actors\\stalker_neutral\\stalker_exo_proto",
+                      "actors\\stalker_neutral\\stalker_neutral_4" }
+
+local function default_name() return nemesis_lines.text(NAME_TEXT) end
+
+local function boss_name() return nemesis_utils.spaced_name(nemesis_mcm.get_string("thunder_name", default_name())) end
+
+local function make_thunder_boss(id)
+    hunt_state.boss_id = id
+    hunt_state.boss_hunt = true
+    hunt_state.last_boss_day = math.floor(nemesis_engine.game_seconds() / SECONDS_PER_DAY)
+    hunt_state.boss_sneak = nil
+    hunt_state.sneak_started, hunt_state.sneak_said, hunt_state.sneak_wait = nil, nil, nil
+    hunt_state.boss_shots, hunt_state.boss_hit_frames, hunt_state.boss_hit_frame = 0, 0, nil
+    hunt_state.boss_look = nil
+    for _, look in ipairs(LONER_LOOKS) do
+        if nemesis_engine.mesh_exists(look) then
+            hunt_state.boss_look = look
+            break
+        end
+    end
+    casters[id] = true
+    community_given[id] = nil
+    hostile_to_all(id)
+    debug_line("Nemesis: '%s' is the boss of this hunt: the Thunder Boss.", tostring(nemesis_state.name_of(id)))
+end
+
+local function storm_on()
+    local period = 0
+
+    pcall(function() period = weather.get_value_numric("thunderbolt_period") or 0 end)
+    return period > 0
+end
+
+local function arrive(why)
+    local faction = nemesis_utils.faction_for_player()
+
+    local section = THUNDER_SQUAD
+    if not (nemesis_engine.section_exists(THUNDER_SECTION) and nemesis_engine.section_exists(THUNDER_SQUAD)) then
+        debug_line("!Nemesis ERROR: the Thunder Boss's own sections are missing; he comes in the hunt's squad.")
+        section = nemesis_utils.resolve_squad_section(faction)
+    end
+
+    local ok, position = pcall(nemesis_spawn.spawn_lone_boss, faction, nil,
+        { section = section, name = boss_name(), make_boss = make_thunder_boss, label = "Thunder Boss" })
+    if not ok then
+        debug_line("!Nemesis ERROR: the Thunder Boss could not come (%s).", tostring(position))
+        return false, true
+    end
+    if not position then return false, false end
+    last_visit_seconds = nemesis_engine.game_seconds()
+    queue_travel_strikes(position)
+    debug_line("Nemesis: the Thunder Boss comes (%s).", why)
+    return true, false
+end
+
+local function arrival_tick()
+    local now_ms = time_global()
+
+    if nemesis_compat.surge_on() then last_surge_ms = now_ms end
+    if not enabled() then return end
+    if hunt_state.phase ~= "idle" or hunt_state.follow then return end
+
+    if nemesis_events.ask("boss_exists") then return end
+    if force_pending then
+        local came, failed = arrive("Force the next hunt")
+        if came or failed then force_pending = false end
+        return
+    end
+    if not storm_on() then
+        storm_rolled = false
+        return
+    end
+    if storm_rolled then return end
+    if last_surge_ms and now_ms - last_surge_ms < STORM_QUIET_AFTER_SURGE_MS then return end
+    if (hunt_state.spawned_count or 0) == 0 then return end
+    if nemesis_mcm.get_bool("prepare_uninstall", false) then return end
+    local now = nemesis_engine.game_seconds()
+    if last_visit_seconds and now >= last_visit_seconds and now - last_visit_seconds < gap_days() * SECONDS_PER_DAY then return end
+    storm_rolled = true
+    local roll = math.random() * 100
+    debug_line("Nemesis: a thunderstorm: the Thunder Boss's roll %s against %s %%.", string.format("%.1f", roll), tostring(storm_chance()))
+    if roll < storm_chance() then
+        local came, failed = arrive("out of the storm")
+        if not came and not failed then storm_rolled = false end
+    end
+end
+
+local function on_member_died(id, record, by_you, teleports)
+    if not casters[id] or not teleports then return end
+    local feet = nil
+
+    pcall(function() feet = level.object_by_id(id):position() end)
+    if not feet then return end
+    queue_travel_strikes(feet)
+    debug_line("Nemesis: %s leaves in lightning (killed by an NPC).", tostring(record and record.name))
+end
+
+---------------------------------------------------------------------------
+-- Save and load
+---------------------------------------------------------------------------
+
+local function on_saving(save_data)
+    if type(save_data) ~= "table" then return end
+    local ids = {}
+    for id in pairs(casters) do ids[#ids + 1] = tostring(id) end
+    save_data[SAVE_KEY] = { v = SAVE_VERSION, casters = table.concat(ids, ";"), force = force_pending or nil,
+                            storm_rolled = storm_rolled or nil, last_visit = last_visit_seconds }
+end
+
+local function on_loaded(save_data)
+    casters, force_pending, storm_rolled, last_visit_seconds = {}, false, false, nil
+    local saved = type(save_data) == "table" and save_data[SAVE_KEY] or nil
+    if type(saved) ~= "table" then return end
+    for id in string.gmatch(type(saved.casters) == "string" and saved.casters or "", "%d+") do casters[tonumber(id)] = true end
+    force_pending = saved.force == true
+    storm_rolled = saved.storm_rolled == true
+    last_visit_seconds = tonumber(saved.last_visit)
+end
+
+local function on_runtime_reset(loaded)
+    if not loaded then casters, force_pending, storm_rolled, last_visit_seconds = {}, false, false, nil end
+    last_surge_ms = nil
+    casts, charges, next_cast_at, suppression_ends_at = {}, {}, {}, {}
+    cast_installed, planners_held, planner_refs = {}, {}, {}
+    target_history, aura_next_at, surge_falls, travel_strikes = {}, {}, {}, {}
+    community_given, hostility_next_at = {}, {}
+
+    for id in pairs(casters) do hostile_to_all(id) end
+    nemesis_compat.hook_dfrc_skip(THUNDER_SECTION)
+end
+
+---------------------------------------------------------------------------
+-- The module
+---------------------------------------------------------------------------
+
+local MODULE_NAME = "The Thunder Boss"
+
+local function answer_flat_damage_cut(id)
+    local cast = id ~= nil and casts[id]
+    if cast and cast.hand_raised and casters[id] and enabled() then return caster_cut() end
+    return nil
+end
+
+local function answer_keeps_npc_hits(victim_id, shooter_id)
+    if not enabled() then return nil end
+    local other = (casters[shooter_id] and victim_id) or (casters[victim_id] and shooter_id) or nil
+    if not other then return nil end
+    local npc = level.object_by_id(other)
+    local spared = true
+
+    pcall(function() spared = xcreature.is_unscriptable(npc) == true or xcreature.is_trader(npc) == true end)
+    if spared then return nil end
+    return true
+end
+
+local function answer_own_player_relation(id)
+    if id ~= nil and casters[id] and enabled() then return true end
+    return nil
+end
+
+local function answer_casting(id)
+    if id ~= nil and casts[id] then return true end
+    return nil
+end
+
+local function answer_force(kind)
+    if kind ~= "thunder_boss" then return nil end
+    force_pending = true
+    debug_line("Nemesis: Force the next hunt: the Thunder Boss comes as soon as no hunt runs.")
+    return true
+end
+
+local function answer_boss_npc_cut(id)
+    if id ~= nil and casters[id] and enabled() then return npc_cut() end
+    return nil
+end
+
+local function answer_boss_update(caster, record)
+    if not (record and casters[record.id]) then return nil end
+    nemesis_combat.set_focus(record.id, true)
+    local look = hunt_state.boss_look
+    if look then
+        local current = nemesis_fx.get_visual(caster)
+        if current ~= look then nemesis_fx.set_visual(caster, look) end
+    end
+    return true
+end
+
+local function answer_boss_no_cloak()
+    if hunt_state.boss_id ~= nil and casters[hunt_state.boss_id] then return true end
+    return nil
+end
+
+local function answer_is_boss_name(candidate)
+    if candidate ~= nil and candidate == boss_name() then return true end
+    return nil
+end
+
+local function is_his_follow(follow)
+    local first = follow and follow.members and follow.members[1]
+    return first ~= nil and first.boss == true and first.name == boss_name()
+end
+
+local function answer_follow_boss(id, follow)
+    if not is_his_follow(follow) then return nil end
+    make_thunder_boss(id)
+    return true
+end
+
+local function answer_squad_section(faction, follow)
+    if is_his_follow(follow) and nemesis_engine.section_exists(THUNDER_SQUAD) then return THUNDER_SQUAD end
+    return nil
+end
+
+local function answer_own_exit(id) return casters[id] and true or nil end
+
+local function on_hunt_ended() casters, casts = {}, {} end
+
+local function on_boss_hit_may_kill(id)
+    if not casters[id] then return end
+    local caster = level.object_by_id(id)
+    if caster then give_community(caster, id, DEATH_COMMUNITY) end
+end
+
+function on_game_start()
+
+    nemesis_events.answer("flat_damage_cut", MODULE_NAME, answer_flat_damage_cut)
+    nemesis_events.answer("keeps_npc_hits", MODULE_NAME, answer_keeps_npc_hits)
+    nemesis_events.answer("own_player_relation", MODULE_NAME, answer_own_player_relation)
+    nemesis_events.answer("casting", MODULE_NAME, answer_casting)
+    nemesis_events.answer("force", MODULE_NAME, answer_force)
+    nemesis_events.answer("boss_npc_cut", MODULE_NAME, answer_boss_npc_cut)
+    nemesis_events.answer("boss_update", MODULE_NAME, answer_boss_update, 150)
+    nemesis_events.answer("boss_no_cloak", MODULE_NAME, answer_boss_no_cloak)
+    nemesis_events.answer("is_boss_name", MODULE_NAME, answer_is_boss_name)
+    nemesis_events.answer("follow_boss", MODULE_NAME, answer_follow_boss, 140)
+    nemesis_events.answer("squad_section", MODULE_NAME, answer_squad_section, 140)
+    nemesis_events.answer("own_exit", MODULE_NAME, answer_own_exit)
+
+    nemesis_events.on("hunt_ended", MODULE_NAME, on_hunt_ended)
+    nemesis_events.on("member_died", MODULE_NAME, on_member_died)
+    nemesis_events.on("boss_hit_may_kill", MODULE_NAME, on_boss_hit_may_kill)
+    nemesis_events.on("runtime_reset", MODULE_NAME, on_runtime_reset)
+    nemesis_events.on("saving", MODULE_NAME, on_saving)
+    nemesis_events.on("loaded", MODULE_NAME, on_loaded)
+
+    pcall(function() state_mgr.combat_action_ids[CAST_ID] = true end)
+
+    nemesis_core.add_job("frame", "the Thunder Boss's lightning", function(now) frame_job(now) end, nil, true)
+    nemesis_core.add_job("slow", "the Thunder Boss's arrival", arrival_tick, 64, true)
+    debug_line("Nemesis: The Thunder Boss is in (12 answers, 6 listeners, 1 frame job, 1 slow job).")
+end
+
+---------------------------------------------------------------------------
+-- Settings: this script declares the Thunder Boss's page (round 165; more comes with his design)
+---------------------------------------------------------------------------
+
+function mcm_page()
+    return { id = "thunder_boss", sh = true, text = "ui_mcm_nemesis_page_thunder_boss", gr = {
+        { id = "title", type = "slide", link = "ui_options_slider_player", text = "ui_mcm_nemesis_title", size = {512, 50}, spacing = 20 },
+        { id = "head_thunder", type = "title", text = "ui_mcm_nemesis_head_thunder", align = "l", clr = nemesis_mcm.HEAD_CLR },
+        { id = "thunder_enabled", type = "check", val = 1, def = true, hint = "nemesis_thunder_enabled" },
+        { id = "thunder_name", type = "input", val = 0, def = default_name(), hint = "nemesis_thunder_name" },
+        { id = "thunder_chance", type = "track", val = 2, def = 15, min = 0, max = 100, step = 5, prec = 0, hint = "nemesis_thunder_chance" },
+        { id = "thunder_gap_days", type = "track", val = 2, def = 5, min = 0, max = 14, step = 1, prec = 0, hint = "nemesis_thunder_gap_days" },
+        { id = "thunder_dr", type = "track", val = 2, def = 90, min = 50, max = 95, step = 5, prec = 0, hint = "nemesis_thunder_dr" },
+        { id = "thunder_damage", type = "track", val = 2, def = 7, min = 1, max = 20, step = 1, prec = 0, hint = "nemesis_thunder_damage" },
+        { id = "thunder_regen", type = "track", val = 2, def = 4, min = 0, max = 10, step = 1, prec = 0, hint = "nemesis_thunder_regen" },
+        { id = "thunder_range", type = "track", val = 2, def = 30, min = 10, max = 60, step = 5, prec = 0, hint = "nemesis_thunder_range" },
+        { id = "thunder_npc_range", type = "track", val = 2, def = 45, min = 10, max = 80, step = 5, prec = 0, hint = "nemesis_thunder_npc_range" },
+        { id = "thunder_npc_dr", type = "track", val = 2, def = 60, min = 0, max = 95, step = 5, prec = 0, hint = "nemesis_thunder_npc_dr" },
+    } }
+end
+
+function mcm_presets() return { easy = {}, medium = {}, hard = {} } end
+
+function mcm_force_next() return { "thunder_boss", "ui_mcm_nemesis_force_next_thunder_boss" } end

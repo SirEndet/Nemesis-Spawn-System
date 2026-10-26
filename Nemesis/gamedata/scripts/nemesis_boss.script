@@ -52,7 +52,7 @@ function roll()
     end
     if S.last_boss_day == boss_day() then return false end
 
-    local grace = nemesis_mcm.get_number("grace_period", 18)
+    local grace = nemesis_mcm.get_number("grace_period", 8)
     if grace < 0 then grace = 0 end
     local min_days = nemesis_mcm.get_number("boss_min_day", 7)
     if min_days < 1 then min_days = 1 end
@@ -170,6 +170,9 @@ local LOOKS = {
                  { "actors\\stalker_monolith\\stalker_monolith_skat9_ssp_mask" } },
     isg = { { "actors\\stalker_isg\\stalker_isg_1_commando_1", "actors\\stalker_isg\\stalker_isg_1_commando_3" },
             { "actors\\stalker_isg\\light_isg_shades" } },
+
+    army = { { "actors\\stalker_soldier\\stalker_soldier3a_beret", "actors\\stalker_soldier\\stalker_soldier_3_beret" },
+             { "actors\\stalker_soldier\\stalker_military_exo" } },
 }
 
 local function roll_look()
@@ -355,7 +358,6 @@ function update(obj, r, gt, actor)
             end
         elseif gt - S.sneak_said >= (S.sneak_wait or SNEAK_ATTACK_MS) then
             end_sneak(id, true)
-            nemesis_fx.boss_jolt()
             dbg("Nemesis: the boss attacks.")
         end
     end
@@ -429,11 +431,12 @@ function mcm_page()
 
             { id = "npc_name", type = "input", val = 0, def = nemesis_utils.default_boss_name("monolith"), hint = "nemesis_npc_name" },
             { id = "isg_boss_name", type = "input", val = 0, def = nemesis_utils.default_boss_name("isg"), hint = "nemesis_isg_boss_name" },
+            { id = "army_boss_name", type = "input", val = 0, def = nemesis_utils.default_boss_name("army"), hint = "nemesis_army_boss_name" },
             { id = "line_appearance", type = "line" },
             { id = "head_appearance", type = "title", text = "ui_mcm_nemesis_head_appearance", align = "l", clr = nemesis_mcm.HEAD_CLR },
             { id = "boss_chance", type = "track", val = 2, def = 4, min = 0, max = 20, step = 1, prec = 0, hint = "nemesis_boss_chance" },
             { id = "boss_min_day", type = "track", val = 2, def = 7, min = 1, max = 7, step = 1, prec = 0, hint = "nemesis_boss_min_day" },
-            { id = "boss_escort", type = "track", val = 2, def = 4, min = 0, max = 4, step = 1, prec = 0, hint = "nemesis_boss_escort" },
+            { id = "boss_escort", type = "track", val = 2, def = 3, min = 0, max = 4, step = 1, prec = 0, hint = "nemesis_boss_escort" },
             { id = "boss_distortion", type = "track", val = 2, def = 40, min = 0, max = 100, step = 5, prec = 0, hint = "nemesis_boss_distortion" },
             { id = "line_toughness", type = "line" },
             { id = "head_toughness", type = "title", text = "ui_mcm_nemesis_head_toughness", align = "l", clr = nemesis_mcm.HEAD_CLR },
@@ -448,8 +451,8 @@ end
 
 function mcm_presets()
     return {
-        easy = { boss_chance = 3, boss_min_day = 7, boss_escort = 3, boss_dr = 20, boss_npc_damage = 150, boss_misses = 3 },
-        medium = { boss_chance = 4, boss_min_day = 7, boss_escort = 4, boss_dr = 30, boss_npc_damage = 200, boss_misses = 2 },
+        easy = { boss_chance = 3, boss_min_day = 7, boss_escort = 2, boss_dr = 20, boss_npc_damage = 150, boss_misses = 3 },
+        medium = { boss_chance = 4, boss_min_day = 7, boss_escort = 3, boss_dr = 30, boss_npc_damage = 200, boss_misses = 2 },
         hard = { boss_chance = 5, boss_min_day = 6, boss_escort = 4, boss_dr = 40, boss_npc_damage = 250, boss_misses = 1 },
     }
 end

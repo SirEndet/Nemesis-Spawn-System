@@ -23,6 +23,9 @@ local function type_dr(id, r)
 end
 
 function damage_mult(id, pct)
+
+    local flat_cut = tonumber(nemesis_events.ask("flat_damage_cut", id))
+    if flat_cut then return 1 - math.max(0, math.min(1, flat_cut)) end
     local r = nemesis_state.member(id)
     local e = (r and not r.named) and 0 or nemesis_utils.escalation(S.cycle)
     local m = (1 - (pct or 0)) * (1 - type_dr(id, r)) * (1 - e)
@@ -77,6 +80,15 @@ local function _from_player(shit) return shit.draftsman:id() == db.actor:id() en
 local function from_player(shit)
     local ok, yes = pcall(_from_player, shit)
     return ok and yes == true
+end
+
+local function warn_boss_lethal(npc, r, power, bone_id)
+    if not nemesis_member.is_boss(r.id) then return end
+    local hp = tonumber(npc.health)
+    if not hp then return end
+    if hp <= 0 or (power and worst_loss(power, bone_id) >= hp) then
+        nemesis_events.emit("boss_hit_may_kill", r.id)
+    end
 end
 
 local function mask_if_lethal(npc, r, shit, bone_id)
@@ -185,6 +197,62 @@ local function boss_npc_hit(shit)
     shit.power = (shit.power or 0) * p / 100
 end
 
+---------------------------------------------------------------------------
+-- Hits another mod cancelled, put back (round 190, owner: route A)
+---------------------------------------------------------------------------
+
+local kept_hits = {}
+local kept_frames = {}
+local keeps_installed = false
+local keep_logged_at = -1000000
+local KEEP_LOG_MS = 5000
+
+local function keep_pre(npc, shit, bone_id, flags)
+    if S.phase ~= "hunting" or not npc or not shit then return end
+    local ok, did = pcall(_draft_id, shit)
+    local actor = db.actor
+    if not ok or not did or (actor and did == actor:id()) then return end
+    local victim = npc:id()
+
+    if not nemesis_events.ask("keeps_npc_hits", victim, did) then return end
+    kept_hits[victim] = { power = shit.power or 0, frame = frame_no, shooter = did }
+end
+
+local function restore_kept(npc, shit, flags)
+    if not npc or not shit then return false end
+    local victim = npc:id()
+    local kept = kept_hits[victim]
+    if not kept then return false end
+    kept_hits[victim] = nil
+    if kept.frame ~= frame_no or kept.power <= 0 then return false end
+    local cancelled = (shit.power or 0) <= 0 or (flags ~= nil and flags.ret_value == false)
+    if not cancelled then return false end
+    local fire = false
+    pcall(function() fire = shit.type == hit.fire_wound end)
+    local last = kept_frames[victim]
+    if fire and last and last.frame == frame_no and last.shooter == kept.shooter then return false end
+    kept_frames[victim] = { frame = frame_no, shooter = kept.shooter }
+    shit.power = kept.power
+    if flags then flags.ret_value = true end
+    local now = time_global()
+    if now - keep_logged_at >= KEEP_LOG_MS then
+        keep_logged_at = now
+        dbg("Nemesis: a hit of %s on %s, cancelled by another mod, is put back (power %.2f).",
+            tostring(kept.shooter), tostring(victim), kept.power)
+    end
+    return true
+end
+
+function install_keep_hits()
+    if keeps_installed then return end
+    if type(RegisterScriptCallbackPre) ~= "function" or not nemesis_core.hit_runs_last() then return end
+
+    if pcall(RegisterScriptCallbackPre, "npc_on_before_hit", keep_pre) then
+        keeps_installed = true
+        dbg("Nemesis: hits of the Thunder Boss and on him that another mod cancels are put back (Pre and Post tiers).")
+    end
+end
+
 function on_monster_before_hit(monster, shit, bone_id, flags)
     if S.boss_id and shit and monster then boss_npc_hit(shit) end
 end
@@ -236,6 +304,7 @@ end
 function on_before_hit(npc, shit, bone_id, flags)
     if not npc then return end
     local id = npc:id()
+    restore_kept(npc, shit, flags)
     local r = nemesis_state.member(id)
     if not r then
         if S.boss_id and shit then boss_npc_hit(shit) end
@@ -245,6 +314,7 @@ function on_before_hit(npc, shit, bone_id, flags)
 
     local settled = nil
     if by_player then settled = settle_chain(npc, r, bone_id) end
+    if settled then warn_boss_lethal(npc, r, nil, bone_id) end
 
     if not nemesis_member.hittable(npc) then
 
@@ -291,6 +361,7 @@ function on_before_hit(npc, shit, bone_id, flags)
     r.hit_pre = tonumber(npc.health)
 
     if nemesis_member.is_boss(id) then
+        warn_boss_lethal(npc, r, shit and shit.power, bone_id)
         mask_if_lethal(npc, r, shit, bone_id)
         return
     end
@@ -362,7 +433,7 @@ local function accuracy_cones()
     local v = nemesis_mcm.settings_version()
     if v ~= cone_version then
         cone_version = v
-        local p = nemesis_mcm.get_number("accuracy_boost", 10)
+        local p = nemesis_mcm.get_number("accuracy_boost", 20)
         if p > 40 then p = 40 end
         if p <= 0 then
             cone = false
@@ -391,6 +462,7 @@ function on_shot_dispersion(obj, wpn, body_state, move_type, t)
     if S.phase ~= "hunting" or not obj or type(t) ~= "table" then return end
     local r = S.m[obj:id()]
     if not r or r.retreat_at or type(t.dispersion) ~= "number" then return end
+    r.shot_at = time_global()
 
     local at_player = true
     if r.id == S.boss_id then
@@ -405,9 +477,13 @@ function on_shot_dispersion(obj, wpn, body_state, move_type, t)
         end
     end
     local c = accuracy_cones()
-    if not c then return end
-    local k = (r.id == S.boss_id and c.boss) or (r.named and c.named) or c.regular
-    t.dispersion = t.dispersion * k
+    local k = 1
+    if c then k = (r.id == S.boss_id and c.boss) or (r.named and c.named) or c.regular end
+
+    if r.rank_cone then k = k * r.rank_cone end
+
+    if r.spread_mult then k = k * r.spread_mult end
+    if k ~= 1 then t.dispersion = t.dispersion * k end
 end
 
 function on_actor_before_hit(shit, bone_id, flags)
@@ -619,6 +695,8 @@ end
 
 local old_exes_told = false
 
+local TIERS_EXES_DATE = 20260915
+
 function install_br_hooks()
     if gbo_state then return end
     if not nemesis_compat.grok_bo() then
@@ -637,11 +715,23 @@ function install_br_hooks()
     end
     gbo_state = "old_exes"
 
-    printf("~Nemesis: these modded exes have no callback tiers (added 15 September 2026). With GAMMA ballistics, your shots can kill named hunters instead of making them break off. Update the modded exes.")
+    local built = nemesis_engine.exes_build_date()
+    local built_text = nemesis_engine.exes_date_text(built)
+    local scripts_missing = built ~= nil and built >= TIERS_EXES_DATE
+
+    if scripts_missing then
+        printf("~Nemesis: these modded exes (build %s) should have callback tiers, but their script _g_patches.script is not loaded: another mod overrides configs/mod_script_dxml.ltx or scripts/_g_patches.script, or the exes' gamedata is not installed. With GAMMA ballistics, your shots can kill named hunters instead of making them break off.", built_text)
+
+        nemesis_utils.log_copy(string.format("Nemesis: these modded exes (build %s) should have callback tiers, but their _g_patches.script is not loaded (overridden or the exes' gamedata missing).", built_text))
+    else
+        printf("~Nemesis: these modded exes (build %s) have no callback tiers (added 15 September 2026). With GAMMA ballistics, your shots can kill named hunters instead of making them break off. Update the modded exes.", built_text)
+        nemesis_utils.log_copy(string.format("Nemesis: these modded exes (build %s) have no callback tiers (added 15 September 2026); update the modded exes.", built_text))
+    end
     if not old_exes_told then
         old_exes_told = true
+        local msg_id = scripts_missing and "st_nemesis_msg_exes_scripts_missing" or "st_nemesis_msg_old_exes"
 
-        nemesis_lines.send_news(nemesis_lines.text("st_nemesis_msg_old_exes"), nemesis_lines.text("st_nemesis_caption"))
+        nemesis_lines.send_news(string.format(nemesis_lines.text(msg_id), built_text), nemesis_lines.text("st_nemesis_caption"))
     end
 end
 
@@ -653,8 +743,8 @@ function mcm_page()
     return { id = "combat", sh = true, text = "ui_mcm_nemesis_page_combat", gr = {
             { id = "title", type = "slide", link = "ui_options_slider_player", text = "ui_mcm_nemesis_title", size = {512, 50}, spacing = 20 },
             { id = "head_hunters", type = "title", text = "ui_mcm_nemesis_head_hunters", align = "l", clr = nemesis_mcm.HEAD_CLR },
-            { id = "retreat_health", type = "track", val = 2, def = 30, min = 10, max = 60, step = 5, prec = 0, hint = "nemesis_retreat_health" },
-            { id = "accuracy_boost", type = "track", val = 2, def = 10, min = 0, max = 40, step = 1, prec = 0, hint = "nemesis_accuracy_boost" },
+            { id = "retreat_health", type = "track", val = 2, def = 25, min = 10, max = 60, step = 5, prec = 0, hint = "nemesis_retreat_health" },
+            { id = "accuracy_boost", type = "track", val = 2, def = 20, min = 0, max = 40, step = 1, prec = 0, hint = "nemesis_accuracy_boost" },
             { id = "regular_dr", type = "track", val = 2, def = 0, min = 0, max = 50, step = 5, prec = 0, hint = "nemesis_regular_dr" },
             { id = "named_dr", type = "track", val = 2, def = 25, min = 0, max = 80, step = 5, prec = 0, hint = "nemesis_named_dr" },
             { id = "line_escalation", type = "line" },
@@ -665,8 +755,8 @@ function mcm_page()
             { id = "reset_on_death", type = "check", val = 1, def = true, hint = "nemesis_reset_on_death" },
             { id = "line_armour", type = "line" },
             { id = "head_armour", type = "title", text = "ui_mcm_nemesis_head_armour", align = "l", clr = nemesis_mcm.HEAD_CLR },
-            { id = "br_bonus", type = "track", val = 2, def = 0, min = 0, max = 0.5, step = 0.05, prec = 2, hint = "nemesis_br_bonus" },
-            { id = "pct_bonus", type = "track", val = 2, def = 0, min = 0, max = 50, step = 5, prec = 0, hint = "nemesis_pct_bonus" },
+            { id = "br_bonus", type = "track", val = 2, def = 0.05, min = 0, max = 0.5, step = 0.05, prec = 2, hint = "nemesis_br_bonus" },
+            { id = "pct_bonus", type = "track", val = 2, def = 10, min = 0, max = 50, step = 5, prec = 0, hint = "nemesis_pct_bonus" },
             { id = "line_bodies", type = "line" },
             { id = "head_bodies", type = "title", text = "ui_mcm_nemesis_head_bodies", align = "l", clr = nemesis_mcm.HEAD_CLR },
             { id = "reserve_kills", type = "check", val = 1, def = true, hint = "nemesis_reserve_kills" },
@@ -680,8 +770,8 @@ end
 
 function mcm_presets()
     return {
-        easy = { retreat_health = 35, accuracy_boost = 8, regular_dr = 0, named_dr = 20, esc_step = 1.5, esc_max = 15, max_damage_reduction = 55, br_bonus = 0, pct_bonus = 0 },
-        medium = { retreat_health = 30, accuracy_boost = 10, regular_dr = 0, named_dr = 25, esc_step = 2, esc_max = 20, max_damage_reduction = 70, br_bonus = 0, pct_bonus = 0 },
-        hard = { retreat_health = 25, accuracy_boost = 12, regular_dr = 0, named_dr = 30, esc_step = 2.5, esc_max = 25, max_damage_reduction = 85, br_bonus = 0, pct_bonus = 0 },
+        easy = { retreat_health = 30, accuracy_boost = 16, regular_dr = 0, named_dr = 20, esc_step = 1.5, esc_max = 15, max_damage_reduction = 55, br_bonus = 0, pct_bonus = 5 },
+        medium = { retreat_health = 25, accuracy_boost = 20, regular_dr = 0, named_dr = 25, esc_step = 2, esc_max = 20, max_damage_reduction = 70, br_bonus = 0.05, pct_bonus = 10 },
+        hard = { retreat_health = 20, accuracy_boost = 24, regular_dr = 0, named_dr = 30, esc_step = 2.5, esc_max = 25, max_damage_reduction = 85, br_bonus = 0.1, pct_bonus = 15 },
     }
 end

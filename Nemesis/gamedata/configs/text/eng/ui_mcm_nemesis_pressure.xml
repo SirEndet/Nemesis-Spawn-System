@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="windows-1251"?>
+<string_table>
+    <!-- The Hunt's Eye (nemesis_pressure, round 164): its own strings, like the other modules'. -->
+    <string id="ui_mcm_nemesis_page_pressure"><text>The Hunt's Eye</text></string>
+    <string id="ui_mcm_nemesis_head_pressure"><text>Signs before the hunt</text></string>
+    <string id="ui_mcm_nemesis_pressure_enabled"><text>The Hunt's Eye</text></string>
+    <string id="ui_mcm_nemesis_pressure_enabled_desc"><text>Signs before the hunt, the Mark and Targeted Ground. Off: none of them, hunts come as before. Default on.</text></string>
+    <string id="ui_mcm_nemesis_signs_lead"><text>Signs lead (hours)</text></string>
+    <string id="ui_mcm_nemesis_signs_lead_desc"><text>Game hours between the intercepted chatter on your PDA and the hunt: the hunt waits until they have passed. The same on every difficulty. 0: no signs. Default 1.</text></string>
+    <string id="ui_mcm_nemesis_head_mark"><text>The Mark</text></string>
+    <string id="ui_mcm_nemesis_mark_boss_kill"><text>Mark per boss kill</text></string>
+    <string id="ui_mcm_nemesis_mark_boss_kill_desc"><text>How much the Mark grows when you kill a boss (the boss, the emission boss or a Legend), of 100. Your shot or your assist counts. Default 20.</text></string>
+    <string id="ui_mcm_nemesis_mark_named_kill"><text>Mark per named hunter kill</text></string>
+    <string id="ui_mcm_nemesis_mark_named_kill_desc"><text>How much the Mark grows when you kill a named hunter, of 100. The hunters remember what you did to them. Default 10.</text></string>
+    <string id="ui_mcm_nemesis_mark_squad_kill"><text>Mark per squad member kill</text></string>
+    <string id="ui_mcm_nemesis_mark_squad_kill_desc"><text>How much the Mark grows when you kill a regular member of a hunt squad, of 100. Other stalkers add nothing. Default 2.</text></string>
+    <string id="ui_mcm_nemesis_mark_retreat"><text>Mark per forced retreat</text></string>
+    <string id="ui_mcm_nemesis_mark_retreat_desc"><text>How much the Mark grows when your hits make a named hunter break off: he saw your face. Default 8.</text></string>
+    <string id="ui_mcm_nemesis_mark_sooner"><text>Mark: hunts sooner (%)</text></string>
+    <string id="ui_mcm_nemesis_mark_sooner_desc"><text>How much sooner the next hunt comes at a full Mark: Time between hunts is shortened by this share of it (less at a weaker Mark). With Targeted Ground, never more than half. Default 30.</text></string>
+    <string id="ui_mcm_nemesis_mark_fade_hours"><text>Mark fades over (hours)</text></string>
+    <string id="ui_mcm_nemesis_mark_fade_hours_desc"><text>Game hours for a full Mark to fade away by itself. 0: it never fades by itself. Default 48.</text></string>
+    <string id="ui_mcm_nemesis_mark_sleep_cut"><text>Sleep eases the Mark (%)</text></string>
+    <string id="ui_mcm_nemesis_mark_sleep_cut_desc"><text>How much of the Mark a sleep takes away. Default 50.</text></string>
+    <string id="ui_mcm_nemesis_mark_antipsy_cut"><text>Anti-psy eases the Mark (%)</text></string>
+    <string id="ui_mcm_nemesis_mark_antipsy_cut_desc"><text>How much of the Mark an anti-psy item takes away (Psy-Block, and every item that protects from psy). Default 35.</text></string>
+    <string id="ui_mcm_nemesis_head_targeting"><text>Targeted Ground</text></string>
+    <string id="ui_mcm_nemesis_target_hunt"><text>Targeting per hunt</text></string>
+    <string id="ui_mcm_nemesis_target_hunt_desc"><text>How much a map's targeting grows with every hunt fought on it, whatever its end, of 100. Default 15.</text></string>
+    <string id="ui_mcm_nemesis_target_retreat"><text>Targeting per forced retreat</text></string>
+    <string id="ui_mcm_nemesis_target_retreat_desc"><text>How much the map's targeting grows when your hits make a named hunter break off there: he tells them where you are. Default 10.</text></string>
+    <string id="ui_mcm_nemesis_target_time_step"><text>Targeting per stay</text></string>
+    <string id="ui_mcm_nemesis_target_time_step_desc"><text>How much the targeting of the map you are on grows every Targeting stay hours. Default 10.</text></string>
+    <string id="ui_mcm_nemesis_target_step_hours"><text>Targeting stay (hours)</text></string>
+    <string id="ui_mcm_nemesis_target_step_hours_desc"><text>Game hours on one map for its targeting to grow by Targeting per stay. Default 12.</text></string>
+    <string id="ui_mcm_nemesis_target_cool_rate"><text>Cooling rate (x)</text></string>
+    <string id="ui_mcm_nemesis_target_cool_rate_desc"><text>How many times faster a map cools on its own while you are elsewhere than it grows while you stay: staying is punished, exploring is rewarded. Default 3.</text></string>
+    <string id="ui_mcm_nemesis_target_travel_drop"><text>Targeting drop per map travel</text></string>
+    <string id="ui_mcm_nemesis_target_travel_drop_desc"><text>How much every map's targeting drops when you travel to another map: you shake their trail. Default 20.</text></string>
+    <string id="ui_mcm_nemesis_target_antipsy_drop"><text>Targeting drop per anti-psy</text></string>
+    <string id="ui_mcm_nemesis_target_antipsy_drop_desc"><text>How much the targeting of the map you are on drops when you use an anti-psy item: they lose you in their minds. Default 30.</text></string>
+    <string id="ui_mcm_nemesis_target_sooner"><text>Targeting: hunts sooner (%)</text></string>
+    <string id="ui_mcm_nemesis_target_sooner_desc"><text>How much sooner hunts come on a fully targeted map: Time between hunts is shortened by this share of it. With the Mark, never more than half. Default 25.</text></string>
+    <string id="ui_mcm_nemesis_target_reach"><text>Targeting: they know your ground (%)</text></string>
+    <string id="ui_mcm_nemesis_target_reach_desc"><text>On a fully targeted map the hunters know your remembered spots from this much further away (the radius grows by this share). Default 100.</text></string>
+</string_table>

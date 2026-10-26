@@ -55,18 +55,27 @@ local function gate_open(npc)
     if not npc then return false end
     local id = npc:id()
     if not wanted[id] then return false end
+
+    if nemesis_events.ask("casting", id) == true then return false end
     if get_retreat_dest(id) then return true end
     if takeover_running(npc) then return false end
     if nemesis_combat.combat_owns(npc) then return false end
     return true
 end
 
+local gate_error_logged = false
 class "nemesis_chase_gate" (property_evaluator)
 
 function nemesis_chase_gate:__init(name) super(nil, name) end
 
 function nemesis_chase_gate:evaluate()
-    return gate_open(self.object) == true
+    local ok, open = pcall(gate_open, self.object)
+    if ok then return open == true end
+    if not gate_error_logged then
+        gate_error_logged = true
+        nemesis_utils.log_tag("CHASE", "!Nemesis ERROR: the chase gate failed (%s); the chase lets go.", tostring(open))
+    end
+    return false
 end
 
 class "nemesis_chase_action" (action_base)
@@ -95,7 +104,12 @@ function nemesis_chase_action:execute()
     local actor = db.actor
     if not actor then return end
     ran[npc:id()] = true
-    drive_chase(npc, actor)
+
+    local ok, err = pcall(drive_chase, npc, actor)
+    if not ok and not gate_error_logged then
+        gate_error_logged = true
+        nemesis_utils.log_tag("CHASE", "!Nemesis ERROR: a chase step failed (%s).", tostring(err))
+    end
 end
 
 function nemesis_chase_action:finalize()
@@ -103,6 +117,8 @@ function nemesis_chase_action:finalize()
     local npc = self.object
     if npc then reset_slot(npc:id()) end
 end
+
+function takeover_planner_ids() return planner_ids() end
 
 function install(npc)
     if not npc then return false end
@@ -190,6 +206,11 @@ function reset_all()
     complete = {}
     ran = {}
     refs = {}
+end
+
+function expected_to_run(npc)
+    local ok, open = pcall(gate_open, npc)
+    return ok and open == true
 end
 
 function has_run(id)

@@ -113,15 +113,48 @@ function file_exists(root, path)
     return ok and res and true or false
 end
 
+function full_path(root, path)
+    local base = nil
+
+    pcall(function() base = getFS():update_path(root, "") end)
+    if type(base) ~= "string" then return nil end
+    return base .. path
+end
+
 function sound_exists(path) return file_exists("$game_sounds$", path .. ".ogg") end
 
 function mesh_exists(path) return file_exists("$game_meshes$", path .. ".ogf") end
+
+function system_string(section, key)
+    local value = nil
+
+    pcall(function() value = ini_sys:r_string_ex(section, key) end)
+    return value
+end
 
 function section_exists(sec)
     local ok = false
 
     pcall(function() ok = ini_sys:section_exist(sec) end)
     return ok
+end
+
+---------------------------------------------------------------------------
+-- The exes
+---------------------------------------------------------------------------
+
+function exes_build_date()
+    if type(get_modded_exes_version) ~= "function" then return nil end
+    local date = nil
+
+    pcall(function() date = get_modded_exes_version() end)
+    if type(date) ~= "number" or date < 20000101 then return nil end
+    return date
+end
+
+function exes_date_text(date)
+    if not date then return "?" end
+    return string.format("%04d.%02d.%02d", math.floor(date / 10000), math.floor(date / 100) % 100, date % 100)
 end
 
 ---------------------------------------------------------------------------
@@ -240,6 +273,18 @@ function ours(id)
     return yes
 end
 
+function held_weapon(obj, id)
+    if not (obj and ours(id)) then return nil end
+    local item_id = nil
+
+    pcall(function()
+        local item = obj:active_item()
+        if item then item_id = item:id() end
+    end)
+    if item_id then known[item_id] = true end
+    return item_id
+end
+
 local function _oid(o)
     local v = o.id
     if type(v) == "number" then return v end
@@ -272,6 +317,16 @@ function set_health(o, v)
     return pcall(function() o:set_health_ex(v) end)
 end
 
+function drain_player_health(share)
+    local actor = db.actor
+    if not actor or not share or share <= 0 then return false end
+    local ok = pcall(function()
+
+        actor:change_health(-actor.health * math.min(1, share))
+    end)
+    return ok
+end
+
 function set_invulnerable(o, on)
     if not o then return false end
     if not ours(id_of(o)) then return refuse("set invulnerable", o) end
@@ -291,6 +346,13 @@ function set_character_name(s, name)
     if not ours(id_of(s)) then return refuse("rename", s) end
 
     return pcall(function() s:set_character_name(name) end)
+end
+
+function set_rank(s, points)
+    if not (s and type(points) == "number") then return false end
+    if not ours(id_of(s)) then return refuse("rank", s) end
+
+    return pcall(function() s:set_rank(points) end)
 end
 
 local PLAYER_KEYS = { toolkit_reward_count = true, toolkit_reward_last = true }
@@ -358,9 +420,31 @@ function spawn_own_item(section, pos)
     return pcall(function() level.spawn_item(section, pos, 4294967295, 65535, false) end)
 end
 
+function force_set_goodwill(a, value, b)
+    if not (a and value and b) then return false end
+    if not ours(id_of(a)) then return refuse("force the goodwill of", a) end
+
+    return pcall(function() a:force_set_goodwill(value, b) end)
+end
+
 function set_relation(a, rel, b)
     if not (a and b) then return false end
     return pcall(function() a:set_relation(rel, b) end)
+end
+
+function set_community_goodwill_toward(community, id, value)
+    if not (community and id and value) then return false end
+    if not ours(id) then return refuse("set a community's goodwill toward", se(id)) end
+
+    return pcall(function() relation_registry.set_community_goodwill(community, id, value) end)
+end
+
+function set_community(o, community)
+    if not (o and community) then return false end
+    if not ours(id_of(o)) then return refuse("change the community of", o) end
+    if not alive(o) then return false end
+
+    return pcall(function() o:set_character_community(community, 0, 0) end)
 end
 
 ---------------------------------------------------------------------------

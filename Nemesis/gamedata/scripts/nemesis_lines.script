@@ -9,7 +9,11 @@ function text(id)
     return (type(t) == "string" and t ~= "") and t or id
 end
 
-local function hunt_faction() return nemesis_state.S.faction == "isg" and "isg" or "monolith" end
+local function hunt_faction()
+    local f = nemesis_state.S.faction
+    if f == "isg" or f == "army" then return f end
+    return "monolith"
+end
 
 ---------------------------------------------------------------------------
 -- Hunter names
@@ -40,15 +44,39 @@ end
 local RANKS = {
     monolith = { "st_nemesis_rank_monolith_1", "st_nemesis_rank_monolith_2", "st_nemesis_rank_monolith_3", "st_nemesis_rank_monolith_4", "st_nemesis_rank_monolith_5", "st_nemesis_rank_monolith_6" },
     isg = { "st_nemesis_rank_isg_1", "st_nemesis_rank_isg_2", "st_nemesis_rank_isg_3", "st_nemesis_rank_isg_4", "st_nemesis_rank_isg_5", "st_nemesis_rank_isg_6" },
+    army = { "st_nemesis_rank_army_1", "st_nemesis_rank_army_2", "st_nemesis_rank_army_3", "st_nemesis_rank_army_4", "st_nemesis_rank_army_5", "st_nemesis_rank_army_6" },
 }
+
+local LADDER = { monolith = { 1, 2, 3, 4, 5, 6 }, isg = { 5, 1, 2, 3, 4, 6 }, army = { 1, 2, 3, 4, 5, 6 } }
+
+function rank_title(faction, step)
+    local f = (faction == "isg" or faction == "army") and faction or "monolith"
+    local s = math.max(1, math.min(6, math.floor(tonumber(step) or 1)))
+    return text(RANKS[f][LADDER[f][s]])
+end
+
+function name_counts() return #FIRST_NAMES, #LAST_NAMES end
+
+function name_from(fi, li)
+    if not (FIRST_NAMES[fi] and LAST_NAMES[li]) then return nil end
+    return text(FIRST_NAMES[fi]) .. " " .. text(LAST_NAMES[li])
+end
 
 local function rank()
     local list = RANKS[nemesis_state.S.faction] or RANKS.monolith
     return text(list[math.random(#list)])
 end
 
-function next_hunter_name(used, named)
+function next_hunter_name(used, named, leader)
     used = used or {}
+    if named then
+
+        local own = nemesis_events.ask("hunter_name", hunt_faction(), used, leader == true)
+        if type(own) == "string" and own ~= "" then
+            used[own] = true
+            return own
+        end
+    end
     local name = nil
     for _ = 1, 24 do
         name = compose_name()
@@ -67,7 +95,22 @@ end
 local FALLBACK_ICON = "ui_inGame2_PD_storonnik_ravnovesiya"
 local NEWS_SHOW_MS = 7000
 
-function send_news(msg, caption, icon_override)
+local WD_PDA_KIND = "nemesis"
+
+local function mirror_to_wd_pda(caption, msg, icon)
+    if not nemesis_mcm.get_bool("wd_pda_messages", true) then return end
+    local api = nemesis_compat.wd_pda()
+    if not api then return end
+    local faction = nil
+    if caption ~= text("st_nemesis_caption") then faction = nemesis_state.S.faction end
+
+    local ok, err = pcall(api.push_external_faction, caption, msg, icon, WD_PDA_KIND, faction)
+    if not ok then
+        log_msg("!Nemesis ERROR: the Wearable Devices PDA mod did not take a PDA message (%s).", tostring(err))
+    end
+end
+
+function send_news(msg, caption, icon_override, show_ms)
     local actor = db.actor
     if not actor then
         log_msg("!Nemesis: PDA message skipped, no actor yet: %s", tostring(msg))
@@ -79,16 +122,18 @@ function send_news(msg, caption, icon_override)
         icon = "ui_nemesis_news_hd"
     end
     if type(icon_override) == "string" and icon_override ~= "" then icon = icon_override end
+    local show = tonumber(show_ms) or NEWS_SHOW_MS
 
-    local ok, err = pcall(function() actor:give_game_news(caption, msg, icon, 0, NEWS_SHOW_MS) end)
+    local ok, err = pcall(function() actor:give_game_news(caption, msg, icon, 0, show) end)
     if not ok then
         log_msg("!Nemesis ERROR: PDA message failed with icon %s (%s), retrying with a vanilla icon.", icon, tostring(err))
         icon = FALLBACK_ICON
-        ok, err = pcall(function() actor:give_game_news(caption, msg, icon, 0, NEWS_SHOW_MS) end)
+        ok, err = pcall(function() actor:give_game_news(caption, msg, icon, 0, show) end)
     end
     if ok then
         nemesis_sound.pda_tip()
         log_msg("Nemesis: PDA message sent [%s] %s (icon %s).", caption, msg, icon)
+        mirror_to_wd_pda(caption, msg, icon)
     else
         log_msg("!Nemesis ERROR: PDA message failed twice (%s).", tostring(err))
     end
@@ -278,6 +323,89 @@ local LINES = {
         known_spot = {
             "st_nemesis_isg_known_spot_1",
             "st_nemesis_isg_known_spot_2",
+        },
+    },
+
+    army = {
+        warning = {
+            "st_nemesis_army_warning_1",
+            "st_nemesis_army_warning_2",
+            "st_nemesis_army_warning_3",
+            "st_nemesis_army_warning_4",
+            "st_nemesis_army_warning_5",
+        },
+        taunt = {
+            { max = 1, lines = {
+                "st_nemesis_army_taunt_t1_1",
+                "st_nemesis_army_taunt_t1_2",
+                "st_nemesis_army_taunt_t1_3",
+            } },
+            { max = 3, lines = {
+                "st_nemesis_army_taunt_t2_1",
+                "st_nemesis_army_taunt_t2_2",
+            } },
+            { max = 6, lines = {
+                "st_nemesis_army_taunt_t3_1",
+                "st_nemesis_army_taunt_t3_2",
+            } },
+            { max = math.huge, lines = {
+                "st_nemesis_army_taunt_t4_1",
+                "st_nemesis_army_taunt_t4_2",
+            } },
+        },
+        retreat = {
+            "st_nemesis_army_retreat_1",
+            "st_nemesis_army_retreat_2",
+            "st_nemesis_army_retreat_3",
+        },
+        time_up = {
+            "st_nemesis_army_time_up_1",
+            "st_nemesis_army_time_up_2",
+            "st_nemesis_army_time_up_3",
+        },
+        boss = {
+            "st_nemesis_army_boss_1",
+            "st_nemesis_army_boss_2",
+            "st_nemesis_army_boss_3",
+            "st_nemesis_army_boss_4",
+            "st_nemesis_army_boss_5",
+            "st_nemesis_army_boss_6",
+            "st_nemesis_army_boss_7",
+            "st_nemesis_army_boss_8",
+        },
+        boss_warning = {
+            "st_nemesis_army_boss_warning_1",
+            "st_nemesis_army_boss_warning_2",
+            "st_nemesis_army_boss_warning_3",
+        },
+        boss_stash = {
+            "st_nemesis_army_boss_stash_1",
+            "st_nemesis_army_boss_stash_2",
+        },
+        boss_escape = {
+            "st_nemesis_army_boss_escape_1",
+            "st_nemesis_army_boss_escape_2",
+            "st_nemesis_army_boss_escape_3",
+        },
+        dread = {
+            "st_nemesis_army_dread_1",
+            "st_nemesis_army_dread_2",
+            "st_nemesis_army_dread_3",
+            "st_nemesis_army_dread_4",
+            "st_nemesis_army_dread_5",
+        },
+        sneak = { "st_nemesis_army_sneak_1" },
+        rush = { "st_nemesis_army_rush_1" },
+        close = { "st_nemesis_army_close_1" },
+        follow = {
+            "st_nemesis_army_follow_1",
+            "st_nemesis_army_follow_2",
+            "st_nemesis_army_follow_3",
+        },
+        reload = { "st_nemesis_army_reload_1" },
+        known_spot = {
+            "st_nemesis_army_known_spot_1",
+            "st_nemesis_army_known_spot_2",
         },
     },
 }

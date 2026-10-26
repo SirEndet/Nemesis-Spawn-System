@@ -12,9 +12,9 @@ local H = { horde_done = nil,
 local function clear_hunt_state() H.horde_done, H.released, H.squads = nil, nil, nil end
 local saved_flow = nil
 
-local SQUADS = { greh = "nemesis_emission_squad", isg = "nemesis_emission_squad_isg" }
-local OWN_SECTIONS = { "nemesis_emission_squad", "nemesis_emission_squad_isg", "nemesis_emission_boss",
-                       "nemesis_emission_boss_isg", "nemesis_horde_zombied", "nemesis_horde_snork",
+local SQUADS = { greh = "nemesis_emission_squad", isg = "nemesis_emission_squad_isg", army = "nemesis_emission_squad_army" }
+local OWN_SECTIONS = { "nemesis_emission_squad", "nemesis_emission_squad_isg", "nemesis_emission_squad_army",
+                       "nemesis_emission_boss", "nemesis_emission_boss_isg", "nemesis_emission_boss_army", "nemesis_horde_zombied", "nemesis_horde_snork",
                        "nemesis_horde_snork_normal", "nemesis_phantom" }
 
 local function squad_section(faction)
@@ -127,12 +127,14 @@ function npc_cut() return setting("emission_npc_cut", 70, 0, 95) / 100 end
 
 local function psy_damage() return setting("emission_psy", 4, 0, 20) / 100 end
 
-local function horde_size() return math.floor(setting("emission_horde", 4, 0, 8) + 0.5) end
+local function horde_size() return math.floor(setting("emission_horde", 6, 0, 8) + 0.5) end
 
 local function flank_share() return setting("emission_flank", 30, 0, 50) / 100 end
 
 function faction_for_player()
-    return nemesis_utils.faction_for_player() == "isg" and "isg" or "greh"
+    local f = nemesis_utils.faction_for_player()
+    if f == "isg" or f == "army" then return f end
+    return "greh"
 end
 
 local function surge() return nemesis_compat.surge_on() end
@@ -199,10 +201,37 @@ local LINES = {
         },
         reload = { "st_nemesis_em_isg_reload_1" },
     },
+
+    army = {
+        arrival = {
+            "st_nemesis_em_army_arrival_1",
+            "st_nemesis_em_army_arrival_2",
+            "st_nemesis_em_army_arrival_3",
+            "st_nemesis_em_army_arrival_4",
+            "st_nemesis_em_army_arrival_5",
+            "st_nemesis_em_army_arrival_6",
+            "st_nemesis_em_army_arrival_7",
+            "st_nemesis_em_army_arrival_8",
+        },
+        boss_escape = {
+            "st_nemesis_em_army_boss_escape_1",
+            "st_nemesis_em_army_boss_escape_2",
+        },
+        follow = {
+            "st_nemesis_em_army_follow_1",
+            "st_nemesis_em_army_follow_2",
+        },
+        boss_stash = {
+            "st_nemesis_em_army_boss_stash_1",
+            "st_nemesis_em_army_boss_stash_2",
+        },
+        reload = { "st_nemesis_em_army_reload_1" },
+    },
 }
 
 function line(kind)
-    local set = LINES[S.faction == "isg" and "isg" or "greh"][kind]
+    local f = (S.faction == "isg" or S.faction == "army") and S.faction or "greh"
+    local set = LINES[f][kind]
     if not set then return nil end
     return nemesis_lines.fill_line(nemesis_lines.text(set[math.random(#set)]), boss_name())
 end
@@ -784,7 +813,7 @@ local function lightning(pos)
     local p = nemesis_engine.particle_at(LIGHTNING_FX, pos)
     if p then keep(p) end
     local path = nemesis_sound.pick("lightning", LIGHTNING_SOUNDS)
-    local vol = nemesis_sound.volume("lightning_volume", 0)
+    local vol = nemesis_sound.volume("lightning_volume", 60)
     if path and vol > 0 then nemesis_sound.play_at(path, pos, vol) end
 end
 
@@ -1753,7 +1782,7 @@ function mcm_page()
             { id = "emission_name", type = "input", val = 0, def = default_name(), hint = "nemesis_emission_name" },
             { id = "emission_dr", type = "track", val = 2, def = 30, min = 0, max = 85, step = 5, prec = 0, hint = "nemesis_emission_dr" },
             { id = "emission_npc_cut", type = "track", val = 2, def = 70, min = 0, max = 95, step = 5, prec = 0, hint = "nemesis_emission_npc_cut" },
-            { id = "emission_horde", type = "track", val = 2, def = 4, min = 0, max = 8, step = 1, prec = 0, hint = "nemesis_emission_horde" },
+            { id = "emission_horde", type = "track", val = 2, def = 6, min = 0, max = 8, step = 1, prec = 0, hint = "nemesis_emission_horde" },
             { id = "emission_flank", type = "track", val = 2, def = 30, min = 0, max = 50, step = 5, prec = 0, hint = "nemesis_emission_flank" },
             { id = "emission_psy", type = "track", val = 2, def = 4, min = 0, max = 20, step = 1, prec = 0, hint = "nemesis_emission_psy" },
         } }
@@ -1761,9 +1790,9 @@ end
 
 function mcm_presets()
     return {
-        easy = { emission_chance = 80, emission_extra = 4, emission_dr = 20, emission_npc_cut = 55, emission_horde = 3, emission_psy = 3, emission_flank = 20 },
-        medium = { emission_chance = 100, emission_extra = 6, emission_dr = 30, emission_npc_cut = 70, emission_horde = 4, emission_psy = 4, emission_flank = 30 },
-        hard = { emission_chance = 100, emission_extra = 8, emission_dr = 40, emission_npc_cut = 85, emission_horde = 5, emission_psy = 5, emission_flank = 40 },
+        easy = { emission_chance = 80, emission_extra = 4, emission_dr = 20, emission_npc_cut = 55, emission_horde = 4, emission_psy = 3, emission_flank = 20 },
+        medium = { emission_chance = 100, emission_extra = 6, emission_dr = 30, emission_npc_cut = 70, emission_horde = 6, emission_psy = 4, emission_flank = 30 },
+        hard = { emission_chance = 100, emission_extra = 8, emission_dr = 40, emission_npc_cut = 85, emission_horde = 8, emission_psy = 5, emission_flank = 40 },
     }
 end
 

@@ -9,6 +9,42 @@ local important_at = {}
 
 local function stamp(tag, now) return "[" .. tag .. " " .. string.format("%.1f", now / 1000) .. "s] " end
 
+local LOG_FILE, LOG_MAX_BYTES = "nemesis.log", 5 * 1024 * 1024
+local LOG_QUEUE_MAX = 2000
+local file_log = nil
+local log_queue = {}
+
+local function to_file(level, text)
+    if file_log == nil then
+        if #log_queue < LOG_QUEUE_MAX then log_queue[#log_queue + 1] = { level, text } end
+        return
+    end
+    if file_log then
+        pcall(file_log[level], "%s", text)
+    else
+        printf("%s", text)
+    end
+end
+
+function log_ready()
+    if file_log == nil then
+        local ok, l = pcall(function()
+
+            return xlog.get_logger("NEMESIS", { outfile = LOG_FILE, level = "TRACE", stack_trace = false, max_file_size = LOG_MAX_BYTES })
+        end)
+        file_log = ok and type(l) == "table" and l or false
+    end
+    local q = log_queue
+    log_queue = {}
+    for _, e in ipairs(q) do to_file(e[1], e[2]) end
+end
+
+function log_flush()
+    if file_log then pcall(file_log.flush) end
+end
+
+function log_copy(text) to_file("info", text) end
+
 function log_tag(tag, fmt, ...)
     if type(fmt) ~= "string" then return end
     if fmt:sub(1, 2) == "!!" then
@@ -21,12 +57,19 @@ function log_tag(tag, fmt, ...)
         if last and now >= last and now - last < IMPORTANT_EVERY_MS then return end
         important_at[key] = now
         printf("%s", "~" .. stamp(tag, now) .. "NEMESIS IMPORTANT ERROR (please report): " .. text)
+
+        local tb = ""
+        pcall(function() tb = debug.traceback("", 2) end)
+        to_file("fatal", stamp(tag, now) .. "NEMESIS IMPORTANT ERROR: " .. text .. (tb or ""))
         return
     end
-    if not debug_on() then return end
+    local err = fmt:sub(1, 1) == "!"
+    if not err and not debug_on() then return end
+    local body = err and fmt:sub(2) or fmt
+    local ok, text = pcall(string.format, body, ...)
+    if not ok then text = body end
     local head = stamp(tag, (time_global and time_global()) or 0)
-    if fmt:sub(1, 1) == "!" then fmt = "!" .. head .. fmt:sub(2) else fmt = head .. fmt end
-    printf(fmt, ...)
+    to_file(err and "error" or "debug", (err and "!" or "") .. head .. text)
 end
 
 function log_msg(fmt, ...)
@@ -56,15 +99,18 @@ function monolith_boss_name() return spaced_name(nemesis_mcm.get_string("npc_nam
 
 function isg_boss_name() return spaced_name(nemesis_mcm.get_string("isg_boss_name", default_name("isg"))) end
 
+function army_boss_name() return spaced_name(nemesis_mcm.get_string("army_boss_name", default_name("army"))) end
+
 function default_boss_name(kind) return default_name(kind) end
 
 function get_npc_name()
     if nemesis_state.S.faction == "isg" then return isg_boss_name() end
+    if nemesis_state.S.faction == "army" then return army_boss_name() end
     return monolith_boss_name()
 end
 
 function is_boss_name(n)
-    return n ~= nil and (n == monolith_boss_name() or n == isg_boss_name())
+    return n ~= nil and (n == monolith_boss_name() or n == isg_boss_name() or n == army_boss_name())
 end
 
 function clamped(id, def, lo, hi)
@@ -81,11 +127,11 @@ function escalation(cycle)
 end
 
 function get_retreat_health()
-    return clamped("retreat_health", 30, 10, 60) / 100
+    return clamped("retreat_health", 25, 10, 60) / 100
 end
 
 function br_bonus()
-    return clamped("br_bonus", 0, 0, 0.5), clamped("pct_bonus", 0, 0, 50) / 100
+    return clamped("br_bonus", 0.05, 0, 0.5), clamped("pct_bonus", 10, 0, 50) / 100
 end
 
 local function clamp_br(v)
@@ -203,11 +249,19 @@ end
 
 local UNISG_HUNTS = { monolith = true, zombied = true, greh = true }
 
-function faction_for_player()
-    return UNISG_HUNTS[player_community()] and "isg" or "monolith"
+local function monolith_hunters()
+    local v = nemesis_mcm.get_string("monolith_hunters", "army")
+    if v == "isg" then return "isg" end
+    return "army"
 end
 
-local SQUADS = { monolith = "nemesis_hunter_squad", isg = "nemesis_hunter_squad_isg" }
+function faction_for_player()
+    local comm = player_community()
+    if comm == "monolith" then return monolith_hunters() end
+    return UNISG_HUNTS[comm] and "isg" or "monolith"
+end
+
+local SQUADS = { monolith = "nemesis_hunter_squad", isg = "nemesis_hunter_squad_isg", army = "nemesis_hunter_squad_army" }
 
 function resolve_squad_section(faction)
     local sec = SQUADS[faction] or SQUADS.monolith
@@ -220,6 +274,9 @@ local MEMBER_POOL = {
     monolith = { "sim_default_monolith_3", "sim_default_monolith_2", "sim_default_monolith_4",
                  "sim_default_monolith_1", "sim_monolith_sniper" },
     isg = { "sim_default_isg_3", "sim_default_isg_4", "sim_default_isg_2", "sim_default_isg_1" },
+
+    army = { "sim_default_military_3", "sim_default_military_2", "sim_default_military_4",
+             "sim_default_military_1", "sim_default_military_3_sniper" },
 }
 
 function member_pool(faction)

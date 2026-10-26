@@ -1,17 +1,99 @@
--- Nemesis Config: the player's own small file, gamedata/configs/nwss_player.ltx, which this mod
+-- Nemesis Config: the player's own small file, gamedata/configs/nss_player.ltx, which this mod
 
 local function dbg(...) nemesis_utils.log_tag("CONFIG", ...) end
 
-FILE = "nwss_player.ltx"
+FILE = "nss_player.ltx"
+
+OLD_FILE = "nwss_player.ltx"
+
+local MIGRATED_SECTIONS = { "death", "custom_backup" }
 
 local ini = nil
+
+local function migrate(f)
+    for _, section in ipairs(MIGRATED_SECTIONS) do
+
+        local has = false
+        pcall(function() has = f:section_exist(section) end)
+        if has then return end
+    end
+    if not nemesis_engine.file_exists("$game_config$", OLD_FILE) then return end
+
+    local ok, old = pcall(ini_file_ex, OLD_FILE)
+    if not (ok and old) then
+        dbg("!Nemesis ERROR: the old settings file %s could not be read (%s); nothing carried over.", OLD_FILE, tostring(old))
+        return
+    end
+    local copied = 0
+    for _, section in ipairs(MIGRATED_SECTIONS) do
+        local values = nil
+
+        pcall(function() values = old:collect_section(section) end)
+        for key, value in pairs(values or {}) do
+
+            if pcall(function() f:w_value(section, key, value) end) then copied = copied + 1 end
+        end
+    end
+    if copied == 0 then return end
+    pcall(function()
+
+        f:w_value("migrated", "from", OLD_FILE)
+        f:save()
+    end)
+    dbg("Nemesis: %s values (the death record and the settings backup) carried over from %s into %s; the old file goes at the next start.",
+        tostring(copied), OLD_FILE, FILE)
+end
+
+local function remove_old_file(f)
+    local migrated, done = nil, nil
+
+    pcall(function()
+        migrated = f:r_value("migrated", "from")
+        done = f:r_value("migrated", "old_removed")
+    end)
+    if migrated ~= OLD_FILE or done then return end
+    if not nemesis_engine.file_exists("$game_config$", OLD_FILE) then return end
+    local on_disk = false
+
+    pcall(function() on_disk = ini_file_ex(FILE):section_exist("migrated") end)
+    if not on_disk then return end
+    local path = nemesis_engine.full_path("$game_config$", OLD_FILE)
+    local removed = false
+
+    if path then removed = pcall(function() assert(os.remove(path)) end) end
+    local how = "removed"
+    if not removed then
+        how = "emptied (it could not be removed)"
+        pcall(function()
+
+            local old = ini_file_ex(OLD_FILE, true)
+            for _, section in ipairs(MIGRATED_SECTIONS) do
+                for key in pairs(old:collect_section(section) or {}) do old:remove_line(section, key) end
+            end
+            old:w_value("migrated", "to", FILE)
+            old:save()
+        end)
+    end
+    pcall(function()
+
+        f:w_value("migrated", "old_removed", 1)
+        f:save()
+    end)
+    dbg("Nemesis: the old settings file %s is %s; %s holds your settings now.", OLD_FILE, how, FILE)
+end
 
 local function open()
     if ini then return ini end
     if type(ini_file_ex) == "nil" then return nil end
 
     local ok, f = pcall(ini_file_ex, FILE, true)
-    if ok and f then ini = f else dbg("!Nemesis ERROR: %s could not be opened (%s).", FILE, tostring(f)) end
+    if ok and f then
+        ini = f
+        migrate(ini)
+        remove_old_file(ini)
+    else
+        dbg("!Nemesis ERROR: %s could not be opened (%s).", FILE, tostring(f))
+    end
     return ini
 end
 

@@ -5,6 +5,7 @@ local S = nemesis_state.S
 local TICK_IDLE_MS     = 2000
 local TICK_HUNT_MS     = 250
 local SLOW_MS          = 2000
+local CHASE_START_WARN_MS = 3000
 local OFFLINE_LIMIT_MS = 300000
 local RETREAT_GRACE_MS = 8000
 local RETREAT_COVER_RADIUS_M = 20
@@ -21,7 +22,7 @@ local chase_install_warned = false
 
 local function dbg(...) nemesis_utils.log_tag("CORE", ...) end
 
-local VERSION = "1.0.2"
+local VERSION = "1.0.3"
 
 function version() return VERSION end
 
@@ -94,8 +95,8 @@ local function release_extras()
             teleport_away(obj, id)
         elseif obj and r and not r.death and r.inited and not r.hit_by_player then
 
-            nemesis_fx.play_retreat_fx(obj:position())
-            nemesis_fx.queue_vanish(id, nemesis_fx.DEAD_BODY_DELAY_MS)
+            if not nemesis_events.ask("own_exit", id) then nemesis_fx.play_retreat_fx(obj:position()) end
+            nemesis_fx.queue_vanish(id, nemesis_fx.DEAD_BODY_DELAY_MS, r.weapon_id)
         elseif not obj then
             offline[#offline + 1] = id
         end
@@ -202,7 +203,11 @@ local function begin_retreat(obj, r, why)
 
         pcall(function() nemesis_state.remember_spot(nemesis_engine.level_name(), db.actor:position(), nemesis_engine.game_seconds()) end)
     end
-    dbg("Nemesis: %s is wounded and breaks off the fight.", r.name or "A hunter")
+
+    dbg("Nemesis: %s is wounded and breaks off the fight (last hit: %s).", r.name or "A hunter",
+        r.hit_by_player and "you" or tostring(r.hit_from or "unknown"))
+
+    nemesis_events.emit("member_broke_off", id, r, r.hit_by_player == true)
     nemesis_engine.set_invulnerable(obj, true)
 
     nemesis_engine.set_health(obj, 1)
@@ -273,10 +278,12 @@ local function process_deaths()
         if r and r.death then
             if r.death.teleport then
                 local corpse = nemesis_engine.obj(id)
-                if corpse then nemesis_fx.play_retreat_fx(corpse:position()) end
+
+                if corpse and not nemesis_events.ask("own_exit", id) then nemesis_fx.play_retreat_fx(corpse:position()) end
                 release_id(id)
+                local weapon_id = r.weapon_id
                 nemesis_member.forget(id, "his body teleported out")
-                nemesis_fx.queue_vanish(id, nemesis_fx.DEAD_BODY_DELAY_MS)
+                nemesis_fx.queue_vanish(id, nemesis_fx.DEAD_BODY_DELAY_MS, weapon_id)
             else
                 r.cloak_vis = nil
             end
@@ -369,7 +376,7 @@ local function hunt_time_up()
 end
 
 local function time_limit_reached()
-    local hours = nemesis_mcm.get_number("hunt_duration", 5)
+    local hours = nemesis_mcm.get_number("hunt_duration", 6)
     if hours < 4 then hours = 4 end
     if hours > 12 then hours = 12 end
     local now = nemesis_engine.game_seconds()
@@ -442,7 +449,9 @@ local function manage_hunter(id, r, gt, actor, retreat_health)
     nemesis_fx.unmask(obj, r)
     nemesis_damage.lift_bypass_guard(obj, r)
     nemesis_compat.apply_ai(obj, r, gt)
+    r.weapon_id = nemesis_engine.held_weapon(obj, id) or r.weapon_id
     nemesis_combat.stall_check(obj, gt)
+    nemesis_combat.silent_check(obj, gt)
 
     if not r.inited then
         r.inited = true
@@ -502,9 +511,15 @@ local function manage_hunter(id, r, gt, actor, retreat_health)
         dbg("!Nemesis ERROR: could not add the chase action to the hunter.")
     end
 
-    if r.grace_until and gt > r.grace_until + 3000 and not nemesis_chase.has_run(id) and not r.idle_warned then
-        r.idle_warned = true
-        dbg("!Nemesis ERROR: chase action has not run for '%s'.", r.name or "?")
+    if r.grace_until and gt > r.grace_until and not r.idle_warned and not nemesis_chase.has_run(id)
+        and nemesis_chase.expected_to_run(obj) then
+        r.chase_wait_since = r.chase_wait_since or gt
+        if gt - r.chase_wait_since > CHASE_START_WARN_MS then
+            r.idle_warned = true
+            dbg("!Nemesis ERROR: chase action has not run for '%s'.", r.name or "?")
+        end
+    else
+        r.chase_wait_since = nil
     end
     return true, true
 end
@@ -565,7 +580,7 @@ end
 -- Prepare for uninstall (MCM, Debug)
 ---------------------------------------------------------------------------
 
-local UNINSTALL_SECTIONS = { nemesis_hunter_squad = true, nemesis_hunter_squad_isg = true }
+local UNINSTALL_SECTIONS = { nemesis_hunter_squad = true, nemesis_hunter_squad_isg = true, nemesis_hunter_squad_army = true }
 
 function add_uninstall_sections(list)
     for _, sec in ipairs(list or {}) do UNINSTALL_SECTIONS[sec] = true end
@@ -651,7 +666,9 @@ local function read_surroundings(gt, actor)
     end
     local lname = nil
     pcall(function() lname = nemesis_engine.level_name() end)
-    local known = lname ~= nil and nemesis_state.known_spot(lname, pos, nemesis_engine.game_seconds())
+
+    local reach = lname ~= nil and tonumber(nemesis_events.ask("spot_reach", lname)) or 1
+    local known = lname ~= nil and nemesis_state.known_spot(lname, pos, nemesis_engine.game_seconds(), reach)
     nemesis_siege.set_known_spot(known)
     if known and not S.spot_said then
         S.spot_said = true
@@ -929,6 +946,8 @@ local function quiet()
 end
 
 local function tick()
+
+    if nemesis_utils.debug_on() then nemesis_utils.log_flush() end
     if not check_xlibs() then return end
     nemesis_guard.tick()
     local actor = db.actor
@@ -1016,6 +1035,8 @@ local function on_npc_net_destroy(npc)
 end
 
 local function on_first_update()
+
+    nemesis_utils.log_ready()
     if not loaded_flag then
 
         nemesis_state.reset()
@@ -1066,7 +1087,9 @@ end
 
 function on_game_start()
 
-    printf("Nemesis Wave Spawn System %s loaded", VERSION)
+    printf("Nemesis Spawn System %s loaded", VERSION)
+
+    nemesis_utils.log_copy("Nemesis Spawn System " .. VERSION .. " loaded")
     nemesis_mcm.on_game_start()
 
     add_job("frame", "count frames (one bullet, one hit)", function() nemesis_damage.count_frame() end)

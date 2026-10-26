@@ -4,7 +4,7 @@ HEAD_CLR = { 255, 250, 150, 75 }
 
 local provider
 
-local PAGES = { "general", "nemesis_spawn", "nemesis_damage", "nemesis_boss", "nemesis_emission", "debug" }
+local PAGES = { "general", "nemesis_spawn", "nemesis_damage", "nemesis_boss", "nemesis_emission", "nemesis_returning", "nemesis_pressure", "nemesis_thunder_boss", "debug" }
 
 provider = function(name)
     local m = rawget(_G, name)
@@ -22,7 +22,13 @@ local function force_next_choices()
         local m = provider(name)
         if m and type(m.mcm_force_next) == "function" then
             local ok, c = pcall(m.mcm_force_next)
-            if ok and type(c) == "table" then list[#list + 1] = c end
+            if ok and type(c) == "table" then
+                if type(c[1]) == "table" then
+                    for _, one in ipairs(c) do list[#list + 1] = one end
+                else
+                    list[#list + 1] = c
+                end
+            end
         end
     end
     return list
@@ -63,8 +69,10 @@ local function general_page()
             { id = "warning_pda", type = "check", val = 1, def = false, hint = "nemesis_warning_pda" },
             { id = "hd_icon", type = "check", val = 1, def = false, hint = "nemesis_hd_icon" },
             { id = "line_effects", type = "line" },
-            { id = "head_effects", type = "title", text = "ui_mcm_nemesis_head_effects", align = "l", clr = HEAD_CLR },
+
+            { id = "head_compat", type = "title", text = "ui_mcm_nemesis_head_compat", align = "l", clr = HEAD_CLR },
             { id = "wd_malfunction", type = "check", val = 1, def = true, hint = "nemesis_wd_malfunction" },
+            { id = "wd_pda_messages", type = "check", val = 1, def = true, hint = "nemesis_wd_pda_messages" },
         }) }
 end
 
@@ -103,7 +111,13 @@ local function pages()
     return out, missing
 end
 
-local function options() return { id = "nemesis", gr = (pages()) } end
+local function options()
+    local own = nil
+
+    pcall(function() own = nemesis_events and nemesis_events.ask("menu_page") end)
+    if type(own) == "table" then return { id = "nemesis", gr = { own } } end
+    return { id = "nemesis", gr = (pages()) }
+end
 
 function on_mcm_load()
     register_apply_handler()
@@ -179,12 +193,13 @@ local function raw_number(id)
     return v
 end
 
-local function matches(level)
+local function matches(level, read)
     build()
+    read = read or raw_number
     local preset = DIFFICULTY[level]
     if not preset then return false end
     for id, want in pairs(preset) do
-        local have = raw_number(id)
+        local have = read(id)
         if have == nil or math.abs(have - want) > 0.001 then return false end
     end
     return true
@@ -204,22 +219,59 @@ local function log(...)
     elseif printf and get_bool("debug_logs", false) then printf(...) end
 end
 
+local main_menu_ref = nil
+
+local function remember_main_menu(mm) main_menu_ref = mm end
+
+local function mcm_window()
+    local w = nil
+    pcall(function() w = main_menu_ref and main_menu_ref.mcm_dlg end)
+    if w and w.CacheValue and w.Reset_opt then return w end
+    return nil
+end
+
 local BACKUP_SECTION = "custom_backup"
 
-local function values_are_yours()
-    return not (matches("easy") or matches("medium") or matches("hard"))
+local function shown_number(id)
+    local gui = mcm_window()
+    if gui and gui.GetCurrentValue then
+        local v = nil
+        pcall(function()
+            local full = path(id)
+            local page_path, opt = string.match(full, "^(.*)/([^/]+)$")
+
+            v = tonumber(gui:GetCurrentValue(page_path, opt, ui_mcm.get_opt_table(full)))
+        end)
+        if v ~= nil then return v end
+    end
+    return raw_number(id)
+end
+
+local function has_unapplied_changes()
+    build()
+    for id in pairs(DIFFICULTY.medium) do
+        local shown, saved = shown_number(id), raw_number(id)
+        if shown ~= nil and saved ~= nil and math.abs(shown - saved) > 0.001 then return true end
+    end
+    return false
+end
+
+local function leaving_custom(before)
+    return before == "custom" or read_applied() == "custom" or has_unapplied_changes()
 end
 
 local function backup_custom(why)
     build()
-    if not (nemesis_config and values_are_yours()) then return end
-    local want, n = {}, 0
+    if not nemesis_config then return end
+    local want, n, unapplied = {}, 0, 0
     for id in pairs(DIFFICULTY.medium) do
-        local v = raw_number(id)
+        local v = shown_number(id)
         if v ~= nil then
             nemesis_config.set(BACKUP_SECTION, id, v)
             want[id] = v
             n = n + 1
+            local saved = raw_number(id)
+            if saved ~= nil and math.abs(saved - v) > 0.001 then unapplied = unapplied + 1 end
         end
     end
     if n == 0 then return end
@@ -228,8 +280,8 @@ local function backup_custom(why)
     if res == "failed" then
         log("!Nemesis ERROR: the automatic backup of your settings did not save (%s).", tostring(key))
     else
-        log("Nemesis: your own settings (%s) backed up to %s before a difficulty is applied (%s%s).", tostring(n),
-            nemesis_config.FILE, why, res == "unverified" and "; a new file, checked from the next game start" or "")
+        log("Nemesis: your own settings (%s, %s of them not applied yet) backed up to %s before a difficulty is applied (%s%s).",
+            tostring(n), tostring(unapplied), nemesis_config.FILE, why, res == "unverified" and "; a new file, checked from the next game start" or "")
     end
 end
 
@@ -263,7 +315,7 @@ function sync_difficulty(picked)
     local last = read_applied()
     local apply = cur ~= "custom" and (picked or (last ~= nil and cur ~= last) or (last == nil and cur ~= "medium"))
     if apply then
-        backup_custom("applied " .. cur)
+        if last == "custom" then backup_custom("applied " .. cur) end
         for id, v in pairs(DIFFICULTY[cur]) do set_value(id, v) end
         write_applied(cur)
         invalidate()
@@ -299,22 +351,19 @@ function on_option_change()
     sync_difficulty()
 end
 
-local main_menu_ref = nil
-
-local function remember_main_menu(mm) main_menu_ref = mm end
-
-local function mcm_window()
-    local w = nil
-    pcall(function() w = main_menu_ref and main_menu_ref.mcm_dlg end)
-    if w and w.CacheValue and w.Reset_opt then return w end
-    return nil
-end
-
 function on_difficulty_selected(opt_path, opt, value, v)
     build()
     local preset = DIFFICULTY[value]
     if not preset then return end
-    backup_custom("picked " .. tostring(value) .. " in the menu")
+
+    if leaving_custom(current_difficulty()) then
+        backup_custom("picked " .. tostring(value) .. " in the menu")
+    end
+    for id, val in pairs(preset) do set_value(id, val) end
+    set_value("difficulty", value)
+    write_applied(value)
+    invalidate()
+    log("Nemesis: difficulty %s applied at once (picked in the menu).", tostring(value))
     local gui = mcm_window()
     if not gui then return end
     for id, val in pairs(preset) do

@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="windows-1251"?>
+<string_table>
+    <!-- The Thunder Boss (nemesis_thunder_boss, round 165): its own strings, like the other modules'. -->
+    <string id="st_nemesis_thunder_boss_name"><text>Данило Раскат</text></string>
+</string_table>

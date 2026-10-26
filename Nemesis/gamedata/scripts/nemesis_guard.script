@@ -15,11 +15,10 @@ local refused_count = 0
 local function log_refusal(what, se_obj)
     refused_count = refused_count + 1
     if not nemesis_utils.debug_on() then return end
+
     if refused_count <= 20 or refused_count % 25 == 0 then
-        local tb = ""
-        pcall(function() tb = debug.traceback("", 4) end)
-        dbg("!Nemesis: refused engine release (%s) of %s, online=%s, refusal %s.%s",
-            what, tostring(se_obj.id), tostring(se_obj.online), tostring(refused_count), tb or "")
+        dbg("Nemesis: release guard (expected): kept the %s %s from Anomaly's release while the hunt runs (online=%s, refusal %s).",
+            what, tostring(se_obj.id), tostring(se_obj.online), tostring(refused_count))
     end
 end
 
@@ -138,7 +137,7 @@ local function check_boxes()
     end
 
     local f = nemesis_mcm.get_string("force_next", "none")
-    if f == "boss" or f == "emission" then
+    if f ~= "none" and f ~= "" then
 
         pcall(function() ui_mcm.set(nemesis_mcm.path("force_next"), "none") end)
         nemesis_mcm.invalidate()
@@ -153,6 +152,7 @@ function tick()
     install_south_exemption()
     check_boxes()
     nemesis_damage.install_br_hooks()
+    nemesis_damage.install_keep_hits()
     nemesis_damage.settle_stale()
     install_release_guard()
     install_ap_owner()

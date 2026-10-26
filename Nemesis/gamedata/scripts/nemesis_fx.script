@@ -73,12 +73,27 @@ end
 -- Removal: vanish queue, offline members, empty squads
 ---------------------------------------------------------------------------
 local vanish_queue = {}
+local vanish_weapons = {}
 local squad_cleanup = {}
 local SQUAD_CLEANUP_MS = 3000
 
-function queue_vanish(id, delay_ms)
+function queue_vanish(id, delay_ms, weapon_id)
     if not id then return end
     vanish_queue[id] = time_global() + (delay_ms or 0)
+    vanish_weapons[id] = weapon_id
+end
+
+local function remove_dropped_weapon(weapon_id)
+    local item = weapon_id and nemesis_engine.se(weapon_id)
+    if not item then return end
+    local parent = nil
+
+    pcall(function() parent = item.parent_id end)
+    if parent ~= 65535 then return end
+    if remove_object(item) then
+        nemesis_compat.forget_dot_mark(weapon_id)
+        dbg("Nemesis: his dropped weapon %s went with him.", tostring(weapon_id))
+    end
 end
 
 function vanish_ids()
@@ -118,6 +133,8 @@ local function process_vanish(gt)
     for id, at in pairs(vanish_queue) do
         if gt >= at then
             vanish_queue[id] = nil
+            local weapon_id = vanish_weapons[id]
+            vanish_weapons[id] = nil
             local se = nemesis_engine.se(id)
             local is_npc = false
             is_npc = nemesis_engine.is_stalker(se)
@@ -125,6 +142,8 @@ local function process_vanish(gt)
                 local ok, err = remove_object(se)
                 if ok then
                     dbg("Nemesis: %s teleported out (removed).", tostring(id))
+                    nemesis_compat.forget_dot_mark(id)
+                    remove_dropped_weapon(weapon_id)
                 else
                     dbg("!Nemesis ERROR: could not remove %s (%s).", tostring(id), tostring(err))
                 end
@@ -261,8 +280,8 @@ end
 -- Cloak (MCM, on by default; always on for the boss)
 ---------------------------------------------------------------------------
 
-local CLOAK_MIN_M = 30
-local REVEAL_M = 15
+local REVEAL_MIN_M, REVEAL_MAX_M = 60, 100
+local CLOAK_MARGIN_M = 5
 local CLOAK_COOLDOWN_MS = 20000
 local HIT_REVEAL_MS = 1500
 
@@ -331,11 +350,12 @@ function reveal(obj, r, gt, why)
     set_neutral(r.id, false)
     set_visual(obj, r.cloak_vis)
     r.cloak_vis = nil
+    r.reveal_m = nil
     r.cloak_off_at = gt or time_global()
     dbg("Nemesis: %s reappears (%s).", r.name or "A hunter", why or "?")
 end
 
-local function cloak(obj, r)
+local function cloak(obj, r, distance_m)
     local vis = get_visual(obj)
     if not vis or vis == "" or vis == INVISIBLE_VISUAL then return end
     r.cloak_vis = vis
@@ -343,11 +363,13 @@ local function cloak(obj, r)
         r.cloak_vis = nil
         return
     end
-    dbg("Nemesis: %s cloaks.", r.name or "A hunter")
+    r.reveal_m = math.random(REVEAL_MIN_M, math.min(REVEAL_MAX_M, math.floor(distance_m - CLOAK_MARGIN_M)))
+    dbg("Nemesis: %s cloaks (he reappears within %s m).", r.name or "A hunter", tostring(r.reveal_m))
 end
 
 function cloak_update(obj, r, gt, actor)
     local id = r.id
+    if not (r.named or id == S.boss_id) then return end
 
     local enabled
     if id == S.boss_id then enabled = not r.player_struck and not nemesis_events.ask("boss_no_cloak")
@@ -362,15 +384,15 @@ function cloak_update(obj, r, gt, actor)
     if r.cloak_vis then
         if not enabled then reveal(obj, r, gt, "option off")
         elseif fighting then reveal(obj, r, gt, "fighting")
-        elseif d <= REVEAL_M and not nemesis_events.ask("sneak_move", id) then reveal(obj, r, gt, "close")
+        elseif d <= (r.reveal_m or REVEAL_MAX_M) and not nemesis_events.ask("sneak_move", id) then reveal(obj, r, gt, "close")
         elseif hit then reveal(obj, r, gt, "hit")
         elseif gt - (r.bump_at or -BUMP_MS) >= BUMP_MS then
             r.bump_at = gt
             if hostile_bump(obj) then reveal(obj, r, gt, "an enemy within 2 m") end
         end
-    elseif enabled and not fighting and not hit and d > CLOAK_MIN_M
+    elseif enabled and not fighting and not hit and d > REVEAL_MIN_M + CLOAK_MARGIN_M
         and gt - (r.cloak_off_at or -CLOAK_COOLDOWN_MS) >= CLOAK_COOLDOWN_MS then
-        cloak(obj, r)
+        cloak(obj, r, d)
     end
     local want = (r.cloak_vis and not r.player_struck) and true or false
     if want ~= (neutral[id] == true) then
@@ -558,16 +580,6 @@ swell_tick = function(gt)
 
     pcall(function() xpp.release(swell.h) end)
     swell = nil
-end
-
-local JOLT_PPE = "controller_hit.ppe"
-
-function boss_jolt()
-    if not nemesis_mcm.get_bool("boss_jolt", false) or not ppe_ok(JOLT_PPE) then return end
-    local h = nil
-
-    pcall(function() h = xpp.create_effector(JOLT_PPE, { cyclic = false }) end)
-    dbg("Nemesis: the boss's jolt%s.", h and "" or " failed")
 end
 
 ---------------------------------------------------------------------------

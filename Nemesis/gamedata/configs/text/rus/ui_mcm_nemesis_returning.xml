@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="windows-1251"?>
+<string_table>
+    <!-- The Returning (nemesis_returning, round 161): its own strings, like the emission boss's. -->
+    <string id="ui_mcm_nemesis_page_returning"><text>Возвращение</text></string>
+    <string id="ui_mcm_nemesis_head_returning"><text>Возвращающиеся охотники</text></string>
+    <string id="ui_mcm_nemesis_head_ranks"><text>Звания</text></string>
+    <string id="ui_mcm_nemesis_head_legends"><text>Легенды</text></string>
+    <string id="ui_mcm_nemesis_returning_enabled"><text>Возвращение</text></string>
+    <string id="ui_mcm_nemesis_returning_enabled_desc"><text>Именные охотники, отступившие от вас, могут вернуться в следующих охотах: под своим именем, каждый раз на звание выше, и они помнят, где вы сражались. Каждый именной охотник начинает со звания «Опытный». На высшем звании, «Легенда», охотник ждёт, чтобы прийти за вами один, как босс. Выключено: имена и звания случайные, как раньше, и Легенды не приходят. По умолчанию включено.</text></string>
+    <string id="ui_mcm_nemesis_return_chance"><text>Шанс возвращения (%)</text></string>
+    <string id="ui_mcm_nemesis_return_chance_desc"><text>Шанс, что охоту возглавит охотник, который уже отступал от вас (не больше одного за охоту). По умолчанию 35.</text></string>
+    <string id="ui_mcm_nemesis_rank_driver"><text>Эффекты званий от</text></string>
+    <string id="ui_mcm_nemesis_rank_driver_desc"><text>Если установлен AlifeTactics: кто превращает звание охотника в мастерство. AlifeTactics: его собственные кривые по званию (прицел, зрение, очереди) читают звание, которое даёт Nemesis. Nemesis: три ползунка ниже, поверх того, что AlifeTactics всё равно делает по званию. Без AlifeTactics этот список не показывается и используется Nemesis. По умолчанию AlifeTactics.</text></string>
+    <string id="ui_mcm_nemesis_lst_alifetactics"><text>AlifeTactics</text></string>
+    <string id="ui_mcm_nemesis_lst_nemesis"><text>Nemesis</text></string>
+    <string id="ui_mcm_nemesis_rank_accuracy"><text>Меткость за звание (%)</text></string>
+    <string id="ui_mcm_nemesis_rank_accuracy_desc"><text>Эффекты званий Nemesis: насколько больше выстрелов именного охотника попадает, за каждое звание выше «Опытного». По умолчанию 4.</text></string>
+    <string id="ui_mcm_nemesis_rank_vision"><text>Зрение за звание (%)</text></string>
+    <string id="ui_mcm_nemesis_rank_vision_desc"><text>Эффекты званий Nemesis: насколько быстрее и с какого большего расстояния именной охотник замечает вас, за каждое звание выше «Опытного». Нужны последние модифицированные exe. По умолчанию 4.</text></string>
+    <string id="ui_mcm_nemesis_rank_bursts"><text>Очереди за звание (%)</text></string>
+    <string id="ui_mcm_nemesis_rank_bursts_desc"><text>Эффекты званий Nemesis: насколько длиннее очереди именного охотника, за каждое звание выше «Опытного». Нужны последние модифицированные exe. По умолчанию 5.</text></string>
+    <string id="ui_mcm_nemesis_legend_chance"><text>Шанс Легенды (%)</text></string>
+    <string id="ui_mcm_nemesis_legend_chance_desc"><text>Шанс, что ждущая Легенда придёт за вами; бросается для каждой раз в несколько игровых часов (ниже). Он приходит один, как босс: сражается до смерти, а убитый, его имя исчезает навсегда. По умолчанию 2.</text></string>
+    <string id="ui_mcm_nemesis_legend_hours"><text>Бросок Легенды каждые (часов)</text></string>
+    <string id="ui_mcm_nemesis_legend_hours_desc"><text>Игровые часы между бросками Легенд. 0 = Легенды не приходят никогда. По умолчанию 2.</text></string>
+    <string id="ui_mcm_nemesis_legend_lockout"><text>Без Легенды после босса (часов)</text></string>
+    <string id="ui_mcm_nemesis_legend_lockout_desc"><text>Игровые часы после того, как любой босс (босс, босс выброса или Легенда) в последний раз был в мире, считая от конца его охоты, в которые Легенда не приходит. Не приходит она и пока жив босс или действует предупреждение об охоте. По умолчанию 12.</text></string>
+    <string id="ui_mcm_nemesis_force_next_returner"><text>Возвращающийся охотник</text></string>
+    <string id="ui_mcm_nemesis_force_next_legend"><text>Легенда</text></string>
+    <string id="ui_mcm_nemesis_force_next_legend_roll"><text>Бросок Легенд</text></string>
+    <string id="ui_mcm_nemesis_page_freed"><text>Nemesis Spawn System</text></string>
+    <string id="ui_mcm_nemesis_egg_restart"><text>Перезапустить Nemesis Spawn System</text></string>
+    <string id="ui_mcm_nemesis_egg_restart_desc"><text>Вы убили всех охотников в этом сохранении, и Nemesis вас отпустил. Отметьте и примените, чтобы вернуть охоту: все имена вернутся, и охоты начнутся снова.</text></string>
+
+</string_table>

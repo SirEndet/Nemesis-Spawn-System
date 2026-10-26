@@ -25,6 +25,11 @@ local npc_drop = {}
 local STALL_MS, STALL_START_MS, STALL_MOVE_M = 3000, 8000, 1
 local stall = {}
 
+local SILENT_RANGE_M = 20
+local SILENT_MS = 4000
+local SILENT_AGAIN_MS = 15000
+local silent = {}
+
 local fight_range_cache, fight_range_at = 100, -1000000
 
 local function fight_range()
@@ -43,9 +48,14 @@ local function _see(a, b) return a:see(b) end
 
 local function _best_enemy(npc) return npc:best_enemy() end
 
+local function enemy_name(be)
+    if xcreature.is_stalker(be) then return be:character_name() end
+    return be:section()
+end
+
 local function sees_player(npc, range)
     local actor = db.actor
-    if not actor then return false end
+    if not actor or not nemesis_engine.alive(npc) then return false end
     local d = nemesis_engine.dist(npc, actor)
     if not d or d > range then return false end
     local ok2, seen = pcall(_see, npc, actor)
@@ -80,7 +90,7 @@ end
 local OWNS_CACHE_MS = 100
 
 function combat_owns(npc)
-    if not npc then return false end
+    if not npc or not nemesis_engine.alive(npc) then return false end
     local id = npc:id()
     local memo = fight_memo[id]
     if not memo then
@@ -99,7 +109,7 @@ function combat_owns(npc)
         pcall(function()
             local be = npc:best_enemy()
             if be then
-                be_name = be:id() == 0 and "you" or (be:character_name() .. " (" .. be:id() .. ")")
+                be_name = be:id() == 0 and "you" or (enemy_name(be) .. " (" .. be:id() .. ")")
             end
         end)
         log_msg("Nemesis: %s %s (enemy: %s).", tostring(nemesis_state.name_of(id) or id),
@@ -183,7 +193,8 @@ function combat_owns_now(npc, memo, now)
 
         if fighting then
             local since = memo.combat_since or now
-            if memo.next_check < since + CHECK_SECOND_MS then memo.next_check = since + CHECK_SECOND_MS
+
+            if (memo.next_check or now) < since + CHECK_SECOND_MS then memo.next_check = since + CHECK_SECOND_MS
             else memo.next_check = memo.next_check + CHECK_EVERY_MS end
             return true
         end
@@ -279,7 +290,7 @@ function stall_check(npc, gt)
         pcall(function()
             local be = npc:best_enemy()
             if be then
-                be_name = be:id() == 0 and "you" or (be:character_name() .. " (" .. be:id() .. ")")
+                be_name = be:id() == 0 and "you" or (enemy_name(be) .. " (" .. be:id() .. ")")
             end
         end)
         owner = "combat AI (enemy: " .. be_name .. ")"
@@ -294,9 +305,55 @@ function stall_check(npc, gt)
         nemesis_siege.siege_active() and ", siege (you are indoors)" or "", nemesis_events.ask("sneak_move", id) and ", sneaking" or "")
 end
 
+local function frozen_state(npc)
+    local parts = {}
+    pcall(function()
+        local item = npc:active_item()
+        parts[#parts + 1] = "body " .. tostring(npc:body_state()) .. ", mental " .. tostring(npc:mental_state())
+        parts[#parts + 1] = "weapon " .. (item and (item:section() .. ", ammo " .. tostring(item:get_ammo_in_magazine())) or "none")
+        parts[#parts + 1] = "sees you " .. tostring(db.actor and npc:see(db.actor))
+        parts[#parts + 1] = "animations " .. tostring(npc:animation_count())
+    end)
+    return table.concat(parts, "; ")
+end
+
+function silent_check(npc, gt)
+    local id = npc and npc:id()
+    local actor = db.actor
+    if not id or not actor or not nemesis_engine.alive(npc) then return end
+    local memo = fight_memo[id]
+    local r = nemesis_state.member(id)
+    local aimed = false
+    pcall(function()
+        local be = npc:best_enemy()
+        aimed = be ~= nil and be:id() == actor:id() and npc:see(actor)
+            and npc:position():distance_to(actor:position()) <= SILENT_RANGE_M
+    end)
+    if not (memo and memo.res and r and not r.retreat_at and aimed) then
+        silent[id] = nil
+        return
+    end
+    local watch = silent[id]
+    if not watch then
+        silent[id] = { since = gt }
+        return
+    end
+    local quiet_from = math.max(watch.since, r.shot_at or 0)
+    if gt - quiet_from < SILENT_MS or (watch.kicked_at and gt - watch.kicked_at < SILENT_AGAIN_MS) then return end
+    watch.kicked_at = gt
+    if debug_on() then
+        log_msg("Nemesis: %s sees you within %s m and hasn't fired for %s s (%s); kicking him.", tostring(r.name or id),
+            tostring(SILENT_RANGE_M), string.format("%.1f", (gt - quiet_from) / 1000), frozen_state(npc))
+    end
+
+    pcall(function() npc:clear_animations() end)
+    pcall(function() npc:set_mental_state(anim.danger) end)
+    if db.actor then pcall(_show_enemy, npc, db.actor) end
+end
+
 function reset()
     fight_memo = {}
-    npc_drop, stall = {}, {}
+    npc_drop, stall, silent = {}, {}, {}
 
     focus = {}
 end

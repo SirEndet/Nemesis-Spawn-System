@@ -23,13 +23,10 @@ function pick(key, paths)
     return sound_pick[key] or nil
 end
 
-local PSY_L = { "anomaly\\psy_voices_1_l" }
-local PSY_R = { "anomaly\\psy_voices_1_r" }
+local HUM_FILES = { "characters_voice\\scenario\\yantar\\psy_voices_1", "anomaly\\psy_voices_1_l" }
 
-function psy_voices()
-    local l = pick("psy voices (left)", PSY_L)
-    if not l then return nil end
-    return l, pick("psy voices (right)", PSY_R)
+function hum_file()
+    return pick("psy hum", HUM_FILES)
 end
 
 function volume(id, default)
@@ -60,7 +57,7 @@ function play_at(path, pos, vol)
 end
 
 function teleport(spot)
-    return play_at("anomaly\\teleport_incoming", spot, volume("teleport_volume", 40))
+    return play_at("anomaly\\teleport_incoming", spot, volume("teleport_volume", 50))
 end
 
 function pda_tip()
@@ -105,7 +102,7 @@ function hum_update(nearest, near_id, hum_d)
     local p = obj:position()
     local pos = vector():set(p.x, p.y + 1.5, p.z)
     if not hum then
-        local path = psy_voices()
+        local path = hum_file()
         if not path then return end
         local ok, snd = pcall(function()
 
@@ -163,7 +160,7 @@ end
 
 function heart_update(boss_d)
     if not boss_d or boss_d > HEART_FROM_M then return heart_stop("the boss is out of range") end
-    if volume("heartbeat_volume", 30) <= 0 then return heart_stop("volume 0") end
+    if volume("heartbeat_volume", 60) <= 0 then return heart_stop("volume 0") end
     heart_d, heart_d_at = boss_d, time_global()
 end
 
@@ -188,7 +185,7 @@ function heart_frame(gt)
         heart.bpm = math.max(want, heart.bpm - step)
     end
     if gt < heart.next_at then return end
-    play(heart.path, volume("heartbeat_volume", 30))
+    play(heart.path, volume("heartbeat_volume", 60))
     local gap = 60000 / heart.bpm
     heart.next_at = math.max(heart.next_at + gap, gt + gap / 2)
 end
@@ -349,7 +346,7 @@ function silence_begin(boss, on_warning)
     if silence then return false end
     local fx0, mu0 = nemesis_engine.sound_factors()
     if not (fx0 and mu0) then return false end
-    local hold = nemesis_mcm.get_number("silence_length", 0.75)
+    local hold = nemesis_mcm.get_number("silence_length", 1)
     if hold < 0.5 then hold = 0.5 end
     if hold > 1 then hold = 1 end
     owed = nil
@@ -445,9 +442,7 @@ function warm_tick(gt)
     if not warm_due or gt < warm_due then return end
     warm_due = nil
     local paths = { pick("warning static", STATIC_SOUNDS), "anomaly\\teleport_incoming" }
-    local l, r = psy_voices()
-    paths[#paths + 1] = l
-    paths[#paths + 1] = r
+    paths[#paths + 1] = hum_file()
     local n = 0
     for _, p in pairs(paths) do
 
@@ -465,17 +460,16 @@ function mcm_sound_section()
         { id = "line_sound", type = "line" },
         { id = "head_sound", type = "title", text = "ui_mcm_nemesis_head_sound", align = "l", clr = nemesis_mcm.HEAD_CLR },
         { id = "warning_volume", type = "track", val = 2, def = 70, min = 0, max = 100, step = 5, prec = 0, hint = "nemesis_warning_volume" },
-        { id = "teleport_volume", type = "track", val = 2, def = 40, min = 0, max = 100, step = 5, prec = 0, hint = "nemesis_teleport_volume" },
+        { id = "teleport_volume", type = "track", val = 2, def = 50, min = 0, max = 100, step = 5, prec = 0, hint = "nemesis_teleport_volume" },
         { id = "hum_volume", type = "track", val = 2, def = 10, min = 0, max = 100, step = 5, prec = 0, hint = "nemesis_hum_volume" },
-        { id = "heartbeat_volume", type = "track", val = 2, def = 30, min = 0, max = 100, step = 5, prec = 0, hint = "nemesis_heartbeat_volume" },
+        { id = "heartbeat_volume", type = "track", val = 2, def = 60, min = 0, max = 100, step = 5, prec = 0, hint = "nemesis_heartbeat_volume" },
         { id = "heartbeat_top", type = "track", val = 2, def = 140, min = 120, max = 180, step = 5, prec = 0, hint = "nemesis_heartbeat_top" },
         { id = "arrival_call_volume", type = "track", val = 2, def = 50, min = 0, max = 100, step = 5, prec = 0, hint = "nemesis_arrival_call_volume" },
         { id = "arrival_ppe", type = "track", val = 2, def = 40, min = 0, max = 100, step = 5, prec = 0, hint = "nemesis_arrival_ppe" },
         { id = "arrival_escalation", type = "track", val = 2, def = 10, min = 0, max = 25, step = 1, prec = 0, hint = "nemesis_arrival_escalation" },
         { id = "arrival_max", type = "track", val = 2, def = 50, min = 0, max = 100, step = 5, prec = 0, hint = "nemesis_arrival_max" },
-        { id = "boss_jolt", type = "check", val = 1, def = false, hint = "nemesis_boss_jolt" },
         { id = "silence_before", type = "check", val = 1, def = true, hint = "nemesis_silence_before" },
-        { id = "silence_length", type = "track", val = 2, def = 0.75, min = 0.5, max = 1, step = 0.05, prec = 2, hint = "nemesis_silence_length" },
-        { id = "lightning_volume", type = "track", val = 2, def = 0, min = 0, max = 100, step = 5, prec = 0, hint = "nemesis_lightning_volume" },
+        { id = "silence_length", type = "track", val = 2, def = 1, min = 0.5, max = 1, step = 0.05, prec = 2, hint = "nemesis_silence_length" },
+        { id = "lightning_volume", type = "track", val = 2, def = 60, min = 0, max = 100, step = 5, prec = 0, hint = "nemesis_lightning_volume" },
     }
 end
