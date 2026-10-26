@@ -1,9 +1,0 @@
-<?xml version="1.0" encoding="windows-1251"?>
-<w>
-	<file name="ui\nemesis_news">
-		<texture id="ui_nemesis_news" x="0" y="0" width="83" height="47"/>
-	</file>
-	<file name="ui\nemesis_news_hd">
-		<texture id="ui_nemesis_news_hd" x="0" y="0" width="830" height="470"/>
-	</file>
-</w>
