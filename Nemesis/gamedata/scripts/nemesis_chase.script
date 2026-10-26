@@ -103,19 +103,30 @@ local function gate_open(npc)
     if not npc then return false end
     local id = npc:id()
     if not wanted[id] then return false end
+    -- casting: a module's hunter casting (the Thunder caster's own action has him, round 165)
+    if nemesis_events.ask("casting", id) == true then return false end   -- ask: nemesis_events, the first module's answer, or nil
     if get_retreat_dest(id) then return true end
     if takeover_running(npc) then return false end
     if nemesis_combat.combat_owns(npc) then return false end   -- combat_owns: nemesis_combat, combat AI has him
     return true
 end
 
--- The gate: true exactly while gate_open says so.
+-- The gate: true exactly while gate_open says so. The engine's planner calls it, and a Lua error
+-- inside a planner callback is fatal to the game (the owner's play test, round 169), so it runs in
+-- a pcall: an error is logged once and reads as false (the chase lets go; combat takes him).
+local gate_error_logged = false
 class "nemesis_chase_gate" (property_evaluator)
 -- src: engine action_base_script.cpp (__init)
 function nemesis_chase_gate:__init(name) super(nil, name) end
 -- src: engine property_evaluator_script.cpp (evaluate)
 function nemesis_chase_gate:evaluate()
-    return gate_open(self.object) == true
+    local ok, open = pcall(gate_open, self.object)
+    if ok then return open == true end
+    if not gate_error_logged then
+        gate_error_logged = true
+        nemesis_utils.log_tag("CHASE", "!Nemesis ERROR: the chase gate failed (%s); the chase lets go.", tostring(open))   -- log_tag: nemesis_utils, a tagged log line
+    end
+    return false
 end
 
 -- The action. initialize sets the path and mental state. execute drives the chase.
@@ -146,7 +157,13 @@ function nemesis_chase_action:execute()
     local actor = db.actor
     if not actor then return end
     ran[npc:id()] = true
-    drive_chase(npc, actor)
+    -- The engine's planner calls this: an error here would be fatal, so the chase's step runs in
+    -- a pcall, since round 169; an error is logged once and this step is skipped.
+    local ok, err = pcall(drive_chase, npc, actor)
+    if not ok and not gate_error_logged then
+        gate_error_logged = true
+        nemesis_utils.log_tag("CHASE", "!Nemesis ERROR: a chase step failed (%s).", tostring(err))   -- log_tag: nemesis_utils, a tagged log line
+    end
 end
 -- src: engine action_base_script.cpp (finalize)
 function nemesis_chase_action:finalize()
@@ -154,6 +171,11 @@ function nemesis_chase_action:finalize()
     local npc = self.object
     if npc then reset_slot(npc:id()) end
 end
+
+-- The planners a takeover of a hunter has to block (xgraft's combat chain plus the loot and help
+-- schemes, planner_ids above). Public for the Thunder caster's cast action (round 165), which
+-- blocks the same ones while he casts.
+function takeover_planner_ids() return planner_ids() end
 
 -- Add the gate and the action to this NPC's manager, once. Then keep the planner
 -- blocks up to date, because a planner can be bound after the install.
@@ -251,6 +273,16 @@ function reset_all()
     complete = {}
     ran = {}
     refs = {}
+end
+
+-- Returns whether npc should currently chase through gate_open above (the same
+-- eligibility used by this file's planner evaluator). Used by nemesis_core's
+-- startup watchdog so legitimate combat, casting and takeover time is not a stall.
+-- In a pcall like the gate itself (round 184): an error reads as false, so the watchdog stays quiet
+-- and the core's tick goes on.
+function expected_to_run(npc)
+    local ok, open = pcall(gate_open, npc)
+    return ok and open == true
 end
 
 -- Diagnostic: did the action ever execute for this NPC?

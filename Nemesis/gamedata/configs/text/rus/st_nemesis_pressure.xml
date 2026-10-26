@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="windows-1251"?>
+<string_table>
+    <!-- The Hunt's Eye (nemesis_pressure, round 164): its own strings, like the other modules'. -->
+    <string id="st_nemesis_caption_intercepted"><text>Перехваченная передача</text></string>
+    <string id="st_nemesis_eye_sign_monolith_1"><text>...Монолит назвал имя. Место — «%map%». Братья, до исхода часа мы ответим.</text></string>
+    <string id="st_nemesis_eye_sign_monolith_2"><text>...еретик бродит по земле «%map%» и несёт свою жалкую жизнь, как фонарь. Мы её погасим.</text></string>
+    <string id="st_nemesis_eye_sign_monolith_3"><text>...молитесь, братья. Час молитвы, а затем паломничество. Наш путь — «%map%».</text></string>
+    <string id="st_nemesis_eye_sign_monolith_4"><text>...%name%. Камень шепчет это имя. Он хочет, чтобы его привели к свету.</text></string>
+    <string id="st_nemesis_eye_sign_monolith_5"><text>...не бойтесь его оружия. Кто умирает за Монолит, тот не умирает.</text></string>
+    <string id="st_nemesis_eye_sign_monolith_6"><text>...неверный бежит от сердца Зоны. Сердце Зоны — это мы. «%map%».</text></string>
+    <string id="st_nemesis_eye_sign_monolith_7"><text>...свет показал мне его лицо во сне. Я узнаю его. Место — «%map%».</text></string>
+    <string id="st_nemesis_eye_sign_monolith_8"><text>...соберите избранных. Монолит ждёт жертвы до рассвета. Место — «%map%».</text></string>
+    <string id="st_nemesis_eye_sign_monolith_9"><text>...он убил наших братьев. Теперь они с Монолитом. Он присоединится к ним.</text></string>
+    <string id="st_nemesis_eye_sign_monolith_10"><text>...голос всё громче, братья. Он говорит: не позже, чем через час.</text></string>
+    <string id="st_nemesis_eye_sign_monolith_11"><text>...ни пощады ему, ни молитвы. Только свет. «%map%».</text></string>
+    <string id="st_nemesis_eye_sign_monolith_12"><text>...слава Монолиту. Заблудший с земли «%map%» преклонит колени — или сгорит.</text></string>
+    <string id="st_nemesis_eye_sign_isg_1"><text>...«Дозор», подтвердите: объект %name%, район «%map%». Чистое изъятие — или никакого.</text></string>
+    <string id="st_nemesis_eye_sign_isg_2"><text>...протокол девять. Без свидетелей. Кто рядом с объектом, тот часть объекта.</text></string>
+    <string id="st_nemesis_eye_sign_isg_3"><text>...окно телепорта через шестьдесят минут. Координаты зафиксированы: «%map%».</text></string>
+    <string id="st_nemesis_eye_sign_isg_4"><text>...этого разговора не существует. К утру не будет и его.</text></string>
+    <string id="st_nemesis_eye_sign_isg_5"><text>...группа, зачистить все следы. Института в районе «%map%» никогда не было.</text></string>
+    <string id="st_nemesis_eye_sign_isg_6"><text>...объект видел слишком много. Изоляция разрешена.</text></string>
+    <string id="st_nemesis_eye_sign_isg_7"><text>...сигнатура маяка свежая, район «%map%». Вторая группа, катушки на полный заряд.</text></string>
+    <string id="st_nemesis_eye_sign_isg_8"><text>...если сталкеры спросят — это была аномалия. Это всегда аномалия.</text></string>
+    <string id="st_nemesis_eye_sign_isg_9"><text>...он уже уходил от нас. Больше не уйдёт. Двойная группа, оружие с глушителями.</text></string>
+    <string id="st_nemesis_eye_sign_isg_10"><text>...зашифровать, после прочтения сжечь. Цель: «%map%». Окно: один час.</text></string>
+    <string id="st_nemesis_eye_sign_isg_11"><text>...в его деле уже написано «погиб». Сделайте так, чтобы это было правдой.</text></string>
+    <string id="st_nemesis_eye_sign_isg_12"><text>...после этого никакой связи. Пришли, закончили, нас там не было.</text></string>
+    <string id="st_nemesis_eye_sign_army_1"><text>...«Центр» всем позывным: цель обнаружена, сектор «%map%». Огонь без предупреждения.</text></string>
+    <string id="st_nemesis_eye_sign_army_2"><text>...никаких задержаний, никаких вопросов. Вернуться с телом — или не возвращаться.</text></string>
+    <string id="st_nemesis_eye_sign_army_3"><text>...квадрат подтверждён: «%map%». Группа телепорта грузится через час.</text></string>
+    <string id="st_nemesis_eye_sign_army_4"><text>...сталкер %name% в списке полковника. Из этого списка никто не выживает.</text></string>
+    <string id="st_nemesis_eye_sign_army_5"><text>...гражданские в районе? В Зоне нет гражданских. Огонь по готовности.</text></string>
+    <string id="st_nemesis_eye_sign_army_6"><text>...телепорт института на эту ночь снова наш. Работаем быстро.</text></string>
+    <string id="st_nemesis_eye_sign_army_7"><text>...на нём кровь наших ребят. Не торопитесь с ним.</text></string>
+    <string id="st_nemesis_eye_sign_army_8"><text>...«Гранит-6», вы ведущие. Выгоните его на открытое место, дальше всё просто.</text></string>
+    <string id="st_nemesis_eye_sign_army_9"><text>...повторяю: цель вооружена. Мы тоже. И нас больше.</text></string>
+    <string id="st_nemesis_eye_sign_army_10"><text>...приказ подписан. «%map%», один час, полная выкладка.</text></string>
+    <string id="st_nemesis_eye_sign_army_11"><text>...спрячется за стенами торговцев — подождём. Зона терпелива. Мы тоже.</text></string>
+    <string id="st_nemesis_eye_sign_army_12"><text>...говорит штаб сектора. С этой минуты радиомолчание. Следующий доклад: цель уничтожена.</text></string>
+    <string id="st_nemesis_eye_mark_taken"><text>Холодок по затылку. Кто-то взял ваш след.</text></string>
+    <string id="st_nemesis_eye_mark_strong"><text>Теперь это у вас в голове: они знают ваше лицо, походку, запах.</text></string>
+    <string id="st_nemesis_eye_mark_gone"><text>Чувство чужого взгляда уходит. Пока.</text></string>
+    <string id="st_nemesis_eye_targeted_monolith"><text>Голоса Монолита твердят одно место: «%map%». Верные собираются здесь.</text></string>
+    <string id="st_nemesis_eye_targeted_isg"><text>Шифрованный трафик, коды института: район «%map%» теперь зона их операции.</text></string>
+    <string id="st_nemesis_eye_targeted_army"><text>Военная сеть: сектор «%map%» открыт для рейдов. Любой в нём — цель.</text></string>
+    <string id="st_nemesis_eye_cooled"><text>Эфир по району «%map%» затих. Здесь они потеряли ваш след.</text></string>
+</string_table>

@@ -1,0 +1,61 @@
+<?xml version="1.0" encoding="windows-1251"?>
+<string_table>
+    <!-- The Returning (nemesis_returning, round 161): its own strings, like the emission boss's. -->
+    <string id="st_nemesis_ret_monolith_return_1"><text>Монолит вынес меня с локации «%map%», %name%. Он посылает меня обратно, чтобы закончить.</text></string>
+    <string id="st_nemesis_ret_monolith_return_2"><text>Ты видел, как я пал на локации «%map%». Монолит не даёт своим детям пасть.</text></string>
+    <string id="st_nemesis_ret_monolith_return_3"><text>Я истекал кровью на локации «%map%». Монолит выпил её и вернул меня.</text></string>
+    <string id="st_nemesis_ret_monolith_return_4"><text>Теперь я %rank%. Монолит награждает тех, кто возвращается.</text></string>
+    <string id="st_nemesis_ret_monolith_return_5"><text>Снова, %name%. Каждый раз, когда ты щадишь меня, я становлюсь ближе к Нему.</text></string>
+    <string id="st_nemesis_ret_monolith_return_6"><text>На локации «%map%» ты думал, что всё кончено. Ничто не кончено, пока так не скажет Монолит.</text></string>
+    <string id="st_nemesis_ret_monolith_return_7"><text>Я помню твоё лицо с локации «%map%». Я молюсь на него каждую ночь.</text></string>
+    <string id="st_nemesis_ret_monolith_return_8"><text>Свет вынес меня с локации «%map%». Он показал мне, где ты будешь.</text></string>
+    <string id="st_nemesis_ret_monolith_return_9"><text>Нельзя убить того, кого Монолит уже забрал.</text></string>
+    <string id="st_nemesis_ret_monolith_return_10"><text>Каждое возвращение поднимает меня выше, %name%. Каждое опускает тебя ниже.</text></string>
+    <string id="st_nemesis_ret_monolith_return_11"><text>Теперь я %rank%. Твоя кровь поднимет меня ещё выше.</text></string>
+    <string id="st_nemesis_ret_monolith_return_12"><text>Локация «%map%» была уроком, %name%. Для тебя.</text></string>
+    <string id="st_nemesis_ret_monolith_legend_1"><text>%count% раз я возвращался к тебе, %name%. На этот раз Монолит никого больше не послал. Ему и не нужно.</text></string>
+    <string id="st_nemesis_ret_monolith_legend_2"><text>Я стоял в свете чаще, чем любой живой человек. Сегодня я несу его тебе.</text></string>
+    <string id="st_nemesis_ret_monolith_legend_3"><text>Каждую рану, что ты мне нанёс, Монолит обратил в веру. Теперь я — одна только вера.</text></string>
+    <string id="st_nemesis_ret_monolith_legend_4"><text>На этот раз без братьев, %name%. Только я, свет и ты.</text></string>
+    <string id="st_nemesis_ret_monolith_legend_5"><text>Ты создал меня на локации «%map%», %name%. Иди посмотри, что ты создал.</text></string>
+    <string id="st_nemesis_ret_monolith_legend_6"><text>Монолит перестал считать мои возвращения. Теперь он считает твои вдохи.</text></string>
+    <string id="st_nemesis_ret_isg_return_1"><text>Эвакуация с локации «%map%» прошла чисто, %name%. Эта такой не будет.</text></string>
+    <string id="st_nemesis_ret_isg_return_2"><text>Рана зашита, звание повышено: %rank%. Спасибо за повышение.</text></string>
+    <string id="st_nemesis_ret_isg_return_3"><text>Разбор локации «%map%» закончен. Теперь я знаю, как ты двигаешься.</text></string>
+    <string id="st_nemesis_ret_isg_return_4"><text>Маяк вытащил меня с локации «%map%». Тебя не вытащит ничто.</text></string>
+    <string id="st_nemesis_ret_isg_return_5"><text>Та же цель, новый приказ: на этот раз без свидетелей.</text></string>
+    <string id="st_nemesis_ret_isg_return_6"><text>На локации «%map%» у тебя был шанс выстрелить, %name%. Надо было стрелять.</text></string>
+    <string id="st_nemesis_ret_isg_return_7"><text>Возвращение номер %count%. Командование своих не бросает.</text></string>
+    <string id="st_nemesis_ret_isg_return_8"><text>В моём деле написано: «%map%» — не завершено. Я пришёл его закрыть.</text></string>
+    <string id="st_nemesis_ret_isg_return_9"><text>Меня зашили за час. У тебя были дни, чтобы бежать.</text></string>
+    <string id="st_nemesis_ret_isg_return_10"><text>Тошнота после телепорта проходит. Обиды — нет.</text></string>
+    <string id="st_nemesis_ret_isg_return_11"><text>Теперь я %rank%. Мне дали отряд побольше. И тебя.</text></string>
+    <string id="st_nemesis_ret_isg_return_12"><text>Локация «%map%» научила нас твоим привычкам. Мы учли.</text></string>
+    <string id="st_nemesis_ret_isg_legend_1"><text>Актив повышен до одиночного оператора. Группа отозвана. Цель: %name%.</text></string>
+    <string id="st_nemesis_ret_isg_legend_2"><text>%count% эвакуаций. Кураторы перестали писать отчёты. Они просто посылают меня.</text></string>
+    <string id="st_nemesis_ret_isg_legend_3"><text>Ни отряда, ни поддержки, и только один приказ. Ты знаешь какой.</text></string>
+    <string id="st_nemesis_ret_isg_legend_4"><text>Мой номер в деле списали, %name%. Он мне больше не нужен. Тебе тоже не понадобится.</text></string>
+    <string id="st_nemesis_ret_isg_legend_5"><text>Каждый раз, когда ты меня отпускал, я учился. Это последний урок.</text></string>
+    <string id="st_nemesis_ret_isg_legend_6"><text>Командование очистило район. Теперь здесь только мы вдвоём.</text></string>
+    <string id="st_nemesis_ret_army_return_1"><text>Ребята из лаборатории вынесли меня с локации «%map%» по кускам. Собрали обратно злее.</text></string>
+    <string id="st_nemesis_ret_army_return_2"><text>Теперь я %rank%, %name%. Повышен за то, что пережил тебя.</text></string>
+    <string id="st_nemesis_ret_army_return_3"><text>Научная группа хочет знать, как ты справился на локации «%map%». Я тоже.</text></string>
+    <string id="st_nemesis_ret_army_return_4"><text>Эвакуация телепортом, любезность института. Твоя очередь близко.</text></string>
+    <string id="st_nemesis_ret_army_return_5"><text>Приказ с локации «%map%» не изменился: доставить %name% в любом состоянии.</text></string>
+    <string id="st_nemesis_ret_army_return_6"><text>На локации «%map%» ты оставил меня в живых. Солдат такую ошибку не забывает.</text></string>
+    <string id="st_nemesis_ret_army_return_7"><text>Командование зовёт меня тем, кто вернулся. Посмотрим, как назовут тебя.</text></string>
+    <string id="st_nemesis_ret_army_return_8"><text>Они испытывают на нас свою машину, %name%. Я их лучший результат.</text></string>
+    <string id="st_nemesis_ret_army_return_9"><text>На локации «%map%» я был неосторожен. У меня было время потренироваться.</text></string>
+    <string id="st_nemesis_ret_army_return_10"><text>Каждый прыжок назад чего-то мне стоит. Сегодня платишь ты.</text></string>
+    <string id="st_nemesis_ret_army_return_11"><text>Ещё одна лычка на рукав. Твой КПК — на стену.</text></string>
+    <string id="st_nemesis_ret_army_return_12"><text>Каждую ночь, закрывая глаза, я вижу локацию «%map%». Сегодня это кончится.</text></string>
+    <string id="st_nemesis_ret_army_legend_1"><text>Лычки для меня кончились, %name%. Поэтому меня послали одного.</text></string>
+    <string id="st_nemesis_ret_army_legend_2"><text>%count% раз через их машину. От прежнего меня мало что осталось, и всё это ненавидит тебя.</text></string>
+    <string id="st_nemesis_ret_army_legend_3"><text>На этот раз без взвода. В институте говорят, я стою целого.</text></string>
+    <string id="st_nemesis_ret_army_legend_4"><text>Я перестал считать эвакуации, %name%. Я начал считать дни до этой.</text></string>
+    <string id="st_nemesis_ret_army_legend_5"><text>С локации «%map%» и досюда. Каждый шаг был ради тебя.</text></string>
+    <string id="st_nemesis_ret_army_legend_6"><text>В итоговом отчёте лаборатории одна пустая строка. Сегодня туда впишут твоё имя.</text></string>
+    <string id="st_nemesis_ret_msg_free"><text>Поздравляем, вы убили всех Охотников. Теперь вы свободны. Пришлите скриншот этого сообщения в Discord GAMMA, в канал Nemesis Spawn System</text></string>
+    <string id="st_nemesis_ret_msg_restarted"><text>Nemesis Spawn System вернулась. Охота начинается снова.</text></string>
+
+</string_table>

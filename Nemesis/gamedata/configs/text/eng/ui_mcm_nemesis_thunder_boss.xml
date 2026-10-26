@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="windows-1251"?>
+<string_table>
+    <!-- The Thunder Boss (nemesis_thunder_boss, round 165): its own strings, like the other modules'. -->
+    <string id="ui_mcm_nemesis_page_thunder_boss"><text>Thunder Boss</text></string>
+    <string id="ui_mcm_nemesis_head_thunder"><text>His lightning</text></string>
+    <string id="ui_mcm_nemesis_thunder_enabled"><text>Thunder Boss</text></string>
+    <string id="ui_mcm_nemesis_thunder_enabled_desc"><text>The Thunder Boss and his lightning. Off: he never comes. Default on.</text></string>
+    <string id="ui_mcm_nemesis_thunder_dr"><text>Thunder Boss damage reduction (%)</text></string>
+    <string id="ui_mcm_nemesis_thunder_dr_desc"><text>How much less damage he takes while his hand is up and he casts (rooted, he is powered by his own electricity), flat: it replaces every other reduction and the Max damage reduction cap. The rest of the time he takes damage as a boss (Boss damage reduction): that is your moment. Default 90.</text></string>
+    <string id="ui_mcm_nemesis_thunder_damage"><text>Lightning damage (%)</text></string>
+    <string id="ui_mcm_nemesis_thunder_damage_desc"><text>How much of your current health each bolt that reaches you takes, through all protection. Keep moving: each volley strikes where you were half a second before. Default 7.</text></string>
+    <string id="ui_mcm_nemesis_thunder_range"><text>Lightning range (m)</text></string>
+    <string id="ui_mcm_nemesis_thunder_range_desc"><text>How far his lightning reaches you. Out of it (or unseen), he strikes an enemy NPC he sees within Lightning range at NPCs instead, and the last zap of the cast kills it. Default 30.</text></string>
+    <string id="ui_mcm_nemesis_force_next_thunder_boss"><text>Thunder Boss</text></string>
+    <string id="ui_mcm_nemesis_thunder_chance"><text>Thunder Boss chance per storm (%)</text></string>
+    <string id="ui_mcm_nemesis_thunder_chance_desc"><text>Chance, once per thunderstorm, that the Thunder Boss comes out of it: only when no hunt runs and no boss is alive, after the game's first hunt, never during an emission or psy storm nor for 5 real minutes after one (an emission's own storm is not his). With GAMMA's weather a storm comes about every day and a half. 0 = he never comes by himself (Force the next hunt still brings him). Default 15.</text></string>
+    <string id="ui_mcm_nemesis_thunder_gap_days"><text>Days between his visits</text></string>
+    <string id="ui_mcm_nemesis_thunder_gap_days_desc"><text>In-game days at least between two visits of the Thunder Boss: no storm brings him sooner. 0 = no gap. Default 5.</text></string>
+    <string id="ui_mcm_nemesis_thunder_regen"><text>Regeneration while casting (%/s)</text></string>
+    <string id="ui_mcm_nemesis_thunder_regen_desc"><text>How much of his full health he regains every second while his hand is up and he casts: press him between casts. 0 = none. Default 4.</text></string>
+    <string id="ui_mcm_nemesis_thunder_name"><text>Thunder Boss name</text></string>
+    <string id="ui_mcm_nemesis_thunder_name_desc"><text>Name of the Thunder Boss, a legendary Loner who hunts for fun. Default: Danylo Raskat</text></string>
+    <string id="ui_mcm_nemesis_thunder_npc_range"><text>Lightning range at NPCs (m)</text></string>
+    <string id="ui_mcm_nemesis_thunder_npc_range_desc"><text>How far his lightning reaches an enemy NPC when you are out of his range: his last zap kills it. Never a story NPC, your companion or a trader. Default 45.</text></string>
+    <string id="ui_mcm_nemesis_thunder_npc_dr"><text>Thunder Boss NPC damage reduction (%)</text></string>
+    <string id="ui_mcm_nemesis_thunder_npc_dr_desc"><text>How much less damage other stalkers and mutants do to him, at all times: they are little help against him (as with the emission boss). Your own shots are not affected. Default 60.</text></string>
+</string_table>

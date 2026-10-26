@@ -1,4 +1,5 @@
 -- Nemesis Damage
+-- Release defaults use the owner-selected Medium profile; saved settings remain unchanged.
 -- Used by: nemesis_core (every hit callback, the frame count, absorb, the bypass guard),
 -- nemesis_guard (install_br_hooks, settle_stale, unseed_br), nemesis_mcm (the Combat page).
 -- Uses: nemesis_state, nemesis_member (hittable, is_boss, assisted), nemesis_utils (settings,
@@ -57,8 +58,13 @@ local function type_dr(id, r)
     return U.clamped("named_dr", 25, 0, 80) / 100
 end
 
--- M for a hit on this member with mitigation pct (0 when unknown: bleeding, the tick).
+-- M for a hit on this member with mitigation pct (0 when unknown: bleeding, the tick). A member
+-- with a flat cut of his own (flat_damage_cut: the Thunder caster's, round 165) takes exactly
+-- (1 - that cut) of every hit: armour, escalation and Max damage reduction don't apply to him.
 function damage_mult(id, pct)
+    -- ask: nemesis_events, the first module's answer, or nil
+    local flat_cut = tonumber(nemesis_events.ask("flat_damage_cut", id))
+    if flat_cut then return 1 - math.max(0, math.min(1, flat_cut)) end
     local r = nemesis_state.member(id)   -- member: nemesis_state, his member record
     local e = (r and not r.named) and 0 or nemesis_utils.escalation(S.cycle)   -- escalation: nemesis_utils, E for the cycle
     local m = (1 - (pct or 0)) * (1 - type_dr(id, r)) * (1 - e)
@@ -129,6 +135,20 @@ local function _from_player(shit) return shit.draftsman:id() == db.actor:id() en
 local function from_player(shit)
     local ok, yes = pcall(_from_player, shit)
     return ok and yes == true
+end
+
+-- Tells the modules that a hit on the hunt's boss may kill him (round 186): emit "boss_hit_may_kill"
+-- (id) when this hit's worst case for the bone (worst_loss) reaches his health, or when his health
+-- is already gone (your settled hit under GAMMA ballistics dealt it). The death callbacks of every
+-- mod run right after the hit, so this is the last moment before them (the Thunder Boss changes his
+-- community here, nemesis_thunder_boss).
+local function warn_boss_lethal(npc, r, power, bone_id)
+    if not nemesis_member.is_boss(r.id) then return end   -- is_boss: nemesis_member, the running hunt's boss
+    local hp = tonumber(npc.health)
+    if not hp then return end
+    if hp <= 0 or (power and worst_loss(power, bone_id) >= hp) then
+        nemesis_events.emit("boss_hit_may_kill", r.id)   -- emit: nemesis_events, every listener of the event
+    end
 end
 
 -- A hit not from the player that may kill: the model goes invisible before it lands, so the
@@ -277,6 +297,79 @@ local function boss_npc_hit(shit)
     shit.power = (shit.power or 0) * p / 100
 end
 
+---------------------------------------------------------------------------
+-- Hits another mod cancelled, put back (round 190, owner: route A)
+---------------------------------------------------------------------------
+-- GAMMA's "No NPC Friendly Fire" (grok_no_npc_friendly_fire.script) zeroes and cancels every hit
+-- between two NPCs whose factions are friends or neutral, by faction alone. As a Loner (round 186)
+-- the Thunder Boss is neutral to Duty and the Loners by faction, so in the owner's play test his
+-- killing zaps on two Duty soldiers did nothing, and his bullets and theirs would do nothing either,
+-- though every faction is his enemy (nemesis_thunder_boss.hostile_to_all). A module that wants one
+-- NPC's hits kept answers "keeps_npc_hits" (victim id, shooter id): today the Thunder Boss, either
+-- side. Only NPC hits: that mod returns for yours. How: keep_pre (the Pre tier, before every other
+-- mod's hook) notes the hit's power; restore_kept (our Post tier step, after them all) puts it back
+-- and lets the hit land when it was cancelled (power 0 or ret_value false). Nothing else is
+-- touched, and every other hit goes on as the other mods decide. One bullet, one hit is kept: a
+-- second bullet hit of the same shooter on the same victim in one frame is left as momo's filter
+-- leaves it (a hit on the Thunder Boss himself also goes through same_bullet below). Needs the
+-- callback tiers of the latest exes (keeps_installed); without them nothing changes.
+local kept_hits = {}               -- [victim id] = { power = the hit's power in the Pre tier, frame = frame_no, shooter = id }
+local kept_frames = {}             -- [victim id] = { frame = frame_no, shooter = id } the last hit put back
+local keeps_installed = false      -- keep_pre is registered in the Pre tier
+local keep_logged_at = -1000000    -- the "put back" line at most every 5 s
+local KEEP_LOG_MS = 5000
+
+-- Pre tier: an NPC's hit on an NPC (npc_on_before_hit). When a module keeps it, its power now.
+local function keep_pre(npc, shit, bone_id, flags)
+    if S.phase ~= "hunting" or not npc or not shit then return end
+    local ok, did = pcall(_draft_id, shit)
+    local actor = db.actor
+    if not ok or not did or (actor and did == actor:id()) then return end
+    local victim = npc:id()
+    -- ask: nemesis_events, the first module's answer, or nil
+    if not nemesis_events.ask("keeps_npc_hits", victim, did) then return end
+    kept_hits[victim] = { power = shit.power or 0, frame = frame_no, shooter = did }
+end
+
+-- Post tier: puts back the hit on npc noted in keep_pre when another mod cancelled it. Returns
+-- true when it did.
+local function restore_kept(npc, shit, flags)
+    if not npc or not shit then return false end
+    local victim = npc:id()
+    local kept = kept_hits[victim]
+    if not kept then return false end
+    kept_hits[victim] = nil
+    if kept.frame ~= frame_no or kept.power <= 0 then return false end
+    local cancelled = (shit.power or 0) <= 0 or (flags ~= nil and flags.ret_value == false)
+    if not cancelled then return false end
+    local fire = false
+    pcall(function() fire = shit.type == hit.fire_wound end)
+    local last = kept_frames[victim]
+    if fire and last and last.frame == frame_no and last.shooter == kept.shooter then return false end
+    kept_frames[victim] = { frame = frame_no, shooter = kept.shooter }
+    shit.power = kept.power
+    if flags then flags.ret_value = true end
+    local now = time_global()
+    if now - keep_logged_at >= KEEP_LOG_MS then
+        keep_logged_at = now
+        dbg("Nemesis: a hit of %s on %s, cancelled by another mod, is put back (power %.2f).",
+            tostring(kept.shooter), tostring(victim), kept.power)
+    end
+    return true
+end
+
+-- Registers keep_pre in the Pre tier, once (nemesis_guard, with install_br_hooks). Needs the tiers
+-- and our Post tier hook (nemesis_core.hit_runs_last).
+function install_keep_hits()
+    if keeps_installed then return end
+    if type(RegisterScriptCallbackPre) ~= "function" or not nemesis_core.hit_runs_last() then return end   -- hit_runs_last: nemesis_core, our hook in the Post tier
+    -- src: exes _g_patches.script (RegisterScriptCallbackPre)
+    if pcall(RegisterScriptCallbackPre, "npc_on_before_hit", keep_pre) then
+        keeps_installed = true
+        dbg("Nemesis: hits of the Thunder Boss and on him that another mod cancels are put back (Pre and Post tiers).")
+    end
+end
+
 -- monster_on_before_hit (nemesis_core, Post tier through nemesis_compat.register_post): the
 -- boss's hits on mutants.
 function on_monster_before_hit(monster, shit, bone_id, flags)
@@ -350,6 +443,7 @@ end
 function on_before_hit(npc, shit, bone_id, flags)
     if not npc then return end
     local id = npc:id()
+    restore_kept(npc, shit, flags)   -- a cancelled hit a module keeps is back first (see restore_kept)
     local r = nemesis_state.member(id)
     if not r then
         if S.boss_id and shit then boss_npc_hit(shit) end
@@ -366,6 +460,7 @@ function on_before_hit(npc, shit, bone_id, flags)
     -- (pre_hit), so a real body is never settled here.
     local settled = nil
     if by_player then settled = settle_chain(npc, r, bone_id) end
+    if settled then warn_boss_lethal(npc, r, nil, bone_id) end
     -- hittable: nemesis_member, his record when he may be hit at all
     if not nemesis_member.hittable(npc) then                                     -- 1
         -- A settled hit that killed (the boss or a regular at 0) was yours: noted, so his death
@@ -426,6 +521,7 @@ function on_before_hit(npc, shit, bone_id, flags)
     -- The boss fights to the death (user design): no floor, no retreat, so the engine's own hit
     -- can kill him and name the killer.
     if nemesis_member.is_boss(id) then
+        warn_boss_lethal(npc, r, shit and shit.power, bone_id)
         mask_if_lethal(npc, r, shit, bone_id)
         return
     end
@@ -525,7 +621,7 @@ local function accuracy_cones()
     local v = nemesis_mcm.settings_version()   -- settings_version: nemesis_mcm, moves when settings may change
     if v ~= cone_version then
         cone_version = v
-        local p = nemesis_mcm.get_number("accuracy_boost", 10)
+        local p = nemesis_mcm.get_number("accuracy_boost", 20)
         if p > 40 then p = 40 end
         if p <= 0 then
             cone = false
@@ -564,6 +660,7 @@ function on_shot_dispersion(obj, wpn, body_state, move_type, t)
     if S.phase ~= "hunting" or not obj or type(t) ~= "table" then return end
     local r = S.m[obj:id()]
     if not r or r.retreat_at or type(t.dispersion) ~= "number" then return end
+    r.shot_at = time_global()   -- his last shot, for the silent hunter watch (nemesis_combat, round 179)
     -- His first sure misses are only for shots at the player; his boss accuracy applies to
     -- every target (since round 83: he is a killer against NPCs too). His target is the engine's pick
     -- (best_enemy); if it cannot be read, it counts as you.
@@ -580,9 +677,15 @@ function on_shot_dispersion(obj, wpn, body_state, move_type, t)
         end
     end
     local c = accuracy_cones()
-    if not c then return end
-    local k = (r.id == S.boss_id and c.boss) or (r.named and c.named) or c.regular
-    t.dispersion = t.dispersion * k
+    local k = 1
+    if c then k = (r.id == S.boss_id and c.boss) or (r.named and c.named) or c.regular end
+    -- His rank's share (r.rank_cone): set by The Returning in its Nemesis mode, one more
+    -- multiplier on the same value, so it stacks like the rest (round 161).
+    if r.rank_cone then k = k * r.rank_cone end
+    -- A module's spread for a moment (r.spread_mult): the Thunder Boss's suppression burst after
+    -- a cast, since round 168; one more multiplier on the same value.
+    if r.spread_mult then k = k * r.spread_mult end
+    if k ~= 1 then t.dispersion = t.dispersion * k end
 end
 
 -- A hit on the player. Cancels the boss's hits while his first shots are still to miss
@@ -756,7 +859,7 @@ local function pre_hit(npc, shit, bone_id, flags)
     if not r or not from_player(shit) then return end
     -- A regular with nothing to cut (M = 1) and no armour class bonus to add is left to the chain
     -- alone; with a bonus he is armed too, so settle_chain adds it once grok_bo has loaded his
-    -- armour. The kit found that round 139 skipped the bonus whenever the cut was 0 (fixed in round 148).
+    -- armour. The bonus was skipped whenever the cut was 0 (round 139; fixed in round 148).
     if not r.named and hit_mult(r.id, bone_id, true) >= 0.999 and nemesis_utils.br_bonus() <= 0 then return end
     local gbo = nemesis_compat.grok_bo()
     if not gbo then return end
@@ -849,7 +952,10 @@ end
 -- The hooks, once grok_bo is there (nemesis_guard.tick calls this every tick until it has
 -- looked). grok_bo loads with the game, so it is looked at once.
 local old_exes_told = false
--- Looks once: no grok_bo, the Pre tier hook placed, or old exes (told once in the log and the PDA).
+-- The build date (YYYYMMDD) of the exes that brought the callback tiers (xray-monolith 0397a88).
+local TIERS_EXES_DATE = 20260915
+-- Looks once: no grok_bo, the Pre tier hook placed, or no tiers (told once in the log and the PDA).
+-- No tiers on exes built on or after TIERS_EXES_DATE means their scripts are not loaded (round 171).
 function install_br_hooks()
     if gbo_state then return end
     if not nemesis_compat.grok_bo() then
@@ -867,13 +973,28 @@ function install_br_hooks()
         end
     end
     gbo_state = "old_exes"
+    -- The tiers are functions of the exes' script _g_patches.script, loaded only through their
+    -- configs/mod_script_dxml.ltx; the build date comes from the engine. New exes without the
+    -- tiers (a player report, 24 October 2026) mean those scripts are overridden or not installed.
+    -- exes_build_date, exes_date_text: nemesis_engine, the exes' build date and its text
+    local built = nemesis_engine.exes_build_date()
+    local built_text = nemesis_engine.exes_date_text(built)   -- exes_date_text: "2026.10.11" or "?"
+    local scripts_missing = built ~= nil and built >= TIERS_EXES_DATE
     -- Written whatever Debug logs says, so a player's log shows it in a bug report.
     -- src: anomaly _g.script (printf)
-    printf("~Nemesis: these modded exes have no callback tiers (added 15 September 2026). With GAMMA ballistics, your shots can kill named hunters instead of making them break off. Update the modded exes.")
+    if scripts_missing then
+        printf("~Nemesis: these modded exes (build %s) should have callback tiers, but their script _g_patches.script is not loaded: another mod overrides configs/mod_script_dxml.ltx or scripts/_g_patches.script, or the exes' gamedata is not installed. With GAMMA ballistics, your shots can kill named hunters instead of making them break off.", built_text)
+        -- log_copy: nemesis_utils, the notice copied into our own log file (round 156)
+        nemesis_utils.log_copy(string.format("Nemesis: these modded exes (build %s) should have callback tiers, but their _g_patches.script is not loaded (overridden or the exes' gamedata missing).", built_text))
+    else
+        printf("~Nemesis: these modded exes (build %s) have no callback tiers (added 15 September 2026). With GAMMA ballistics, your shots can kill named hunters instead of making them break off. Update the modded exes.", built_text)
+        nemesis_utils.log_copy(string.format("Nemesis: these modded exes (build %s) have no callback tiers (added 15 September 2026); update the modded exes.", built_text))
+    end
     if not old_exes_told then
         old_exes_told = true
+        local msg_id = scripts_missing and "st_nemesis_msg_exes_scripts_missing" or "st_nemesis_msg_old_exes"
         -- send_news, text: nemesis_lines, a PDA message and a string table's text
-        nemesis_lines.send_news(nemesis_lines.text("st_nemesis_msg_old_exes"), nemesis_lines.text("st_nemesis_caption"))
+        nemesis_lines.send_news(string.format(nemesis_lines.text(msg_id), built_text), nemesis_lines.text("st_nemesis_caption"))
     end
 end
 
@@ -889,8 +1010,8 @@ function mcm_page()
     return { id = "combat", sh = true, text = "ui_mcm_nemesis_page_combat", gr = {
             { id = "title", type = "slide", link = "ui_options_slider_player", text = "ui_mcm_nemesis_title", size = {512, 50}, spacing = 20 },
             { id = "head_hunters", type = "title", text = "ui_mcm_nemesis_head_hunters", align = "l", clr = nemesis_mcm.HEAD_CLR },
-            { id = "retreat_health", type = "track", val = 2, def = 30, min = 10, max = 60, step = 5, prec = 0, hint = "nemesis_retreat_health" },
-            { id = "accuracy_boost", type = "track", val = 2, def = 10, min = 0, max = 40, step = 1, prec = 0, hint = "nemesis_accuracy_boost" },
+            { id = "retreat_health", type = "track", val = 2, def = 25, min = 10, max = 60, step = 5, prec = 0, hint = "nemesis_retreat_health" },
+            { id = "accuracy_boost", type = "track", val = 2, def = 20, min = 0, max = 40, step = 1, prec = 0, hint = "nemesis_accuracy_boost" },
             { id = "regular_dr", type = "track", val = 2, def = 0, min = 0, max = 50, step = 5, prec = 0, hint = "nemesis_regular_dr" },
             { id = "named_dr", type = "track", val = 2, def = 25, min = 0, max = 80, step = 5, prec = 0, hint = "nemesis_named_dr" },
             { id = "line_escalation", type = "line" },
@@ -901,8 +1022,8 @@ function mcm_page()
             { id = "reset_on_death", type = "check", val = 1, def = true, hint = "nemesis_reset_on_death" },
             { id = "line_armour", type = "line" },
             { id = "head_armour", type = "title", text = "ui_mcm_nemesis_head_armour", align = "l", clr = nemesis_mcm.HEAD_CLR },
-            { id = "br_bonus", type = "track", val = 2, def = 0, min = 0, max = 0.5, step = 0.05, prec = 2, hint = "nemesis_br_bonus" },
-            { id = "pct_bonus", type = "track", val = 2, def = 0, min = 0, max = 50, step = 5, prec = 0, hint = "nemesis_pct_bonus" },
+            { id = "br_bonus", type = "track", val = 2, def = 0.05, min = 0, max = 0.5, step = 0.05, prec = 2, hint = "nemesis_br_bonus" },
+            { id = "pct_bonus", type = "track", val = 2, def = 10, min = 0, max = 50, step = 5, prec = 0, hint = "nemesis_pct_bonus" },
             { id = "line_bodies", type = "line" },
             { id = "head_bodies", type = "title", text = "ui_mcm_nemesis_head_bodies", align = "l", clr = nemesis_mcm.HEAD_CLR },
             { id = "reserve_kills", type = "check", val = 1, def = true, hint = "nemesis_reserve_kills" },
@@ -917,8 +1038,8 @@ end
 -- This page's share of the presets (see above).
 function mcm_presets()
     return {
-        easy = { retreat_health = 35, accuracy_boost = 8, regular_dr = 0, named_dr = 20, esc_step = 1.5, esc_max = 15, max_damage_reduction = 55, br_bonus = 0, pct_bonus = 0 },
-        medium = { retreat_health = 30, accuracy_boost = 10, regular_dr = 0, named_dr = 25, esc_step = 2, esc_max = 20, max_damage_reduction = 70, br_bonus = 0, pct_bonus = 0 },
-        hard = { retreat_health = 25, accuracy_boost = 12, regular_dr = 0, named_dr = 30, esc_step = 2.5, esc_max = 25, max_damage_reduction = 85, br_bonus = 0, pct_bonus = 0 },
+        easy = { retreat_health = 30, accuracy_boost = 16, regular_dr = 0, named_dr = 20, esc_step = 1.5, esc_max = 15, max_damage_reduction = 55, br_bonus = 0, pct_bonus = 5 },
+        medium = { retreat_health = 25, accuracy_boost = 20, regular_dr = 0, named_dr = 25, esc_step = 2, esc_max = 20, max_damage_reduction = 70, br_bonus = 0.05, pct_bonus = 10 },
+        hard = { retreat_health = 20, accuracy_boost = 24, regular_dr = 0, named_dr = 30, esc_step = 2.5, esc_max = 25, max_damage_reduction = 85, br_bonus = 0.1, pct_bonus = 15 },
     }
 end

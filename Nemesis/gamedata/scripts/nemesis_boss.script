@@ -1,5 +1,6 @@
 -- Nemesis Boss: the rare boss hunter; the mod's second module since round 135 (the emission boss is the first).
--- Used by: nobody by name (a module, see the end of this file); the kit calls chance_now and set_sneak.
+-- Release defaults use the owner-selected Medium profile; saved settings remain unchanged.
+-- Used by: nobody by name (a module, see the end of this file); chance_now and set_sneak are public.
 -- Uses: nemesis_state (S), nemesis_events (his answers and listeners), nemesis_core (add_job),
 -- nemesis_engine, nemesis_utils (the boss names), nemesis_mcm, nemesis_lines (his lines),
 -- nemesis_combat (focus, sneak_over), nemesis_fx (his look), nemesis_siege (indoors),
@@ -80,7 +81,7 @@ function roll()
     end
     if S.last_boss_day == boss_day() then return false end
     -- The gate opens Boss days after grace (1..7) days AFTER the grace period ends.
-    local grace = nemesis_mcm.get_number("grace_period", 18)
+    local grace = nemesis_mcm.get_number("grace_period", 8)
     if grace < 0 then grace = 0 end
     local min_days = nemesis_mcm.get_number("boss_min_day", 7)
     if min_days < 1 then min_days = 1 end
@@ -127,7 +128,7 @@ local sneak = {}          -- runtime, the running hunt's boss: { hold, homing, f
 
 -- The boss, sneaking: no combat hand-over at all while he is (he must not open fire).
 function sneak_active(id) return id ~= nil and id == S.boss_id and S.boss_sneak == true end
--- On or off for the running hunt's boss (make does it for a new boss; the kit too). Either way
+-- On or off for the running hunt's boss (make does it for a new boss). Either way
 -- his record starts fresh.
 function set_sneak(id, on)
     if not (id ~= nil and id == S.boss_id) then return end
@@ -243,6 +244,10 @@ local LOOKS = {
                  { "actors\\stalker_monolith\\stalker_monolith_skat9_ssp_mask" } },
     isg = { { "actors\\stalker_isg\\stalker_isg_1_commando_1", "actors\\stalker_isg\\stalker_isg_1_commando_3" },
             { "actors\\stalker_isg\\light_isg_shades" } },
+    -- The Military's boss (round 161): an officer in a beret, else the military exo (Anomaly's
+    -- meshes\actors\stalker_soldier).
+    army = { { "actors\\stalker_soldier\\stalker_soldier3a_beret", "actors\\stalker_soldier\\stalker_soldier_3_beret" },
+             { "actors\\stalker_soldier\\stalker_military_exo" } },
 }
 
 -- His look: a random model of the first group of LOOKS that has one on disk, or nil.
@@ -452,7 +457,6 @@ function update(obj, r, gt, actor)
             end
         elseif gt - S.sneak_said >= (S.sneak_wait or SNEAK_ATTACK_MS) then
             end_sneak(id, true)
-            nemesis_fx.boss_jolt()   -- boss_jolt: nemesis_fx, the test switch's jolt (round 144)
             dbg("Nemesis: the boss attacks.")
         end
     end
@@ -543,11 +547,12 @@ function mcm_page()
             -- default_boss_name: nemesis_utils, the boss's default name in the game's language
             { id = "npc_name", type = "input", val = 0, def = nemesis_utils.default_boss_name("monolith"), hint = "nemesis_npc_name" },
             { id = "isg_boss_name", type = "input", val = 0, def = nemesis_utils.default_boss_name("isg"), hint = "nemesis_isg_boss_name" },
+            { id = "army_boss_name", type = "input", val = 0, def = nemesis_utils.default_boss_name("army"), hint = "nemesis_army_boss_name" },
             { id = "line_appearance", type = "line" },
             { id = "head_appearance", type = "title", text = "ui_mcm_nemesis_head_appearance", align = "l", clr = nemesis_mcm.HEAD_CLR },
             { id = "boss_chance", type = "track", val = 2, def = 4, min = 0, max = 20, step = 1, prec = 0, hint = "nemesis_boss_chance" },
             { id = "boss_min_day", type = "track", val = 2, def = 7, min = 1, max = 7, step = 1, prec = 0, hint = "nemesis_boss_min_day" },
-            { id = "boss_escort", type = "track", val = 2, def = 4, min = 0, max = 4, step = 1, prec = 0, hint = "nemesis_boss_escort" },
+            { id = "boss_escort", type = "track", val = 2, def = 3, min = 0, max = 4, step = 1, prec = 0, hint = "nemesis_boss_escort" },
             { id = "boss_distortion", type = "track", val = 2, def = 40, min = 0, max = 100, step = 5, prec = 0, hint = "nemesis_boss_distortion" },
             { id = "line_toughness", type = "line" },
             { id = "head_toughness", type = "title", text = "ui_mcm_nemesis_head_toughness", align = "l", clr = nemesis_mcm.HEAD_CLR },
@@ -563,8 +568,8 @@ end
 -- This page's share of the presets (see above).
 function mcm_presets()
     return {
-        easy = { boss_chance = 3, boss_min_day = 7, boss_escort = 3, boss_dr = 20, boss_npc_damage = 150, boss_misses = 3 },
-        medium = { boss_chance = 4, boss_min_day = 7, boss_escort = 4, boss_dr = 30, boss_npc_damage = 200, boss_misses = 2 },
+        easy = { boss_chance = 3, boss_min_day = 7, boss_escort = 2, boss_dr = 20, boss_npc_damage = 150, boss_misses = 3 },
+        medium = { boss_chance = 4, boss_min_day = 7, boss_escort = 3, boss_dr = 30, boss_npc_damage = 200, boss_misses = 2 },
         hard = { boss_chance = 5, boss_min_day = 6, boss_escort = 4, boss_dr = 40, boss_npc_damage = 250, boss_misses = 1 },
     }
 end
@@ -575,7 +580,7 @@ function mcm_force_next() return { "boss", "ui_mcm_nemesis_force_next_boss" } en
 ---------------------------------------------------------------------------
 -- The module: since round 135 the boss is the second module, as the emission boss has been since
 -- the restructure of round 115. Everything the core, the spawn and the chase ask him, and
--- everything he listens to, is added here. They never call him by name (tools/module_check.py). An answer returns nil for
+-- everything he listens to, is added here. They never call him by name. An answer returns nil for
 -- "not mine" (the next one is asked); never false where nil is meant. Without this script there
 -- is no boss at all: nobody answers boss_roll, so no hunt brings one.
 ---------------------------------------------------------------------------

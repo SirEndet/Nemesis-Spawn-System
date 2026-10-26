@@ -1,0 +1,826 @@
+-- Nemesis Returning: The Returning, the mod's third module (round 161, the owner's design of
+-- Release defaults use the owner-selected Medium profile; saved settings remain unchanged.
+-- 22 October 2026). Named hunters who break off from you come back in later hunts, by name and
+-- one rank higher each time; at the top rank a hunter waits as a Legend and comes for you alone,
+-- as a boss; killed, his name is gone for good, and once every name is gone the mod lets you go.
+-- Used by: nobody by name (a module: it registers itself in its own on_game_start, at the end of
+-- this file); nemesis_mcm finds its menu page through its PAGES list.
+-- Uses: nemesis_state (S and the member records), nemesis_events (its answers and listeners),
+-- nemesis_core (add_job), nemesis_spawn (spawn_lone_boss, warning_pending), nemesis_lines
+-- (names, titles, text, the PDA), nemesis_utils (the hunt's faction and squad, log_tag, clamped,
+-- is_boss_name), nemesis_engine (objects, set_rank, time, the map's name), nemesis_compat
+-- (alifetactics, rank_levers), nemesis_fx (the teleport burst), nemesis_mcm (the settings);
+-- Anomaly's ranks script (the rank points); MCM's ui_mcm (the last page's restart box and the
+-- menu rebuild).
+--
+-- How it plugs in (the module pattern of round 115, see nemesis_events):
+--   hunter_name   a named hunter's name: a returning hunter (the leader only, Return chance) or a
+--                 new one at the lowest title, never a name that is retired or kept on the list;
+--   member_added  his record exists: a returning hunter's climb is kept, and his rank is set on
+--                 his server object while he is still offline, so AlifeTactics reads it when he
+--                 comes online (or, in Nemesis mode, our three sliders do the work);
+--   member_broke_off / member_died   kept for a later hunt / his name retired;
+--   start_line    a returning leader's own line instead of the hunt-start taunt;
+--   a slow job    a waiting Legend's roll, every Legend roll hours (the owner: 2 % every 2 hours);
+--   take_tick, menu_page   once every name is retired: no more hunts, and one menu choice.
+--
+-- The owner's rules (22 October 2026): every named hunter starts at the game's rank Experienced
+-- and climbs one rank per return, so the early game stays as it was and the late game fills with
+-- high ranks; the hunters' toughness and the escalation are not touched. UNISG, the Military and
+-- the Monolith all have the teleport that brings a wounded hunter home, so all three return.
+-- A Legend never comes right after a boss (No Legend after a boss, 36 hours), nor while a hunt's
+-- warning is out. The whole system has its own switch (The Returning).
+-- src (plain reads used throughout this file): engine script_game_object_script2.cpp (id)
+
+local S = nemesis_state.S
+
+-- Writes a [RETURNING] debug line, through nemesis_utils.log_tag (the tagged logger, Debug logs only).
+local function dbg(...) nemesis_utils.log_tag("RETURNING", ...) end
+
+local SAVE_KEY = "nemesis_returning"
+local SAVE_VERSION = 1
+local STEP_MAX = 6                 -- the six titles, Experienced to Legend
+local TEST_LEGEND_NAME = "Testing Legend"   -- the Force picks' stand-in Legend (owner, 24 October 2026)
+-- Hunters kept per faction for a return; the oldest is forgotten first. 60 since round 163 (the
+-- owner: "at least 60 names at a time"); a save fills one faction's list (the player's faction
+-- sets the hunters), so about 60 in play and 180 at most: some 5 KB in the save.
+local ROSTER_MAX = 60
+local LEVER_DELAY_MS = 1000        -- after he comes online, so ours are set after AlifeTactics' own
+local FREED_SHOW_MS = 30000        -- the last message stays 30 s, so it can be screenshotted (owner)
+local RESTART_PATH = "nemesis/returning/egg_restart"   -- the last page's box, read straight from MCM
+
+-- The game's rank for each step: the 3rd lowest of Anomaly's eight (Experienced) to the top
+-- (xlibs xcreature.RANK_TIERS; the owner: start at the 3rd lowest).
+local STEP_TIER = { "experienced", "professional", "veteran", "expert", "master", "legend" }
+
+-- The module's state, saved under SAVE_KEY. roster and pool hold entries { fi, li, f, step,
+-- returns, map, at } (fi, li: the name's indexes in nemesis_lines; f: the faction; map: where he
+-- last broke off; at: when, in game seconds). handed: the names handed out for the running hunt,
+-- [full name] = entry plus role ("fresh", "returner", "legend") and committed.
+local R = nil
+-- Returns a fresh state (a new game, or before a save is read).
+local function blank()
+    return { roster = {}, pool = {}, retired = {}, retired_n = 0, handed = {}, last_boss_at = nil,
+             boss_running = false, next_roll_at = nil, freed = false, last_line = {} }
+end
+R = blank()
+
+local due = {}                     -- runtime: [id] = time_global when his Nemesis-mode levers are set
+local cone_version = nil           -- runtime: the settings version the rank cones were made for
+local shown_freed = false          -- runtime: whether the menu was last built as the one last page
+local forced = nil                 -- runtime: Force the next hunt's pick: "returner", "legend" or "legend_roll"
+
+---------------------------------------------------------------------------
+-- Settings
+---------------------------------------------------------------------------
+-- Whether The Returning is on (its page's switch, on by default).
+local function enabled() return nemesis_mcm.get_bool("returning_enabled", true) end   -- get_bool: nemesis_mcm, a menu checkbox (cached)
+-- A menu number of this page held to lo..hi.
+local function setting(id, def, lo, hi) return nemesis_utils.clamped(id, def, lo, hi) end   -- clamped: nemesis_utils, a menu number held to a range
+
+-- Returns "at" when AlifeTactics turns the ranks into skill, "nemesis" when our sliders do: with
+-- AlifeTactics installed the page's choice (AlifeTactics by default), without it always ours.
+local function rank_driver()
+    if not nemesis_compat.alifetactics() then return "nemesis" end   -- alifetactics: nemesis_compat, its rank effects installed
+    if nemesis_mcm.get_string("rank_driver", "alifetactics") == "nemesis" then return "nemesis" end   -- get_string: nemesis_mcm, a menu list value
+    return "at"
+end
+
+---------------------------------------------------------------------------
+-- Names
+---------------------------------------------------------------------------
+-- The key of a name: its two indexes, the same in every language.
+local function key(fi, li) return tostring(fi) .. ":" .. tostring(li) end
+
+-- Returns entry e's name with his title, e.g. "Zealot Petro Shevchuk", or nil.
+-- The Testing Legend (a Force pick's stand-in, e.test) has no name indexes: his name is fixed.
+local function full_name(e)
+    if e.test then return TEST_LEGEND_NAME end
+    local n = nemesis_lines.name_from(e.fi, e.li)   -- name_from: nemesis_lines, a name from its two indexes
+    if not n then return nil end
+    return nemesis_lines.rank_title(e.f, e.step) .. " " .. n   -- rank_title: nemesis_lines, a title by step
+end
+
+-- Returns the entry with key k in list, and its place, or nil.
+local function find(list, k)
+    for i, e in ipairs(list) do
+        if key(e.fi, e.li) == k then return e, i end
+    end
+    return nil
+end
+
+-- Whether the name with key k may not be handed out: retired, kept on the list, waiting as a
+-- Legend, or already handed out for the running hunt.
+local function taken(k)
+    if R.retired[k] or find(R.roster, k) or find(R.pool, k) then return true end
+    for _, h in pairs(R.handed) do
+        if key(h.fi, h.li) == k then return true end
+    end
+    return false
+end
+
+-- How many names there are (first names times surnames).
+local function names_total()
+    local nf, nl = nemesis_lines.name_counts()   -- name_counts: nemesis_lines, how many of each
+    return nf * nl
+end
+
+-- Returns a new entry at the lowest step for faction, with a free name (the name checker): never
+-- taken (above), never a boss's name, never one in used (this squad's names); nil when none is
+-- free. Random first, then every name in turn, so a free one is always found while one is left.
+local function pick_fresh(faction, used)
+    local nf, nl = nemesis_lines.name_counts()
+    -- Returns the entry for indexes fi, li when that name is free, else nil.
+    local function try(fi, li)
+        if taken(key(fi, li)) then return nil end
+        local plain = nemesis_lines.name_from(fi, li)
+        if not plain or nemesis_utils.is_boss_name(plain) then return nil end   -- is_boss_name: nemesis_utils, one of the bosses' names
+        local e = { fi = fi, li = li, f = faction, step = 1, returns = 0 }
+        local n = full_name(e)
+        if not n or used[n] or nemesis_utils.is_boss_name(n) then return nil end
+        return e
+    end
+    for _ = 1, 24 do
+        local e = try(math.random(nf), math.random(nl))
+        if e then return e end
+    end
+    for fi = 1, nf do
+        for li = 1, nl do
+            local e = try(fi, li)
+            if e then return e end
+        end
+    end
+    return nil
+end
+
+-- Returns a hunter of faction who comes back (Return chance), as a new entry one step higher, or
+-- nil: none rolled, none kept, or his name is already in this squad.
+local function pick_returner(faction, used)
+    local chance = setting("return_chance", 35, 0, 100)
+    local force = forced == "returner"
+    if force then
+        forced = nil
+    elseif chance <= 0 or math.random() * 100 >= chance then
+        return nil
+    end
+    local list = {}
+    for _, e in ipairs(R.roster) do
+        if e.f == faction and not R.handed[full_name(e) or ""] then list[#list + 1] = e end
+    end
+    if #list == 0 then
+        if force then dbg("Nemesis: Force the next hunt: no %s hunter is kept for a return yet.", tostring(faction)) end
+        return nil
+    end
+    local e = list[math.random(#list)]
+    local h = { fi = e.fi, li = e.li, f = e.f, step = math.min(STEP_MAX, e.step + 1), returns = e.returns + 1, map = e.map }
+    local n = full_name(h)
+    if not n or used[n] then return nil end
+    return h
+end
+
+---------------------------------------------------------------------------
+-- Ranks
+---------------------------------------------------------------------------
+-- Returns the rank points of step (the lowest of its tier's band in this game), or nil.
+-- Through: Anomaly's ranks.get_rank_interval (ranks.script; the bands come from the game's own
+-- game_relations.ltx "rating", which modpacks change, so they are read, never written in here).
+local function rank_points(step)
+    local tier = STEP_TIER[math.max(1, math.min(STEP_MAX, step or 1))]
+    local p = nil
+    pcall(function()
+        -- src: anomaly ranks.script (ranks.get_rank_interval)
+        local band = ranks.get_rank_interval(tier)
+        p = band and tonumber(band[1])
+    end)
+    if p then p = p + 1 end         -- inside the band, never on its edge
+    return p
+end
+
+-- The share of p % more hits as a spread multiplier (the same rule as Accuracy boost,
+-- nemesis_damage: hits follow the area of the cone), or nil for none.
+local function cone_for(p)
+    if not p or p <= 0 then return nil end
+    return 1 / math.sqrt(1 + p / 100)
+end
+
+-- Sets member id's rank share of the shot spread (r.rank_cone, read by nemesis_damage) for his
+-- step h: in Nemesis mode Accuracy per rank for each step above the lowest, else none.
+local function set_cone(r, h)
+    if not (r and h) then return end
+    if rank_driver() == "nemesis" and enabled() then
+        r.rank_cone = cone_for((h.step - 1) * setting("rank_accuracy", 4, 0, 10))
+    else
+        r.rank_cone = nil
+    end
+end
+
+-- Sets online member id's sight and bursts for his step (Nemesis mode only; AlifeTactics reads
+-- the rank itself). Called LEVER_DELAY_MS after he came online.
+local function set_levers(id)
+    local r = nemesis_state.member(id)   -- member: nemesis_state, his member record
+    local h = r and r.name and R.handed[r.name]
+    if not h or rank_driver() ~= "nemesis" or not enabled() then return end
+    local obj = nemesis_engine.obj(id)   -- obj: nemesis_engine, the online object of an id or nil
+    if not obj then return end
+    local steps = h.step - 1
+    local vision = 1 + steps * setting("rank_vision", 4, 0, 10) / 100
+    local burst = 1 + steps * setting("rank_bursts", 5, 0, 10) / 100
+    local ok = nemesis_compat.rank_levers(obj, vision, burst)   -- rank_levers: nemesis_compat, xlibs' sight and burst levers
+    dbg("Nemesis: %s's rank levers: vision x%s, bursts x%s (%s).", tostring(r.name), string.format("%.2f", vision),
+        string.format("%.2f", burst), ok and "set" or "not on these exes")
+end
+
+---------------------------------------------------------------------------
+-- Lines
+---------------------------------------------------------------------------
+-- Returns line (a string table's text) with %map%, %rank% and %count% for entry h, then the
+-- usual %name%, %faction% and %boss% (nemesis_lines.fill_line).
+local function fill(line, h)
+    local map = h.map and nemesis_lines.text(h.map) or ""   -- text: nemesis_lines, a string table's text (a map's name)
+    line = string.gsub(line, "%%map%%", function() return map end)
+    line = string.gsub(line, "%%rank%%", function() return nemesis_lines.rank_title(h.f, h.step) end)
+    line = string.gsub(line, "%%count%%", function() return tostring(h.returns or 0) end)
+    return nemesis_lines.fill_line(line, full_name(h))   -- fill_line: nemesis_lines, the usual placeholders
+end
+
+-- Returns one of n lines of kind ("return" or "legend") for entry h, never the one he said last
+-- time, and never one that names a map when his map is not known; nil when none fits.
+local function own_line(kind, n, h)
+    local k = h.test and "test" or key(h.fi, h.li)
+    local list = {}
+    for i = 1, n do
+        local t = nemesis_lines.text("st_nemesis_ret_" .. h.f .. "_" .. kind .. "_" .. i)
+        if (h.map or not string.find(t, "%map%", 1, true)) and (n == 1 or R.last_line[k] ~= i) then
+            list[#list + 1] = { i = i, t = t }
+        end
+    end
+    if #list == 0 then return nil end
+    local c = list[math.random(#list)]
+    R.last_line[k] = c.i
+    return fill(c.t, h)
+end
+
+---------------------------------------------------------------------------
+-- What happens to a hunter
+---------------------------------------------------------------------------
+-- Keeps entry e on the list (the oldest of his faction forgotten past ROSTER_MAX).
+local function keep(e)
+    R.roster[#R.roster + 1] = e
+    local mine = {}
+    for i, x in ipairs(R.roster) do
+        if x.f == e.f then mine[#mine + 1] = { i = i, at = x.at or 0 } end
+    end
+    if #mine <= ROSTER_MAX then return end
+    table.sort(mine, function(a, b) return a.at < b.at end)
+    local gone = table.remove(R.roster, mine[1].i)
+    dbg("Nemesis: %s is forgotten (more than %s kept).", tostring(full_name(gone)), tostring(ROSTER_MAX))
+end
+
+-- A named hunter's record exists (member_added): a returning hunter's climb is kept, his rank is
+-- set while he is offline, his share of the spread is set, and his levers are due when he comes
+-- online. The boss keeps the boss's name, so he matches no handed name and is left alone.
+local function on_member_added(id, named, name)
+    if not (named and name) then return end
+    local h = R.handed[name]
+    if not h then return end
+    if not h.committed then
+        h.committed = true
+        if h.role == "returner" then
+            local e = find(R.roster, key(h.fi, h.li))
+            if e then e.step, e.returns = h.step, h.returns end
+            dbg("Nemesis: %s comes back (return %s).", name, tostring(h.returns))
+        end
+    end
+    local se = nemesis_engine.se(id)   -- se: nemesis_engine, the server object by id
+    local points = rank_points(h.step)
+    if se and points then nemesis_engine.set_rank(se, points) end   -- set_rank: nemesis_engine, a rank on ours
+    set_cone(nemesis_state.member(id), h)
+end
+
+-- A named hunter breaks off (member_broke_off). Kept for a later hunt when your hit did it; at
+-- the top rank he waits as a Legend instead.
+local function on_broke_off(id, r, yours)
+    if not yours or not (r and r.name) then return end
+    local h = R.handed[r.name]
+    if not h or h.role == "legend" or not enabled() then return end
+    local k = key(h.fi, h.li)
+    local now = nemesis_engine.game_seconds()   -- game_seconds: nemesis_engine, in-game seconds
+    local e = find(R.roster, k)
+    if not e then
+        -- His time is set before keep sorts the list by it (round 163: without one he counted as
+        -- the oldest, so with five kept the newcomer was the one forgotten, and nobody new was
+        -- ever kept again).
+        e = { fi = h.fi, li = h.li, f = h.f, step = h.step, returns = h.returns, at = now }
+        keep(e)
+    end
+    e.step, e.returns = h.step, h.returns
+    e.map = nemesis_engine.level_name()   -- level_name: nemesis_engine, this map's name
+    e.at = now
+    -- His next return would make him a Legend: a Legend never comes as a named hunter (owner, 24
+    -- October 2026), so he leaves the hunts now and waits in the pool at the top rank.
+    if e.step + 1 >= STEP_MAX then
+        local _, i = find(R.roster, k)
+        if i then table.remove(R.roster, i) end
+        e.step = STEP_MAX
+        R.pool[#R.pool + 1] = e
+        dbg("Nemesis: %s reached the top rank and waits as a Legend.", tostring(full_name(e)))
+    else
+        dbg("Nemesis: %s is kept for a later hunt (step %s, %s return(s)).", tostring(full_name(e)), tostring(e.step), tostring(e.returns))
+    end
+end
+
+-- Every name is retired: the PDA tells you that you are free (30 s on screen), the hunts stop for
+-- this save (take_tick), and the menu becomes the one choice to restart (menu_page).
+local function free()
+    if R.freed then return end
+    R.freed = true
+    -- send_news: nemesis_lines, a PDA message (shown FREED_SHOW_MS)
+    nemesis_lines.send_news(nemesis_lines.text("st_nemesis_ret_msg_free"), nil, nil, FREED_SHOW_MS)
+    dbg("Nemesis: every hunter's name is retired: the hunts stop for this save.")
+    -- src: mcm ui_mcm.script (ui_mcm.reload)
+    pcall(function() ui_mcm.reload() end)
+end
+
+-- A member died (member_died): a hunter of ours who dies is gone for good; his name is retired.
+local function on_died(id, r, yours)
+    local h = r and r.name and R.handed[r.name]
+    if not h then return end
+    if h.test then
+        -- The Testing Legend uses no real name: nothing is retired, the log says so.
+        R.handed[r.name] = nil
+        dbg("Nemesis: the Testing Legend is dead (%s); a real Legend's name would be retired now (a test: no name retired).",
+            yours and "killed by you" or "not by you")
+        return
+    end
+    local k = key(h.fi, h.li)
+    local _, i = find(R.roster, k)
+    if i then table.remove(R.roster, i) end
+    _, i = find(R.pool, k)
+    if i then table.remove(R.pool, i) end
+    if not R.retired[k] then
+        R.retired[k] = true
+        R.retired_n = R.retired_n + 1
+    end
+    dbg("Nemesis: %s is dead for good (%s); %s of %s names retired.", tostring(r.name), yours and "killed by you" or "not by you",
+        tostring(R.retired_n), tostring(names_total()))
+    if R.retired_n >= names_total() then free() end
+end
+
+---------------------------------------------------------------------------
+-- Legends
+---------------------------------------------------------------------------
+-- Member id becomes the running hunt's boss, as a Legend (spawn_lone_boss's make_boss): the boss's
+-- rules (he fights to the death, his first shots miss, his stash), with his own name and look and
+-- no sneak (he comes straight for you).
+local function make_legend(id)
+    S.boss_id = id
+    S.boss_hunt = true
+    S.last_boss_day = math.floor(nemesis_engine.game_seconds() / 86400)   -- one boss a day (nemesis_boss)
+    S.boss_sneak = nil
+    S.sneak_started, S.sneak_said, S.sneak_wait = nil, nil, nil
+    S.boss_shots, S.boss_hit_frames, S.boss_hit_frame = 0, 0, nil
+    S.boss_look = nil
+    S.dread_next = time_global() + 20000
+    dbg("Nemesis: '%s' is the boss of this hunt: a Legend.", tostring(nemesis_state.name_of(id)))   -- name_of: nemesis_state, a member's name
+end
+
+-- Whether a Legend may come now, and why not (for the log).
+local function legend_may_come(now)
+    if S.phase ~= "idle" or S.follow then return false, "a hunt is on" end
+    if (S.spawned_count or 0) == 0 then return false, "no hunt yet in this game" end
+    if nemesis_spawn.warning_pending() then return false, "a hunt's warning is out" end   -- warning_pending: nemesis_spawn, a warned hunt to come
+    -- ask: nemesis_events, a module's answer or nil
+    if nemesis_events.ask("boss_exists") then return false, "a boss is alive" end
+    if nemesis_events.ask("fast_tick") then return false, "the emission boss is on his way" end
+    if nemesis_mcm.get_bool("prepare_uninstall", false) then return false, "Prepare for uninstall" end
+    local lockout = setting("legend_lockout", 12, 0, 96) * 3600
+    if R.last_boss_at and now >= R.last_boss_at and now - R.last_boss_at < lockout then return false, "a boss was in the world lately" end
+    return true
+end
+
+-- Legend e comes for you alone. Returns true when he is in the world.
+-- e.test: the Testing Legend (no name indexes, never in the pool or the save).
+local function spawn_legend(e)
+    local h = { fi = e.fi, li = e.li, f = e.f, step = STEP_MAX, returns = e.returns, map = e.map, role = "legend", committed = true, test = e.test }
+    local name = full_name(h)
+    if not name then return false end
+    R.handed[name] = h
+    local section = nemesis_utils.resolve_squad_section(e.f)   -- resolve_squad_section: nemesis_utils, the hunt's squad section
+    -- spawn_lone_boss: nemesis_spawn, a boss who hunts alone, placed like any hunt
+    local ok, pos = pcall(nemesis_spawn.spawn_lone_boss, e.f, nil,
+        { section = section, name = name, make_boss = make_legend, label = "Legend" })
+    if not (ok and pos) then
+        R.handed[name] = nil
+        if not ok then dbg("!Nemesis ERROR: a Legend could not come (%s).", tostring(pos)) end
+        return false
+    end
+    nemesis_fx.play_retreat_fx(pos)   -- play_retreat_fx: nemesis_fx, the teleport burst and sound
+    local line = own_line("legend", 6, h)
+    if line then nemesis_lines.boss_news(line) end   -- boss_news: nemesis_lines, his message with his portrait
+    return true
+end
+
+-- The Legends' roll (a slow job): every Legend roll hours, each waiting Legend of the hunt's
+-- faction rolls Legend chance; the first who wins comes, if a Legend may come now. The owner's
+-- Force the next hunt picks (round 162): "legend_roll" makes the roll happen now, with its chance and its rules
+-- and the same log lines; "legend" brings one now, with no chance, hours or lockout, but never
+-- while a hunt runs or a boss is alive (spawn_lone_boss and the never-two-bosses rule hold).
+local function legend_tick()
+    if R.freed or not enabled() then return end
+    local hours = setting("legend_hours", 2, 0, 12)
+    local pick = forced == "legend" or forced == "legend_roll"
+    if hours <= 0 and not pick then return end
+    local now = nemesis_engine.game_seconds()
+    local every = math.max(hours, 1) * 3600
+    if pick then
+        forced = forced == "legend" and "legend_now" or nil
+        R.next_roll_at = now + every
+    else
+        if not R.next_roll_at or R.next_roll_at > now + every then
+            R.next_roll_at = now + every     -- the first roll, or the clock went back (an older save)
+            return
+        end
+        if now < R.next_roll_at then return end
+        R.next_roll_at = now + every
+    end
+    local now_one = forced == "legend_now"
+    forced = nil
+    local faction = nemesis_utils.faction_for_player()   -- faction_for_player: nemesis_utils, the hunt's faction for you
+    local list = {}
+    for _, e in ipairs(R.pool) do
+        if e.f == faction then list[#list + 1] = e end
+    end
+    if #list == 0 then
+        if not pick then return end
+        -- No Legend is waiting: the Testing Legend comes now instead (owner, 24 October 2026), a
+        -- stand-in outside the pool and the name lists, so a test never touches the real names.
+        if S.phase ~= "idle" or S.follow or nemesis_events.ask("boss_exists") then
+            dbg("Nemesis: Force the next hunt: a Legend can't come while a hunt runs or a boss is alive.")
+            return
+        end
+        dbg("Nemesis: Force the next hunt: no %s Legend is waiting; the Testing Legend comes instead.", tostring(faction))
+        if not spawn_legend({ test = true, f = faction, returns = 0 }) then dbg("Nemesis: Force the next hunt: no spot for the Legend yet.") end
+        return
+    end
+    if now_one then
+        if S.phase ~= "idle" or S.follow or nemesis_events.ask("boss_exists") then
+            dbg("Nemesis: Force the next hunt: a Legend can't come while a hunt runs or a boss is alive.")
+            return
+        end
+        if not spawn_legend(list[math.random(#list)]) then dbg("Nemesis: Force the next hunt: no spot for the Legend yet.") end
+        return
+    end
+    local may, why = legend_may_come(now)
+    if not may then
+        dbg("Nemesis: the Legends' roll is skipped (%s).", why)
+        return
+    end
+    local chance = setting("legend_chance", 2, 0, 20)
+    for n = #list, 2, -1 do
+        local j = math.random(n)
+        list[n], list[j] = list[j], list[n]
+    end
+    for _, e in ipairs(list) do
+        if chance > 0 and math.random() * 100 < chance then
+            if spawn_legend(e) then return end
+        end
+    end
+    dbg("Nemesis: the Legends' roll: none of %s comes this time (%s %%).", tostring(#list), tostring(chance))
+end
+
+---------------------------------------------------------------------------
+-- The last page (every name retired)
+---------------------------------------------------------------------------
+-- Starts again from nothing: every name back, every list empty, the hunts on, the full menu.
+local function restart()
+    R = blank()
+    -- src: mcm ui_mcm.script (ui_mcm.set)
+    pcall(function() ui_mcm.set(RESTART_PATH, false) end)
+    -- src: mcm ui_mcm.script (ui_mcm.reload)
+    pcall(function() ui_mcm.reload() end)
+    nemesis_lines.send_news(nemesis_lines.text("st_nemesis_ret_msg_restarted"))
+    dbg("Nemesis: Nemesis Spawn System restarted from its last page.")
+end
+
+-- A slow job while you are free: the last page's box ticked and applied restarts the mod.
+local function restart_tick()
+    if not R.freed then return end
+    local v = nil
+    -- src: mcm ui_mcm.script (ui_mcm.get)
+    pcall(function() v = ui_mcm.get(RESTART_PATH) end)
+    if v == true then restart() end
+end
+
+-- The one page shown instead of the whole menu once you are free (menu_page), or nil.
+local function last_page()
+    shown_freed = R.freed == true
+    if not R.freed then return nil end
+    return { id = "returning", sh = true, text = "ui_mcm_nemesis_page_freed", gr = {
+            { id = "title", type = "slide", link = "ui_options_slider_player", text = "ui_mcm_nemesis_title", size = {512, 50}, spacing = 20 },
+            { id = "egg_restart", type = "check", val = 1, def = false, hint = "nemesis_egg_restart" },
+        } }
+end
+
+---------------------------------------------------------------------------
+-- Save and load
+---------------------------------------------------------------------------
+-- Returns list as one string: "fi,li,f,step,returns,map,at|...".
+local function pack(list)
+    local out = {}
+    for _, e in ipairs(list) do
+        out[#out + 1] = table.concat({ e.fi, e.li, e.f, e.step, e.returns, e.map or "", e.at or "" }, ",")
+    end
+    return table.concat(out, "|")
+end
+
+-- Returns the list back from pack's string; a malformed item is skipped.
+local function unpack_list(str)
+    local list = {}
+    for item in string.gmatch(type(str) == "string" and str or "", "[^|]+") do
+        local p = {}
+        for v in string.gmatch(item .. ",", "([^,]*),") do p[#p + 1] = v end
+        local fi, li, step, returns = tonumber(p[1]), tonumber(p[2]), tonumber(p[4]), tonumber(p[5])
+        if fi and li and step and returns and (p[3] == "monolith" or p[3] == "isg" or p[3] == "army") then
+            list[#list + 1] = { fi = fi, li = li, f = p[3], step = step, returns = returns,
+                                map = p[6] ~= "" and p[6] or nil, at = tonumber(p[7]) }
+        end
+    end
+    return list
+end
+
+-- The saving listener: the module's own key in the save. The last line said is kept only for
+-- the hunters who can still speak again (on the list or waiting as a Legend), as "fi:li=n;...".
+local function on_saving(mdata)
+    if type(mdata) ~= "table" then return end
+    local retired, handed, said = {}, {}, {}
+    for k in pairs(R.retired) do retired[#retired + 1] = k end
+    for name, h in pairs(R.handed) do
+        -- The Testing Legend is left out (no name indexes); after a load he fights on as the boss,
+        -- and his death retires nothing.
+        if not h.test then handed[#handed + 1] = table.concat({ h.fi, h.li, h.f, h.step, h.returns, h.map or "", h.role or "fresh", h.committed and 1 or 0, name }, ",") end
+    end
+    for k, i in pairs(R.last_line) do
+        if find(R.roster, k) or find(R.pool, k) then said[#said + 1] = k .. "=" .. tostring(i) end
+    end
+    mdata[SAVE_KEY] = { v = SAVE_VERSION, roster = pack(R.roster), pool = pack(R.pool), retired = table.concat(retired, ";"),
+                        handed = table.concat(handed, "|"), last_boss_at = R.last_boss_at, next_roll_at = R.next_roll_at,
+                        boss_running = R.boss_running and true or nil, freed = R.freed and true or nil,
+                        last_line = table.concat(said, ";") }
+end
+
+-- The loaded listener: the module's state back from its key (a save without it starts empty).
+local function on_loaded(mdata)
+    R = blank()
+    local d = type(mdata) == "table" and mdata[SAVE_KEY] or nil
+    if type(d) ~= "table" then return end
+    R.roster = unpack_list(d.roster)
+    R.pool = unpack_list(d.pool)
+    -- A save from before round 175 may keep hunters one step from Legend, or at it, on the list:
+    -- they move to the pool, so a Legend never comes back as a named hunter.
+    for index = #R.roster, 1, -1 do
+        local e = R.roster[index]
+        if (e.step or 1) + 1 >= STEP_MAX then
+            table.remove(R.roster, index)
+            e.step = STEP_MAX
+            R.pool[#R.pool + 1] = e
+        end
+    end
+    for k in string.gmatch(type(d.retired) == "string" and d.retired or "", "[^;]+") do
+        if not R.retired[k] then
+            R.retired[k] = true
+            R.retired_n = R.retired_n + 1
+        end
+    end
+    for item in string.gmatch(type(d.handed) == "string" and d.handed or "", "[^|]+") do
+        local p = {}
+        for v in string.gmatch(item .. ",", "([^,]*),") do p[#p + 1] = v end
+        local fi, li, step, returns = tonumber(p[1]), tonumber(p[2]), tonumber(p[4]), tonumber(p[5])
+        local name = p[9]
+        if fi and li and step and returns and name and name ~= "" then
+            R.handed[name] = { fi = fi, li = li, f = p[3], step = step, returns = returns, map = p[6] ~= "" and p[6] or nil,
+                               role = p[7], committed = p[8] == "1" }
+        end
+    end
+    -- The last line each one said, so a load never lets him say it twice in a row (round 163;
+    -- a save from before has none).
+    for k, i in string.gmatch(type(d.last_line) == "string" and d.last_line or "", "([^;=]+)=(%d+)") do
+        R.last_line[k] = tonumber(i)
+    end
+    R.last_boss_at = tonumber(d.last_boss_at)
+    R.boss_running = d.boss_running == true
+    R.next_roll_at = tonumber(d.next_roll_at)
+    R.freed = d.freed == true
+    dbg("Nemesis: The Returning loaded (%s kept, %s Legend(s) waiting, %s names retired%s).", tostring(#R.roster),
+        tostring(#R.pool), tostring(R.retired_n), R.freed and ", free" or "")
+end
+
+-- Writes one status line (Debug logs, owner, round 162): per faction how many hunters are kept for
+-- a return, the Legends waiting by name, and how many names are retired.
+function status_line()
+    local kept, legends = {}, {}
+    for _, e in ipairs(R.roster) do kept[e.f] = (kept[e.f] or 0) + 1 end
+    for _, e in ipairs(R.pool) do legends[#legends + 1] = tostring(full_name(e)) .. " (" .. e.f .. ")" end
+    dbg("Nemesis: The Returning: kept Monolith %s, UNISG %s, Military %s; Legends waiting: %s; %s of %s names retired%s.",
+        tostring(kept.monolith or 0), tostring(kept.isg or 0), tostring(kept.army or 0),
+        #legends > 0 and table.concat(legends, ", ") or "none", tostring(R.retired_n), tostring(names_total()),
+        R.freed and "; free (no hunts)" or "")
+end
+
+-- The first update after a load (loaded) or of a new game: a new game starts empty; the running
+-- hunt's members get their share of the spread back (not saved); the menu is rebuilt when it
+-- shows the wrong one for this save (free or not).
+local function on_runtime_reset(loaded)
+    if not loaded then R = blank() end
+    due = {}
+    cone_version = nil
+    for id, r in pairs(S.m) do
+        local h = r.name and R.handed[r.name]
+        if h then
+            set_cone(r, h)
+            due[id] = time_global() + LEVER_DELAY_MS
+        end
+    end
+    if loaded then status_line() end
+    if shown_freed ~= (R.freed == true) then
+        -- src: mcm ui_mcm.script (ui_mcm.reload)
+        pcall(function() ui_mcm.reload() end)
+    end
+end
+
+-- A member came online (npc_on_net_spawn): one of our named hunters gets his Nemesis-mode levers
+-- LEVER_DELAY_MS later, after AlifeTactics' own spawn write.
+local function on_net_spawn(npc)
+    local id = nil
+    pcall(function() id = npc:id() end)
+    local r = id and nemesis_state.member(id)
+    if r and r.name and R.handed[r.name] then due[id] = time_global() + LEVER_DELAY_MS end
+end
+
+-- A tick job: the levers that are due; the spread shares again when the settings changed.
+local function lever_tick(gt)
+    for id, at in pairs(due) do
+        if gt >= at then
+            due[id] = nil
+            set_levers(id)
+        end
+    end
+    local v = nemesis_mcm.settings_version()   -- settings_version: nemesis_mcm, moves when settings may change
+    if v ~= cone_version then
+        cone_version = v
+        for _, r in pairs(S.m) do
+            local h = r.name and R.handed[r.name]
+            if h then set_cone(r, h) end
+        end
+    end
+end
+
+---------------------------------------------------------------------------
+-- The module: everything the core and the spawn ask it, and everything it listens to, added
+-- here (the module pattern since round 115; this module since round 161). Nothing calls it by name. An answer returns nil for
+-- "not mine"; never false where nil is meant.
+---------------------------------------------------------------------------
+function on_game_start()
+    local name = "The Returning"
+    local na, nl = 0, 0
+    -- Adds answer fn to question q under this module's name, counted for the line at the end.
+    local function answer(q, fn, order)
+        na = na + 1
+        nemesis_events.answer(q, name, fn, order)   -- answer: nemesis_events, a module's answer to a question
+    end
+    -- Adds listener fn to event ev under this module's name, counted for the line at the end.
+    local function on(ev, fn, order)
+        nl = nl + 1
+        nemesis_events.on(ev, name, fn, order)   -- on: nemesis_events, a listener to an event
+    end
+    answer("hunter_name", function(faction, used, leader)
+        if R.freed or not enabled() then return nil end
+        used = used or {}
+        local h = leader and pick_returner(faction, used) or nil
+        if h then h.role = "returner"
+        else
+            h = pick_fresh(faction, used)
+            if not h then return nil end
+            h.role = "fresh"
+        end
+        local n = full_name(h)
+        R.handed[n] = h
+        return n
+    end)
+    answer("start_line", function(id)
+        local r = id and nemesis_state.member(id)
+        local h = r and r.name and R.handed[r.name]
+        if not (h and h.role == "returner" and h.committed) then return nil end
+        return own_line("return", 12, h)
+    end)
+    -- Before the boss module's (order 200): a Legend followed to a new map stays himself.
+    answer("follow_boss", function(id)
+        local r = nemesis_state.member(id)
+        local h = r and r.name and R.handed[r.name]
+        if not (h and h.role == "legend") then return nil end
+        make_legend(id)
+        return true
+    end, 150)
+    answer("is_boss_name", function(n)
+        if n == nil then return nil end
+        local h = R.handed[n]
+        if h and h.role == "legend" then return true end
+        for _, e in ipairs(R.pool) do
+            if full_name({ fi = e.fi, li = e.li, f = e.f, step = STEP_MAX }) == n then return true end
+        end
+        return nil
+    end)
+    -- Order 10, before the emission boss: once you are free no hunt of any kind starts.
+    answer("take_tick", function()
+        if R.freed and S.phase == "idle" then return true end
+        return nil
+    end, 10)
+    answer("menu_page", function() return last_page() end)
+    -- Force the next hunt's three choices (round 162): a returning leader in the next hunt, a
+    -- Legend now, or the Legends' roll now (legend_tick does the last two on its next run).
+    answer("force", function(kind)
+        if kind ~= "returner" and kind ~= "legend" and kind ~= "legend_roll" then return nil end
+        forced = kind
+        dbg("Nemesis: Force the next hunt: %s.", kind == "returner" and "the next hunt's leader is a returning hunter"
+            or kind == "legend" and "a Legend comes now" or "the Legends' roll happens now")
+        return true
+    end)
+    on("member_added", function(id, named, n) on_member_added(id, named, n) end)
+    on("member_broke_off", function(id, r, yours) on_broke_off(id, r, yours) end)
+    on("member_died", function(id, r, yours) on_died(id, r, yours) end, 30)
+    -- No Legend after a boss counts from when the last boss (the boss, the emission boss or a
+    -- Legend) was last in the world: his hunt's start, then its end (owner, round 162).
+    on("hunt_started", function(faction, boss_hunt)
+        if boss_hunt then
+            R.last_boss_at = nemesis_engine.game_seconds()
+            R.boss_running = true
+        end
+    end)
+    on("hunt_ended", function()
+        if R.boss_running then R.last_boss_at = nemesis_engine.game_seconds() end
+        R.boss_running = false
+        R.handed = {}
+        due = {}
+    end)
+    on("runtime_reset", function(loaded) on_runtime_reset(loaded) end)
+    on("saving", on_saving)
+    on("loaded", on_loaded)
+    -- add_job: nemesis_core, a job on the core's tick or slow tick
+    nemesis_core.add_job("tick", "the returning hunters' levers", function(gt) lever_tick(gt) end, nil, true)
+    nemesis_core.add_job("slow", "the Legends' roll", function() legend_tick() end, 60, true)
+    nemesis_core.add_job("slow", "the last page's restart", function() restart_tick() end, 61, true)
+    -- src: anomaly _g.script (RegisterScriptCallback)
+    RegisterScriptCallback("npc_on_net_spawn", on_net_spawn)
+    dbg("Nemesis: The Returning is in (%s answers, %s listeners, 1 tick job, 2 slow jobs, 1 callback).", tostring(na), tostring(nl))
+end
+
+---------------------------------------------------------------------------
+-- Settings: this script declares The Returning's page (round 161; the owner: a main tab of its own)
+---------------------------------------------------------------------------
+-- nemesis_mcm puts the menu together from the scripts that own its pages and saves every value
+-- under "nemesis/returning/<id>". Labels and tooltips come from ui_mcm_nemesis_<id> (this
+-- module's configs/text/<language>/ui_mcm_nemesis_returning.xml). The Rank effects choice is shown
+-- only with AlifeTactics installed (the owner: without it ours are used). mcm_presets: this page's
+-- share of Easy, Medium and Hard, made by the round 113 rule (Easy 20 % easier rounded down, Hard
+-- 20 % harder rounded up, one step where rounding would undo the change). Both are called when
+-- the menu is built, never at load.
+function mcm_page()
+    local gr = {
+        { id = "title", type = "slide", link = "ui_options_slider_player", text = "ui_mcm_nemesis_title", size = {512, 50}, spacing = 20 },
+        { id = "head_returning", type = "title", text = "ui_mcm_nemesis_head_returning", align = "l", clr = nemesis_mcm.HEAD_CLR },
+        { id = "returning_enabled", type = "check", val = 1, def = true, hint = "nemesis_returning_enabled" },
+        { id = "return_chance", type = "track", val = 2, def = 35, min = 0, max = 100, step = 5, prec = 0, hint = "nemesis_return_chance" },
+        { id = "line_ranks", type = "line" },
+        { id = "head_ranks", type = "title", text = "ui_mcm_nemesis_head_ranks", align = "l", clr = nemesis_mcm.HEAD_CLR },
+    }
+    if nemesis_compat.alifetactics() then
+        gr[#gr + 1] = { id = "rank_driver", type = "list", val = 0, def = "alifetactics", no_str = true, hint = "nemesis_rank_driver",
+            content = { { "alifetactics", "ui_mcm_nemesis_lst_alifetactics" }, { "nemesis", "ui_mcm_nemesis_lst_nemesis" } } }
+    end
+    local rest = {
+        { id = "rank_accuracy", type = "track", val = 2, def = 4, min = 0, max = 10, step = 1, prec = 0, hint = "nemesis_rank_accuracy" },
+        { id = "rank_vision", type = "track", val = 2, def = 4, min = 0, max = 10, step = 1, prec = 0, hint = "nemesis_rank_vision" },
+        { id = "rank_bursts", type = "track", val = 2, def = 5, min = 0, max = 10, step = 1, prec = 0, hint = "nemesis_rank_bursts" },
+        { id = "line_legends", type = "line" },
+        { id = "head_legends", type = "title", text = "ui_mcm_nemesis_head_legends", align = "l", clr = nemesis_mcm.HEAD_CLR },
+        { id = "legend_chance", type = "track", val = 2, def = 2, min = 0, max = 20, step = 1, prec = 0, hint = "nemesis_legend_chance" },
+        { id = "legend_hours", type = "track", val = 2, def = 2, min = 0, max = 12, step = 1, prec = 0, hint = "nemesis_legend_hours" },
+        { id = "legend_lockout", type = "track", val = 2, def = 12, min = 0, max = 96, step = 1, prec = 0, hint = "nemesis_legend_lockout" },
+    }
+    for _, o in ipairs(rest) do gr[#gr + 1] = o end
+    return { id = "returning", sh = true, text = "ui_mcm_nemesis_page_returning", gr = gr }
+end
+
+-- This script's choices in Debug & tools, Force the next hunt (round 162, owner).
+function mcm_force_next()
+    return { { "returner", "ui_mcm_nemesis_force_next_returner" }, { "legend", "ui_mcm_nemesis_force_next_legend" },
+             { "legend_roll", "ui_mcm_nemesis_force_next_legend_roll" } }
+end
+
+-- This page's share of the presets (see above). Fewer hours and a shorter lockout are harder.
+function mcm_presets()
+    return {
+        easy = { return_chance = 25, rank_accuracy = 3, rank_vision = 3, rank_bursts = 4, legend_chance = 1, legend_hours = 3, legend_lockout = 14 },
+        medium = { return_chance = 35, rank_accuracy = 4, rank_vision = 4, rank_bursts = 5, legend_chance = 2, legend_hours = 2, legend_lockout = 12 },
+        hard = { return_chance = 45, rank_accuracy = 5, rank_vision = 5, rank_bursts = 6, legend_chance = 3, legend_hours = 1, legend_lockout = 10 },
+    }
+end

@@ -31,11 +31,12 @@ local refused_count = 0
 local function log_refusal(what, se_obj)
     refused_count = refused_count + 1
     if not nemesis_utils.debug_on() then return end   -- debug_on: nemesis_utils, the Debug logs box
+    -- A plain line, no error mark and no traceback (owner, round 182: expected, "we just need to know
+    -- it"): Anomaly asks to delete the hunt squad when its last member dies, or a member while the
+    -- hunt runs; the guard keeps them, and the squad is removed after the hunt (nemesis_fx).
     if refused_count <= 20 or refused_count % 25 == 0 then
-        local tb = ""
-        pcall(function() tb = debug.traceback("", 4) end)
-        dbg("!Nemesis: refused engine release (%s) of %s, online=%s, refusal %s.%s",
-            what, tostring(se_obj.id), tostring(se_obj.online), tostring(refused_count), tb or "")
+        dbg("Nemesis: release guard (expected): kept the %s %s from Anomaly's release while the hunt runs (online=%s, refusal %s).",
+            what, tostring(se_obj.id), tostring(se_obj.online), tostring(refused_count))
     end
 end
 
@@ -168,8 +169,9 @@ local function check_boxes()
         nemesis_lines.send_news(nemesis_lines.text("st_nemesis_msg_escalation_reset"), nemesis_lines.text("st_nemesis_caption"))
     end
     -- "Force the next hunt" (round 98: one list for the two old boxes): acts once, then None.
+    -- Every choice but None goes to the modules (The Returning's three since round 162).
     local f = nemesis_mcm.get_string("force_next", "none")   -- get_string: nemesis_mcm, a menu list's value
-    if f == "boss" or f == "emission" then
+    if f ~= "none" and f ~= "" then
         -- src: mcm ui_mcm.script (ui_mcm.set)
         pcall(function() ui_mcm.set(nemesis_mcm.path("force_next"), "none") end)
         nemesis_mcm.invalidate()
@@ -185,6 +187,7 @@ function tick()
     install_south_exemption()
     check_boxes()
     nemesis_damage.install_br_hooks()   -- install_br_hooks: nemesis_damage, the hit hooks once grok_bo is there
+    nemesis_damage.install_keep_hits()   -- install_keep_hits: nemesis_damage, cancelled hits of the Thunder Boss put back
     nemesis_damage.settle_stale()   -- settle_stale: nemesis_damage, a hit GAMMA's chain left unsettled
     install_release_guard()
     install_ap_owner()
@@ -195,7 +198,7 @@ end
 ---------------------------------------------------------------------------
 -- A reload restores the cycle stored in that save, so the "he killed you" fact lives outside
 -- the save: death_reset_pending (script state survives a save load), and the [death] section of
--- the player's own file (nemesis_config, gamedata/configs/nwss_player.ltx) for a game closed
+-- the player's own file (nemesis_config, gamedata/configs/nss_player.ltx) for a game closed
 -- after the death. Round 117 (owner): a value that goes 1 -> 0, not a file that is deleted. The
 -- old marker (nemesis_death_reset.txt, removed with os.remove) was never removed under Mod
 -- Organizer, so every load halved the escalation again; it is no longer read. pending holds the

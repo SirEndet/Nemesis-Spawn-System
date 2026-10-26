@@ -1,10 +1,10 @@
-# Nemesis Wave Spawn System: the `dev` branch
+# Nemesis Spawn System: the `dev` branch
 
-This branch holds **the commented source of the latest release** (now 1.0.2). It is refreshed with every release; to play, use the release zip from [Releases](https://github.com/SirEndet/Nemesis-Wave-Spawn-System/releases/latest), or the `main` branch.
+This branch holds **the commented source of the latest release** (now 1.0.3). It is refreshed with every release; to play, use the release zip from [Releases](https://github.com/SirEndet/Nemesis-Spawn-System/releases/latest), or the `main` branch.
 
-This is the same code as the 1.0.2 release, with every note the developers wrote in it: what each function does, why, and where each rule came from. It's for modders and the curious. **To play, use the release zip**: it is the same code with the notes stripped, and it carries the player guide.
+This is the same code as the 1.0.3 release, with every note the developers wrote in it: what each function does, why, and where each rule came from. It's for modders and the curious. **To play, use the release zip**: it is the same code with the notes stripped, and it carries the player guide.
 
-- `Nemesis/gamedata/`: the mod as it runs, with its notes. It installs and plays like the release (the game log says "Nemesis Wave Spawn System 1.0.2 loaded").
+- `Nemesis/gamedata/`: the mod as it runs, with its notes. It installs and plays like the release (the game log says "Nemesis Spawn System 1.0.3 loaded").
 - `lane_register.md`: every place the mod touches the game and other mods, and how each change is put back. The notes refer to its rows (A6, B5 ...).
 - `critical_errors.md`: which error lines always show in the log, and what they mean.
 - `LICENSE`: MIT. It covers Nemesis's own code. xlibs and the modded exes are their authors' and are not included.

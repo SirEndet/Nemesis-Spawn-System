@@ -6,7 +6,7 @@
 -- Uses: MCM's ui_mcm, Anomaly's axr_main.config, nemesis_engine (file_exists), nemesis_config
 -- (the backup), nemesis_utils (log_tag), and each page script's mcm_page and mcm_presets.
 --
--- Six pages under "Nemesis Wave Spawn System" (round 98 layout, user design): General, Hunts,
+-- Six pages under "Nemesis Spawn System" (named Nemesis Wave Spawn System before 1.0.3; round 98 layout, user design): General, Hunts,
 -- Combat, Boss, Emission boss, Debug & tools. The Hunts page keeps the id "spawning" (its old
 -- name), so its settings keep their saved values; a setting moved to another page starts from
 -- its default once (user: no migration). MCM stores each value in
@@ -36,7 +36,7 @@ local provider                     -- below
 -- The menu's pages, in order. "general" and "debug" are this script's; every other entry is the
 -- script that declares that page (mcm_page, mcm_presets). A name here is only a place in the menu:
 -- nothing is called on a script that is not installed (round 122).
-local PAGES = { "general", "nemesis_spawn", "nemesis_damage", "nemesis_boss", "nemesis_emission", "debug" }
+local PAGES = { "general", "nemesis_spawn", "nemesis_damage", "nemesis_boss", "nemesis_emission", "nemesis_returning", "nemesis_pressure", "nemesis_thunder_boss", "debug" }
 
 -- A page's script, when it is installed and declares a page. Looked up without loading anything
 -- that is not there: a script already loaded, else one whose file exists (a global that does not
@@ -52,14 +52,21 @@ provider = function(name)
 end
 
 -- Force the next hunt's choices: None, then each installed page script's own (mcm_force_next:
--- the boss, the emission boss), in page order (round 122).
+-- the boss, the emission boss, The Returning's three), in page order (round 122). A script gives
+-- one choice { value, label }, or several as a list of them (round 162).
 local function force_next_choices()
     local list = { { "none", "ui_mcm_nemesis_force_next_none" } }
     for _, name in ipairs(PAGES) do
         local m = provider(name)
         if m and type(m.mcm_force_next) == "function" then
             local ok, c = pcall(m.mcm_force_next)
-            if ok and type(c) == "table" then list[#list + 1] = c end
+            if ok and type(c) == "table" then
+                if type(c[1]) == "table" then
+                    for _, one in ipairs(c) do list[#list + 1] = one end
+                else
+                    list[#list + 1] = c
+                end
+            end
         end
     end
     return list
@@ -102,8 +109,11 @@ local function general_page()
             { id = "warning_pda", type = "check", val = 1, def = false, hint = "nemesis_warning_pda" },
             { id = "hd_icon", type = "check", val = 1, def = false, hint = "nemesis_hd_icon" },
             { id = "line_effects", type = "line" },
-            { id = "head_effects", type = "title", text = "ui_mcm_nemesis_head_effects", align = "l", clr = HEAD_CLR },
+            -- The Compatibility heading: the Wearable Devices options together (round 157). Both stay
+            -- on the General page, so the saved value of wd_malfunction is kept (MCM saves by page).
+            { id = "head_compat", type = "title", text = "ui_mcm_nemesis_head_compat", align = "l", clr = HEAD_CLR },
             { id = "wd_malfunction", type = "check", val = 1, def = true, hint = "nemesis_wd_malfunction" },
+            { id = "wd_pda_messages", type = "check", val = 1, def = true, hint = "nemesis_wd_pda_messages" },
         }) }
 end
 
@@ -144,8 +154,16 @@ local function pages()
     return out, missing
 end
 
--- The menu tree MCM reads: the "nemesis" root holding the pages.
-local function options() return { id = "nemesis", gr = (pages()) } end
+-- The menu tree MCM reads: the "nemesis" root holding the pages. A module may show one page of its
+-- own instead (menu_page: The Returning's last page, once every hunter is dead; round 161). The
+-- lookup of where each setting lives (build) always reads the full list, so nothing is lost.
+local function options()
+    local own = nil
+    -- ask: nemesis_events, the first module's answer, or nil
+    pcall(function() own = nemesis_events and nemesis_events.ask("menu_page") end)
+    if type(own) == "table" then return { id = "nemesis", gr = { own } } end
+    return { id = "nemesis", gr = (pages()) }
+end
 
 -- MCM builds its menu (main menu or in game): from here on our apply handler is registered, so
 -- a difficulty picked in the main menu applies at once.
@@ -198,8 +216,7 @@ end
 -- check box (the owner's rule in round 113); the volumes, the screen wave, spawn distances,
 -- fight range and the attack pulls stay out (how it sounds, looks or the AI behaves, not how
 -- hard it is). Easy is 20% easier
--- than Medium, rounded down, Hard 20% harder, rounded up, each on its slider's step (presets113.py
--- in the dev kit's tools). Where that leaves the slider's range it stops at the end (Easy boss
+-- than Medium, rounded down, Hard 20% harder, rounded up, each on its slider's step. Where that leaves the slider's range it stops at the end (Easy boss
 -- days 7, Hard escort 4, Hard emission boss chance 100), and where rounding would undo the change
 -- it moves one step (boss misses: Easy 3, Hard 1). The squad weights shift toward smaller squads
 -- on Easy (1 and 2 up, 4 and 5 down, 3 kept) and larger ones on Hard. Since round 122 each page's
@@ -248,13 +265,15 @@ local function raw_number(id)
     return v
 end
 
--- True when every setting the preset controls has the preset's value.
-local function matches(level)
+-- True when every setting the preset controls has the preset's value. read: how a value is
+-- read (raw_number, the saved value, when not given; backup_custom passes shown_number).
+local function matches(level, read)
     build()
+    read = read or raw_number
     local preset = DIFFICULTY[level]
     if not preset then return false end
     for id, want in pairs(preset) do
-        local have = raw_number(id)
+        local have = read(id)
         if have == nil or math.abs(have - want) > 0.001 then return false end
     end
     return true
@@ -276,33 +295,94 @@ local function log(...)
     elseif printf and get_bool("debug_logs", false) then printf(...) end
 end
 
--- The automatic backup (round 119, owner): your own values of every setting a difficulty
--- controls, kept in the player's file (nemesis_config: [custom_backup] in nwss_player.ltx) just
--- before a difficulty replaces them. Only when they are yours, that is when they match none of
--- Easy, Medium and Hard, so a backup is never overwritten with a preset's values. Taken at the
--- two moments a difficulty can replace them: picked in the dropdown (before MCM stages and saves
--- the preset's values, on_difficulty_selected), and applied by sync_difficulty (a pick in the
--- main menu applies at the next load). "Load settings from Automatic Backup" (a one-shot box,
--- nemesis_guard) puts them back and shows Custom; the backup itself is never deleted.
-local BACKUP_SECTION = "custom_backup"
+-- The open MCM window. The main menu creates it on the MCM button (main_menu.mcm_dlg), and
+-- every new main menu announces itself with main_menu_on_init (MCM's own open_to uses the
+-- same callback). ui_mcm.get_gui() is not used: it only knows the window once MCM has been
+-- opened before with a page selected, so on the first open of a session it returns nothing.
+local main_menu_ref = nil
+-- main_menu_on_init: keeps the newest main menu (see above).
+local function remember_main_menu(mm) main_menu_ref = mm end
 
--- Whether the settings now match none of the three presets (they are your own).
-local function values_are_yours()
-    return not (matches("easy") or matches("medium") or matches("hard"))
+-- The open MCM window, or nil when it is not open (or lacks CacheValue and Reset_opt).
+local function mcm_window()
+    local w = nil
+    pcall(function() w = main_menu_ref and main_menu_ref.mcm_dlg end)
+    if w and w.CacheValue and w.Reset_opt then return w end
+    return nil
 end
 
--- Takes the automatic backup (see above) when the values are yours; why is logged and kept as
--- the backup's "from".
+-- The automatic backup (round 119, owner): your own values of every setting a difficulty
+-- controls, kept in the player's file (nemesis_config: [custom_backup] in nss_player.ltx) just
+-- before a difficulty replaces them. Only when you leave Custom for Easy, Medium or Hard: the
+-- owner wants browsing the presets to leave the backup intact (see leaving_custom, from round 185).
+-- The older rule took it whenever the values matched none of the presets, so an unapplied slider
+-- or a value the menu had rounded could make a preset look like your own and overwrite the
+-- backup. Taken at the two moments a difficulty can replace them: picked in the dropdown (before
+-- MCM stages and saves the preset's values, on_difficulty_selected), and applied by
+-- sync_difficulty (a pick in the main menu applies at the next load). "Load settings from
+-- Automatic Backup" (a one-shot box, nemesis_guard) puts them back and shows Custom; the backup
+-- itself is never deleted.
+local BACKUP_SECTION = "custom_backup"
+
+-- Returns setting id as you see it now, as a number: in the open MCM window your unapplied
+-- change first, else the saved value; nil when it cannot be read.
+-- Through: mcm_window (above), the window's own GetCurrentValue (ui_mcm.script 2198-2232: the
+-- pending value first, else the saved one; the function MCM draws a page from) with the option's
+-- table (ui_mcm.get_opt_table); raw_number (the saved value) when the window is closed or the
+-- read fails.
+-- Then: backup_custom keeps these values, and decides with them whether they are your own.
+-- For: the owner wants the backup to be an undo for a pick too, so sliders you moved and had not
+-- applied yet are kept as well (round 160).
+local function shown_number(id)
+    local gui = mcm_window()
+    if gui and gui.GetCurrentValue then
+        local v = nil
+        pcall(function()
+            local full = path(id)
+            local page_path, opt = string.match(full, "^(.*)/([^/]+)$")
+            -- src: mcm ui_mcm.script (ui_mcm.get_opt_table); mcm ui_mcm.script (GetCurrentValue)
+            v = tonumber(gui:GetCurrentValue(page_path, opt, ui_mcm.get_opt_table(full)))
+        end)
+        if v ~= nil then return v end
+    end
+    return raw_number(id)
+end
+
+-- Whether a setting a difficulty controls has a change in the open menu that isn't applied yet
+-- (you moved it and haven't pressed Apply): the value you see (shown_number) differs from the
+-- saved one (raw_number). A value the menu rounded is the same in both, so it doesn't count.
+local function has_unapplied_changes()
+    build()
+    for id in pairs(DIFFICULTY.medium) do
+        local shown, saved = shown_number(id), raw_number(id)
+        if shown ~= nil and saved ~= nil and math.abs(shown - saved) > 0.001 then return true end
+    end
+    return false
+end
+
+-- Whether the settings a difficulty is about to replace are Custom (owner, round 185): the
+-- difficulty you are leaving (before: the dropdown as saved) or the last one applied is Custom,
+-- or you moved one of its sliders and haven't applied it (Apply would have made it Custom).
+-- Moving between Easy, Medium and Hard is none of these, so browsing never touches the backup.
+local function leaving_custom(before)
+    return before == "custom" or read_applied() == "custom" or has_unapplied_changes()
+end
+
+-- Takes the automatic backup (see above) of the values as you see them; why is logged and kept as
+-- the backup's "from". The callers decide when (leaving_custom); Custom values that happen to equal
+-- a preset are backed up too.
 local function backup_custom(why)
     build()
-    if not (nemesis_config and values_are_yours()) then return end
-    local want, n = {}, 0
+    if not nemesis_config then return end
+    local want, n, unapplied = {}, 0, 0
     for id in pairs(DIFFICULTY.medium) do
-        local v = raw_number(id)
+        local v = shown_number(id)
         if v ~= nil then
             nemesis_config.set(BACKUP_SECTION, id, v)   -- set: nemesis_config, a value into the player's file (in memory)
             want[id] = v
             n = n + 1
+            local saved = raw_number(id)
+            if saved ~= nil and math.abs(saved - v) > 0.001 then unapplied = unapplied + 1 end
         end
     end
     if n == 0 then return end
@@ -311,8 +391,8 @@ local function backup_custom(why)
     if res == "failed" then
         log("!Nemesis ERROR: the automatic backup of your settings did not save (%s).", tostring(key))
     else
-        log("Nemesis: your own settings (%s) backed up to %s before a difficulty is applied (%s%s).", tostring(n),
-            nemesis_config.FILE, why, res == "unverified" and "; a new file, checked from the next game start" or "")
+        log("Nemesis: your own settings (%s, %s of them not applied yet) backed up to %s before a difficulty is applied (%s%s).",
+            tostring(n), tostring(unapplied), nemesis_config.FILE, why, res == "unverified" and "; a new file, checked from the next game start" or "")
     end
 end
 
@@ -351,7 +431,7 @@ function sync_difficulty(picked)
     local last = read_applied()
     local apply = cur ~= "custom" and (picked or (last ~= nil and cur ~= last) or (last == nil and cur ~= "medium"))
     if apply then
-        backup_custom("applied " .. cur)
+        if last == "custom" then backup_custom("applied " .. cur) end   -- only when Custom is left (round 185)
         for id, v in pairs(DIFFICULTY[cur]) do set_value(id, v) end
         write_applied(cur)
         invalidate()
@@ -394,34 +474,39 @@ function on_option_change()
     sync_difficulty()
 end
 
--- Live preview (MCM on_selection_functor): the moment a difficulty is picked in the dropdown,
--- before Apply, its values are staged in MCM as pending changes on their own pages (CacheValue,
--- what MCM's own "preset" element does on one page) and the open page is redrawn (Reset_opt).
--- Apply saves them through MCM, Cancel drops them. Older MCM versions ignore the functor; the
--- apply-time sync below still applies the preset.
--- The open MCM window. The main menu creates it on the MCM button (main_menu.mcm_dlg), and
--- every new main menu announces itself with main_menu_on_init (MCM's own open_to uses the
--- same callback). ui_mcm.get_gui() is not used: it only knows the window once MCM has been
--- opened before with a page selected, so on the first open of a session it returns nothing.
-local main_menu_ref = nil
--- main_menu_on_init: keeps the newest main menu (see above).
-local function remember_main_menu(mm) main_menu_ref = mm end
+-- Instant apply (MCM on_selection_functor; round 159, owner: a pick applies at once and every
+-- tab shows the new values). The moment a difficulty is picked in the dropdown its values are
+-- saved, with no Apply needed, and the open window is brought up to date (see
+-- on_difficulty_selected). Cancel no longer undoes a pick: it only drops the other changes you
+-- had not applied. Before round 159 the values were only staged as pending changes until Apply.
+-- Older MCM versions ignore the functor; the apply-time sync below still applies the preset.
 
--- The open MCM window, or nil when it is not open (or lacks CacheValue and Reset_opt).
-local function mcm_window()
-    local w = nil
-    pcall(function() w = main_menu_ref and main_menu_ref.mcm_dlg end)
-    if w and w.CacheValue and w.Reset_opt then return w end
-    return nil
-end
-
--- The difficulty list's on_selection_functor: the live preview (see above); value is the
--- level picked.
+-- Applies the difficulty just picked in the dropdown at once (instant apply, see above); value is
+-- the level picked ("custom" changes nothing).
+-- Through: backup_custom (your own values kept first), set_value (MCM's public ui_mcm.set, which
+-- writes axr_options and saves it at once), write_applied, invalidate (the mod's cached settings
+-- dropped, so the next read in game takes the new values).
+-- Then: the open MCM window (mcm_window) is told each new value with its own CacheValue. The
+-- window remembers the value it had first as its backup; with the new value now saved, that
+-- backup is the new value, so nothing shows as pending. A value you had changed by hand and not
+-- applied keeps the older backup, so it stays pending with the preset's value, and Apply saves
+-- that same value. The open page is redrawn (Reset_opt); every other tab reads the saved values
+-- when you switch to it (ui_mcm.script GetCurrentValue, 2198-2232). The dropdown itself stays
+-- one pending change until Apply or Cancel; both leave the preset applied.
+-- For: the owner wants a pick to apply at once and every tab to show it (round 159).
 function on_difficulty_selected(opt_path, opt, value, v)
     build()
     local preset = DIFFICULTY[value]
-    if not preset then return end            -- "custom": nothing to stage
-    backup_custom("picked " .. tostring(value) .. " in the menu")   -- before the preset is staged
+    if not preset then return end            -- "custom": nothing to apply
+    -- current_difficulty: the dropdown as saved, so still the difficulty you are leaving
+    if leaving_custom(current_difficulty()) then
+        backup_custom("picked " .. tostring(value) .. " in the menu")   -- before the preset is saved
+    end
+    for id, val in pairs(preset) do set_value(id, val) end
+    set_value("difficulty", value)
+    write_applied(value)
+    invalidate()
+    log("Nemesis: difficulty %s applied at once (picked in the menu).", tostring(value))
     local gui = mcm_window()
     if not gui then return end
     for id, val in pairs(preset) do

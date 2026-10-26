@@ -1,0 +1,61 @@
+<?xml version="1.0" encoding="windows-1251"?>
+<string_table>
+    <!-- The Returning (nemesis_returning, round 161): its own strings, like the emission boss's. -->
+    <string id="st_nemesis_ret_monolith_return_1"><text>The Monolith carried me out of %map%, %name%. It sends me back to finish.</text></string>
+    <string id="st_nemesis_ret_monolith_return_2"><text>You saw me fall at %map%. The Monolith does not let its children fall.</text></string>
+    <string id="st_nemesis_ret_monolith_return_3"><text>I bled at %map%. The Monolith drank it and gave me back.</text></string>
+    <string id="st_nemesis_ret_monolith_return_4"><text>%rank% now. The Monolith rewards those who return.</text></string>
+    <string id="st_nemesis_ret_monolith_return_5"><text>Again, %name%. Every time you spare me, I come closer to Him.</text></string>
+    <string id="st_nemesis_ret_monolith_return_6"><text>At %map% you thought it was over. Nothing is over until the Monolith says so.</text></string>
+    <string id="st_nemesis_ret_monolith_return_7"><text>I remember your face from %map%. I pray to it every night.</text></string>
+    <string id="st_nemesis_ret_monolith_return_8"><text>The light took me out of %map%. It showed me where you would be.</text></string>
+    <string id="st_nemesis_ret_monolith_return_9"><text>You cannot kill a man the Monolith has already claimed.</text></string>
+    <string id="st_nemesis_ret_monolith_return_10"><text>Each return lifts me higher, %name%. Each one brings you lower.</text></string>
+    <string id="st_nemesis_ret_monolith_return_11"><text>They call me %rank% now. Your blood will make me more.</text></string>
+    <string id="st_nemesis_ret_monolith_return_12"><text>%map% was a lesson, %name%. For you.</text></string>
+    <string id="st_nemesis_ret_monolith_legend_1"><text>%count% times I came back to you, %name%. This time the Monolith sent no one else. It didn't need to.</text></string>
+    <string id="st_nemesis_ret_monolith_legend_2"><text>I have stood in the light more often than any man living. Tonight I bring it to you.</text></string>
+    <string id="st_nemesis_ret_monolith_legend_3"><text>Every wound you gave me, the Monolith turned into faith. I am all faith now.</text></string>
+    <string id="st_nemesis_ret_monolith_legend_4"><text>No brothers this time, %name%. Only me, the light, and you.</text></string>
+    <string id="st_nemesis_ret_monolith_legend_5"><text>You made me at %map%, %name%. Come and see what you made.</text></string>
+    <string id="st_nemesis_ret_monolith_legend_6"><text>The Monolith has stopped counting my returns. Now it counts your breaths.</text></string>
+    <string id="st_nemesis_ret_isg_return_1"><text>Extraction at %map% was clean, %name%. This one won't be.</text></string>
+    <string id="st_nemesis_ret_isg_return_2"><text>Wound sealed, rank raised to %rank%. Thanks for the promotion.</text></string>
+    <string id="st_nemesis_ret_isg_return_3"><text>Debriefed on %map%. I know how you move now.</text></string>
+    <string id="st_nemesis_ret_isg_return_4"><text>The beacon pulled me out of %map%. Nothing will pull you out.</text></string>
+    <string id="st_nemesis_ret_isg_return_5"><text>Same target, new orders: no witnesses this time.</text></string>
+    <string id="st_nemesis_ret_isg_return_6"><text>You had the shot at %map%, %name%. You should have taken it.</text></string>
+    <string id="st_nemesis_ret_isg_return_7"><text>Return number %count%. Command doesn't give up on its assets.</text></string>
+    <string id="st_nemesis_ret_isg_return_8"><text>My file says %map%: incomplete. I'm here to close it.</text></string>
+    <string id="st_nemesis_ret_isg_return_9"><text>They stitched me up in an hour. You've had days to run.</text></string>
+    <string id="st_nemesis_ret_isg_return_10"><text>Teleport sickness passes. Grudges don't.</text></string>
+    <string id="st_nemesis_ret_isg_return_11"><text>%rank% now. They gave me a bigger team. And you.</text></string>
+    <string id="st_nemesis_ret_isg_return_12"><text>%map% taught us your habits. We adjusted.</text></string>
+    <string id="st_nemesis_ret_isg_legend_1"><text>Asset upgraded to sole operator. Team withdrawn. Target: %name%.</text></string>
+    <string id="st_nemesis_ret_isg_legend_2"><text>%count% extractions. My handlers stopped writing reports. They just send me.</text></string>
+    <string id="st_nemesis_ret_isg_legend_3"><text>No squad, no backup, and only one order. You know which one.</text></string>
+    <string id="st_nemesis_ret_isg_legend_4"><text>They retired my file number, %name%. I don't need one anymore. Neither will you.</text></string>
+    <string id="st_nemesis_ret_isg_legend_5"><text>Every time you let me go, I learned. This is the last lesson.</text></string>
+    <string id="st_nemesis_ret_isg_legend_6"><text>Command has cleared the area. It's just the two of us now.</text></string>
+    <string id="st_nemesis_ret_army_return_1"><text>The lab boys pulled me out of %map% in pieces. They put me back together angrier.</text></string>
+    <string id="st_nemesis_ret_army_return_2"><text>%rank% now, %name%. Promoted for surviving you.</text></string>
+    <string id="st_nemesis_ret_army_return_3"><text>The research team wants to know how you did it at %map%. So do I.</text></string>
+    <string id="st_nemesis_ret_army_return_4"><text>Medevac by teleport, courtesy of the institute. Your turn is coming.</text></string>
+    <string id="st_nemesis_ret_army_return_5"><text>Orders haven't changed since %map%: bring back %name%, any condition.</text></string>
+    <string id="st_nemesis_ret_army_return_6"><text>You left me breathing at %map%. A soldier doesn't forget that mistake.</text></string>
+    <string id="st_nemesis_ret_army_return_7"><text>Command calls me the one who came back. Let's see what they call you.</text></string>
+    <string id="st_nemesis_ret_army_return_8"><text>They test their machine on us, %name%. I'm their best result.</text></string>
+    <string id="st_nemesis_ret_army_return_9"><text>At %map% I was careless. I've had time to train.</text></string>
+    <string id="st_nemesis_ret_army_return_10"><text>Every jump back costs me something. Today you pay it back.</text></string>
+    <string id="st_nemesis_ret_army_return_11"><text>Another stripe for my sleeve. Your PDA for my wall.</text></string>
+    <string id="st_nemesis_ret_army_return_12"><text>I see %map% every night when I close my eyes. Tonight it ends.</text></string>
+    <string id="st_nemesis_ret_army_legend_1"><text>They ran out of stripes for me, %name%. So they sent me alone.</text></string>
+    <string id="st_nemesis_ret_army_legend_2"><text>%count% times through their machine. Not much of the old me is left, and all of it hates you.</text></string>
+    <string id="st_nemesis_ret_army_legend_3"><text>No platoon this time. The institute says I'm worth one.</text></string>
+    <string id="st_nemesis_ret_army_legend_4"><text>I stopped counting the medevacs, %name%. I started counting the days until this one.</text></string>
+    <string id="st_nemesis_ret_army_legend_5"><text>From %map% to here. Every step was for you.</text></string>
+    <string id="st_nemesis_ret_army_legend_6"><text>The lab's final report has one blank line. Your name goes there tonight.</text></string>
+    <string id="st_nemesis_ret_msg_free"><text>Congratulations, you killed all of the Hunters. You're now free. Send a screenshot of this in the GAMMA Discord in the Nemesis Spawn System channel</text></string>
+    <string id="st_nemesis_ret_msg_restarted"><text>Nemesis Spawn System is back. The hunt begins again.</text></string>
+
+</string_table>

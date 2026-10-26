@@ -6,8 +6,9 @@
 -- Used by: nemesis_spawn, nemesis_core, nemesis_boss, nemesis_emission, nemesis_guard,
 -- nemesis_damage, nemesis_utils (text and the line functions).
 -- Uses: nemesis_state (the hunt faction, names), nemesis_utils (boss names, the player's
--- faction), nemesis_mcm (HD icon), nemesis_sound (the PDA beep), nemesis_engine (portraits),
--- nemesis_events (a module's own lines); the engine's translate_string and give_game_news.
+-- faction), nemesis_mcm (HD icon, the Wearable Devices PDA mod switch), nemesis_sound (the PDA
+-- beep), nemesis_engine (portraits), nemesis_events (a module's own lines), nemesis_compat (the
+-- Wearable Devices PDA mod); the engine's translate_string and give_game_news.
 
 -- One log line: nemesis_utils.log_msg (tagged AI).
 local function log_msg(...) return nemesis_utils.log_msg(...) end
@@ -24,7 +25,12 @@ function text(id)
 end
 
 -- The hunt's faction for its lines: UNISG's or the Monolith's.
-local function hunt_faction() return nemesis_state.S.faction == "isg" and "isg" or "monolith" end
+-- Returns the running hunt's faction for its lines and ranks: "isg", "army" or "monolith".
+local function hunt_faction()
+    local f = nemesis_state.S.faction
+    if f == "isg" or f == "army" then return f end
+    return "monolith"
+end
 
 ---------------------------------------------------------------------------
 -- Hunter names
@@ -63,7 +69,38 @@ end
 local RANKS = {
     monolith = { "st_nemesis_rank_monolith_1", "st_nemesis_rank_monolith_2", "st_nemesis_rank_monolith_3", "st_nemesis_rank_monolith_4", "st_nemesis_rank_monolith_5", "st_nemesis_rank_monolith_6" },
     isg = { "st_nemesis_rank_isg_1", "st_nemesis_rank_isg_2", "st_nemesis_rank_isg_3", "st_nemesis_rank_isg_4", "st_nemesis_rank_isg_5", "st_nemesis_rank_isg_6" },
+    army = { "st_nemesis_rank_army_1", "st_nemesis_rank_army_2", "st_nemesis_rank_army_3", "st_nemesis_rank_army_4", "st_nemesis_rank_army_5", "st_nemesis_rank_army_6" },
 }
+
+-- The six titles in climbing order (indexes into RANKS), for The Returning's ranks (round 161):
+-- step 1 is the lowest. The Monolith's and the Military's lists are in order already; UNISG's were
+-- written as a set (Sergeant, Lieutenant, Captain, Major, Specialist, Operative), so its ladder
+-- puts Specialist first and Operative, their elite, at the top.
+local LADDER = { monolith = { 1, 2, 3, 4, 5, 6 }, isg = { 5, 1, 2, 3, 4, 6 }, army = { 1, 2, 3, 4, 5, 6 } }
+
+-- Returns the title of rank step (1..6, held to that range) for faction, in the game's language.
+-- Through: LADDER and RANKS above, text.
+-- Then: The Returning (nemesis_returning) puts it in front of a named hunter's name and in his
+-- lines (%rank%).
+-- For: a hunter's title shows how often he came back (the owner's design, round 161).
+function rank_title(faction, step)
+    local f = (faction == "isg" or faction == "army") and faction or "monolith"
+    local s = math.max(1, math.min(6, math.floor(tonumber(step) or 1)))
+    return text(RANKS[f][LADDER[f][s]])
+end
+
+-- Returns how many first names and surnames there are (30 and 30 since round 134).
+-- For: The Returning's name checker counts every combination (round 161).
+function name_counts() return #FIRST_NAMES, #LAST_NAMES end
+
+-- Returns the name made of first name fi and surname li (indexes into the lists above), in the
+-- game's language, or nil for an index out of range.
+-- For: The Returning keeps a hunter as two indexes, so his name reads right in any language and a
+-- retired name is never handed out again (round 161).
+function name_from(fi, li)
+    if not (FIRST_NAMES[fi] and LAST_NAMES[li]) then return nil end
+    return text(FIRST_NAMES[fi]) .. " " .. text(LAST_NAMES[li])
+end
 
 -- A random rank of the hunt's faction, in the game's language.
 local function rank()
@@ -73,8 +110,19 @@ end
 
 -- One random name for a hunter; `named` adds a rank. `used` avoids the same name twice in
 -- one squad. The boss name (MCM) is never handed out, so it always means the boss.
-function next_hunter_name(used, named)
+-- A named hunter's name is asked of a module first (hunter_name: The Returning answers with a
+-- hunter who comes back, or a new one at the lowest rank; round 161); leader is true for the
+-- squad's first member, the only place a returning hunter is put.
+function next_hunter_name(used, named, leader)
     used = used or {}
+    if named then
+        -- ask: nemesis_events, the first module's answer, or nil
+        local own = nemesis_events.ask("hunter_name", hunt_faction(), used, leader == true)
+        if type(own) == "string" and own ~= "" then
+            used[own] = true
+            return own
+        end
+    end
     local name = nil
     for _ = 1, 24 do
         name = compose_name()
@@ -100,11 +148,41 @@ end
 local FALLBACK_ICON = "ui_inGame2_PD_storonnik_ravnovesiya"
 local NEWS_SHOW_MS = 7000
 
+-- The kind our messages carry on the Wearable Devices PDA mod's page (it keeps it with each one).
+local WD_PDA_KIND = "nemesis"
+
+-- Mirrors a PDA message that just went out onto the Wearable Devices PDA mod's Messages page.
+-- Through: nemesis_mcm.get_bool("wd_pda_messages") (the menu switch, on by default),
+-- nemesis_compat.wd_pda (that mod's message table, or false without it), nemesis_state.S.faction.
+-- Then: its push_external_faction(caption, msg, icon, kind, faction) adds the message to its page
+-- without a second popup (it never calls give_game_news, and drops the same caption and text
+-- within 2 s: zz_wd_pda_redirect.script 1055-1104). faction picks its emblem: the hunt's
+-- ("monolith", "isg", or "greh" for the emission boss), none for the mod's own notices (sent under
+-- the Nemesis caption), so that mod decides those itself.
+-- For: that mod hides the game's news window, so without this our messages never show while it
+-- is installed. The owner wants a switch so people can opt out (round 157).
+local function mirror_to_wd_pda(caption, msg, icon)
+    if not nemesis_mcm.get_bool("wd_pda_messages", true) then return end   -- get_bool: nemesis_mcm, a menu checkbox (cached)
+    local api = nemesis_compat.wd_pda()   -- wd_pda: nemesis_compat, the Wearable Devices PDA mod's message table, or false
+    if not api then return end
+    local faction = nil
+    if caption ~= text("st_nemesis_caption") then faction = nemesis_state.S.faction end
+    -- src: wdpda zz_wd_pda_redirect.script (wd_pda_redirect.push_external_faction)
+    local ok, err = pcall(api.push_external_faction, caption, msg, icon, WD_PDA_KIND, faction)
+    if not ok then
+        log_msg("!Nemesis ERROR: the Wearable Devices PDA mod did not take a PDA message (%s).", tostring(err))
+    end
+end
+
 -- msg: the message; caption: the sender line (nil or "": the Nemesis caption); icon_override:
--- optional texture (the boss's own portrait). Default: the Nemesis banner.
+-- optional texture (the boss's own portrait). Default: the Nemesis banner. show_ms: how long it
+-- stays on screen, NEWS_SHOW_MS when not given (The Returning's last message stays 30 s, so it
+-- can be screenshotted; round 161).
 -- The message is msg, not text (round 141): a parameter named text hid this script's text(), so
 -- the fallback caption failed with "attempt to call local 'text'" (round 134 to 140).
-function send_news(msg, caption, icon_override)
+-- A message that went out is also put on the Wearable Devices PDA mod's page when that mod is
+-- installed, by mirror_to_wd_pda above (round 157).
+function send_news(msg, caption, icon_override, show_ms)
     local actor = db.actor
     if not actor then
         log_msg("!Nemesis: PDA message skipped, no actor yet: %s", tostring(msg))
@@ -116,16 +194,18 @@ function send_news(msg, caption, icon_override)
         icon = "ui_nemesis_news_hd"
     end
     if type(icon_override) == "string" and icon_override ~= "" then icon = icon_override end
+    local show = tonumber(show_ms) or NEWS_SHOW_MS
     -- src: engine script_game_object_script3.cpp (give_game_news)
-    local ok, err = pcall(function() actor:give_game_news(caption, msg, icon, 0, NEWS_SHOW_MS) end)
+    local ok, err = pcall(function() actor:give_game_news(caption, msg, icon, 0, show) end)
     if not ok then
         log_msg("!Nemesis ERROR: PDA message failed with icon %s (%s), retrying with a vanilla icon.", icon, tostring(err))
         icon = FALLBACK_ICON
-        ok, err = pcall(function() actor:give_game_news(caption, msg, icon, 0, NEWS_SHOW_MS) end)
+        ok, err = pcall(function() actor:give_game_news(caption, msg, icon, 0, show) end)
     end
     if ok then
         nemesis_sound.pda_tip()   -- pda_tip: nemesis_sound, the PDA beep
         log_msg("Nemesis: PDA message sent [%s] %s (icon %s).", caption, msg, icon)
+        mirror_to_wd_pda(caption, msg, icon)
     else
         log_msg("!Nemesis ERROR: PDA message failed twice (%s).", tostring(err))
     end
@@ -325,6 +405,89 @@ local LINES = {
         known_spot = {
             "st_nemesis_isg_known_spot_1",
             "st_nemesis_isg_known_spot_2",
+        },
+    },
+    -- The Military's lines: the same kinds and counts as UNISG's, its own words (round 161).
+    army = {
+        warning = {
+            "st_nemesis_army_warning_1",
+            "st_nemesis_army_warning_2",
+            "st_nemesis_army_warning_3",
+            "st_nemesis_army_warning_4",
+            "st_nemesis_army_warning_5",
+        },
+        taunt = {
+            { max = 1, lines = {
+                "st_nemesis_army_taunt_t1_1",
+                "st_nemesis_army_taunt_t1_2",
+                "st_nemesis_army_taunt_t1_3",
+            } },
+            { max = 3, lines = {
+                "st_nemesis_army_taunt_t2_1",
+                "st_nemesis_army_taunt_t2_2",
+            } },
+            { max = 6, lines = {
+                "st_nemesis_army_taunt_t3_1",
+                "st_nemesis_army_taunt_t3_2",
+            } },
+            { max = math.huge, lines = {
+                "st_nemesis_army_taunt_t4_1",
+                "st_nemesis_army_taunt_t4_2",
+            } },
+        },
+        retreat = {
+            "st_nemesis_army_retreat_1",
+            "st_nemesis_army_retreat_2",
+            "st_nemesis_army_retreat_3",
+        },
+        time_up = {
+            "st_nemesis_army_time_up_1",
+            "st_nemesis_army_time_up_2",
+            "st_nemesis_army_time_up_3",
+        },
+        boss = {
+            "st_nemesis_army_boss_1",
+            "st_nemesis_army_boss_2",
+            "st_nemesis_army_boss_3",
+            "st_nemesis_army_boss_4",
+            "st_nemesis_army_boss_5",
+            "st_nemesis_army_boss_6",
+            "st_nemesis_army_boss_7",
+            "st_nemesis_army_boss_8",
+        },
+        boss_warning = {
+            "st_nemesis_army_boss_warning_1",
+            "st_nemesis_army_boss_warning_2",
+            "st_nemesis_army_boss_warning_3",
+        },
+        boss_stash = {
+            "st_nemesis_army_boss_stash_1",
+            "st_nemesis_army_boss_stash_2",
+        },
+        boss_escape = {
+            "st_nemesis_army_boss_escape_1",
+            "st_nemesis_army_boss_escape_2",
+            "st_nemesis_army_boss_escape_3",
+        },
+        dread = {
+            "st_nemesis_army_dread_1",
+            "st_nemesis_army_dread_2",
+            "st_nemesis_army_dread_3",
+            "st_nemesis_army_dread_4",
+            "st_nemesis_army_dread_5",
+        },
+        sneak = { "st_nemesis_army_sneak_1" },
+        rush = { "st_nemesis_army_rush_1" },
+        close = { "st_nemesis_army_close_1" },
+        follow = {
+            "st_nemesis_army_follow_1",
+            "st_nemesis_army_follow_2",
+            "st_nemesis_army_follow_3",
+        },
+        reload = { "st_nemesis_army_reload_1" },
+        known_spot = {
+            "st_nemesis_army_known_spot_1",
+            "st_nemesis_army_known_spot_2",
         },
     },
 }

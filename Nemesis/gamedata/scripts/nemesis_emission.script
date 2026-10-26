@@ -1,4 +1,5 @@
 -- Nemesis Emission Boss (round 93, user design)
+-- Release defaults use the owner-selected Medium profile; saved settings remain unchanged.
 -- A second boss, tied to emissions. An emission and a hunt meet (a hunt is running when the
 -- emission starts, or a hunt is about to start during one): the hunt is called off and he comes
 -- instead. Nowhere else does he appear.
@@ -32,7 +33,7 @@
 -- never calls this file: on_game_start (bottom) adds its answers and listeners to nemesis_events,
 -- its slow job and its sections to nemesis_core, and it saves its own state under its own key.
 -- Turning him off is the MCM Emission boss box, as before.
--- Used by: nobody by name (a module, see on_game_start); the kit reads state and hunt_state.
+-- Used by: nobody by name (a module, see on_game_start); state and hunt_state are public.
 -- Uses: nemesis_state (S), nemesis_events, nemesis_core (add_job, add_uninstall_sections),
 -- nemesis_spawn (spawn_lone_boss and the squad helpers), nemesis_engine (the doorway: vertices,
 -- the building reads, squads), nemesis_compat (surge_manager, the psy rework, phantoms),
@@ -58,9 +59,9 @@ local saved_flow = nil             -- runtime: the flow from the save, restored 
 -- His squads, with his own stalker sections since round 95 (configs/mod_system_nemesis_emission.ltx,
 -- so the emission's ignore list holds him alone), and every section of his world objects, for the
 -- uninstall sweep.
-local SQUADS = { greh = "nemesis_emission_squad", isg = "nemesis_emission_squad_isg" }
-local OWN_SECTIONS = { "nemesis_emission_squad", "nemesis_emission_squad_isg", "nemesis_emission_boss",
-                       "nemesis_emission_boss_isg", "nemesis_horde_zombied", "nemesis_horde_snork",
+local SQUADS = { greh = "nemesis_emission_squad", isg = "nemesis_emission_squad_isg", army = "nemesis_emission_squad_army" }
+local OWN_SECTIONS = { "nemesis_emission_squad", "nemesis_emission_squad_isg", "nemesis_emission_squad_army",
+                       "nemesis_emission_boss", "nemesis_emission_boss_isg", "nemesis_emission_boss_army", "nemesis_horde_zombied", "nemesis_horde_snork",
                        "nemesis_horde_snork_normal", "nemesis_phantom" }
 -- His squad's section for faction, or nil with an important error when his files are not loaded.
 local function squad_section(faction)
@@ -106,8 +107,8 @@ local EXITS_MAX = 6
 -- its middle ray leaves the building: the first navmesh spot on it (SCAN_STEP_M apart, no
 -- further than the ray was clear) that is outside by the lines' own rule (round 130).
 -- The burst's doors come first, then the lines' (merged within EXIT_MERGE_M; since round 130 the
--- lines find no false door, and in the kit's test a burst that saw fewer doors than the lines
--- would have lost real ones). On an xlibs without the ray: the lines' alone. BURST_PER_TICK rays
+-- lines find no false door, and a burst that saw fewer doors than the lines would have lost
+-- real ones). On an xlibs without the ray: the lines' alone. BURST_PER_TICK rays
 -- a tick: the lines already cost more (up to 5 rays per indoor read).
 local BURST_HEADINGS, BURST_PER_TICK = 120, 60
 local BURST_SPOTS, BURST_SPOT_GAP_M = 3, 8
@@ -245,14 +246,18 @@ function npc_cut() return setting("emission_npc_cut", 70, 0, 95) / 100 end
 -- The share of your psy bar a shove takes (0..0.20).
 local function psy_damage() return setting("emission_psy", 4, 0, 20) / 100 end
 -- How many mutants his horde brings (0..8).
-local function horde_size() return math.floor(setting("emission_horde", 4, 0, 8) + 0.5) end
+local function horde_size() return math.floor(setting("emission_horde", 6, 0, 8) + 0.5) end
 -- Horde flank share as 0..0.5, through setting (the menu number, held to its range): the part of
 -- the horde that comes from the far door's side (added in round 147). Used by spawn_horde.
 local function flank_share() return setting("emission_flank", 30, 0, 50) / 100 end
 
--- Sin, or UNISG for players the Sin would not hunt (Monolith, Zombified, Sin), like every hunt.
+-- Sin, or for players the Sin would not hunt the hunt's own choice, like every hunt: UNISG for
+-- Zombified and Sin players, the Military or UNISG for Monolith players (round 161: the owner
+-- wants him to follow the Hunts page's choice).
 function faction_for_player()
-    return nemesis_utils.faction_for_player() == "isg" and "isg" or "greh"   -- faction_for_player: nemesis_utils, the hunt's faction
+    local f = nemesis_utils.faction_for_player()   -- faction_for_player: nemesis_utils, the hunt's faction
+    if f == "isg" or f == "army" then return f end
+    return "greh"
 end
 
 -- An emission (or a psi storm) is on, and its deadly part (from its first wave) has begun; the
@@ -325,11 +330,38 @@ local LINES = {
         },
         reload = { "st_nemesis_em_isg_reload_1" },
     },
+    -- The Military emission boss (round 161): the same kinds and counts as UNISG's.
+    army = {
+        arrival = {
+            "st_nemesis_em_army_arrival_1",
+            "st_nemesis_em_army_arrival_2",
+            "st_nemesis_em_army_arrival_3",
+            "st_nemesis_em_army_arrival_4",
+            "st_nemesis_em_army_arrival_5",
+            "st_nemesis_em_army_arrival_6",
+            "st_nemesis_em_army_arrival_7",
+            "st_nemesis_em_army_arrival_8",
+        },
+        boss_escape = {
+            "st_nemesis_em_army_boss_escape_1",
+            "st_nemesis_em_army_boss_escape_2",
+        },
+        follow = {
+            "st_nemesis_em_army_follow_1",
+            "st_nemesis_em_army_follow_2",
+        },
+        boss_stash = {
+            "st_nemesis_em_army_boss_stash_1",
+            "st_nemesis_em_army_boss_stash_2",
+        },
+        reload = { "st_nemesis_em_army_reload_1" },
+    },
 }
 
 -- A line of this kind for his hunt, or nil (the caller uses the normal line).
 function line(kind)
-    local set = LINES[S.faction == "isg" and "isg" or "greh"][kind]
+    local f = (S.faction == "isg" or S.faction == "army") and S.faction or "greh"
+    local set = LINES[f][kind]
     if not set then return nil end
     return nemesis_lines.fill_line(nemesis_lines.text(set[math.random(#set)]), boss_name())   -- fill_line: nemesis_lines, the line filled in
 end
@@ -1009,7 +1041,7 @@ local function lightning(pos)
     local p = nemesis_engine.particle_at(LIGHTNING_FX, pos)
     if p then keep(p) end
     local path = nemesis_sound.pick("lightning", LIGHTNING_SOUNDS)   -- pick: nemesis_sound, the first file that exists
-    local vol = nemesis_sound.volume("lightning_volume", 0)   -- volume: nemesis_sound, a volume slider as 0..1
+    local vol = nemesis_sound.volume("lightning_volume", 60)   -- volume: nemesis_sound, a volume slider as 0..1
     if path and vol > 0 then nemesis_sound.play_at(path, pos, vol) end   -- play_at: nemesis_sound, a 3D sound at a spot
 end
 
@@ -1051,8 +1083,8 @@ local function arrive(gt)
     local faction = faction_for_player()
     -- His hunt starting here announces hunt_started, whose listener clears the last hunt's horde
     -- bookkeeping (clear_hunt_state). His horde came before him since round 147, so his own start
-    -- must keep it: arriving tells the listener (round 148, found by the kit: the early horde was
-    -- forgotten and a second one came 15 s after him).
+    -- must keep it: arriving tells the listener (round 148: the early horde was forgotten and a
+    -- second one came 15 s after him).
     arriving = true
     -- spawn_lone_boss: nemesis_spawn, his hunt placed like any hunt
     local ok, pos = pcall(nemesis_spawn.spawn_lone_boss, faction, exit_vertices(),
@@ -2139,7 +2171,7 @@ function mcm_page()
             { id = "emission_name", type = "input", val = 0, def = default_name(), hint = "nemesis_emission_name" },
             { id = "emission_dr", type = "track", val = 2, def = 30, min = 0, max = 85, step = 5, prec = 0, hint = "nemesis_emission_dr" },
             { id = "emission_npc_cut", type = "track", val = 2, def = 70, min = 0, max = 95, step = 5, prec = 0, hint = "nemesis_emission_npc_cut" },
-            { id = "emission_horde", type = "track", val = 2, def = 4, min = 0, max = 8, step = 1, prec = 0, hint = "nemesis_emission_horde" },
+            { id = "emission_horde", type = "track", val = 2, def = 6, min = 0, max = 8, step = 1, prec = 0, hint = "nemesis_emission_horde" },
             { id = "emission_flank", type = "track", val = 2, def = 30, min = 0, max = 50, step = 5, prec = 0, hint = "nemesis_emission_flank" },
             { id = "emission_psy", type = "track", val = 2, def = 4, min = 0, max = 20, step = 1, prec = 0, hint = "nemesis_emission_psy" },
         } }
@@ -2148,9 +2180,9 @@ end
 -- This page's share of the presets (see above).
 function mcm_presets()
     return {
-        easy = { emission_chance = 80, emission_extra = 4, emission_dr = 20, emission_npc_cut = 55, emission_horde = 3, emission_psy = 3, emission_flank = 20 },
-        medium = { emission_chance = 100, emission_extra = 6, emission_dr = 30, emission_npc_cut = 70, emission_horde = 4, emission_psy = 4, emission_flank = 30 },
-        hard = { emission_chance = 100, emission_extra = 8, emission_dr = 40, emission_npc_cut = 85, emission_horde = 5, emission_psy = 5, emission_flank = 40 },
+        easy = { emission_chance = 80, emission_extra = 4, emission_dr = 20, emission_npc_cut = 55, emission_horde = 4, emission_psy = 3, emission_flank = 20 },
+        medium = { emission_chance = 100, emission_extra = 6, emission_dr = 30, emission_npc_cut = 70, emission_horde = 6, emission_psy = 4, emission_flank = 30 },
+        hard = { emission_chance = 100, emission_extra = 8, emission_dr = 40, emission_npc_cut = 85, emission_horde = 8, emission_psy = 5, emission_flank = 40 },
     }
 end
 

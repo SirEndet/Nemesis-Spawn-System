@@ -4,7 +4,7 @@
 -- sneak_over), nemesis_utils (reset, forget).
 -- Uses: nemesis_state (the member records), nemesis_engine (safe reads), nemesis_mcm (the fight
 -- range), nemesis_events (the boss's sneak), nemesis_chase and nemesis_siege (the stall line),
--- xlibs xcombat (show_enemy, is_under_fire).
+-- xlibs xcombat (show_enemy, is_under_fire) and xcreature (is_stalker, an enemy's name for the log).
 -- Who owns a hunter, the chase or vanilla combat AI (combat_owns, every planner pass), and the
 -- rules around it: contact (you seen in the fight range, a hit, a hostile his AI picked), the
 -- 8 s linger, the hold while the engine has not picked you yet, the NPC fight cap (round 96)
@@ -54,6 +54,15 @@ local npc_drop = {}               -- [hunter id] = { [npc id] = true }
 -- again.
 local STALL_MS, STALL_START_MS, STALL_MOVE_M = 3000, 8000, 1
 local stall = {}                  -- [id] = { first, pos, since, logged }
+-- The silent hunter (the owner's play tests, 24 October 2026: the boss stood crouched under
+-- combat AI right after his sneak attack, twice; a named hunter ran up to 5 m without firing
+-- until shot; the cause is not known yet). Any hunt member whom combat owns, whose enemy is you,
+-- who sees you within SILENT_RANGE_M and hasn't fired for SILENT_MS (r.shot_at, set by
+-- nemesis_damage's shot hook) gets one diagnostic line and one kick, at most every SILENT_AGAIN_MS.
+local SILENT_RANGE_M = 20
+local SILENT_MS = 4000
+local SILENT_AGAIN_MS = 15000
+local silent = {}                  -- [id] = { since = when he became silent, kicked_at }
 
 local fight_range_cache, fight_range_at = 100, -1000000   -- the last read and its time
 -- Fight range from MCM (default 100 m, held to 10..150 m).
@@ -79,10 +88,18 @@ local function _see(a, b) return a:see(b) end
 -- src: engine script_game_object_script2.cpp (best_enemy)
 local function _best_enemy(npc) return npc:best_enemy() end
 
+-- A name for the log for enemy be: a stalker's character name, else his section (a mutant has no
+-- character name: the engine writes a stack dump to the game's log for each such call, round 177).
+local function enemy_name(be)
+    if xcreature.is_stalker(be) then return be:character_name() end   -- is_stalker: xlibs xcreature, by class
+    return be:section()
+end
+
 -- Whether npc sees you within range metres (see above).
+-- A dead npc is never asked (the engine writes a stack dump for every look a dead one takes).
 local function sees_player(npc, range)
     local actor = db.actor
-    if not actor then return false end
+    if not actor or not nemesis_engine.alive(npc) then return false end   -- alive: nemesis_engine, a safe life read
     local d = nemesis_engine.dist(npc, actor)   -- dist: nemesis_engine, metres between two objects or nil
     if not d or d > range then return false end
     local ok2, seen = pcall(_see, npc, actor)
@@ -132,8 +149,10 @@ local OWNS_CACHE_MS = 100   -- milliseconds one answer is kept
 -- Called on every planner pass, so the area scan is cached per SCAN_MS.
 -- The whole answer is reused for OWNS_CACHE_MS: the gate (every planner pass), the chase and
 -- the cloak all ask, often in the same frame (nemesis_chase and nemesis_fx).
+-- A dead hunter is no one's (round 177): the chase gate still asks about him while he dies, and
+-- every look he took then (see) wrote a stack dump to the game's log, 289 in two play logs.
 function combat_owns(npc)
-    if not npc then return false end
+    if not npc or not nemesis_engine.alive(npc) then return false end
     local id = npc:id()
     local memo = fight_memo[id]
     if not memo then
@@ -152,7 +171,7 @@ function combat_owns(npc)
         pcall(function()
             local be = npc:best_enemy()
             if be then
-                be_name = be:id() == 0 and "you" or (be:character_name() .. " (" .. be:id() .. ")")
+                be_name = be:id() == 0 and "you" or (enemy_name(be) .. " (" .. be:id() .. ")")
             end
         end)
         log_msg("Nemesis: %s %s (enemy: %s).", tostring(nemesis_state.name_of(id) or id),   -- name_of: nemesis_state, his PDA name
@@ -249,7 +268,10 @@ function combat_owns_now(npc, memo, now)
         -- A scheduled check: still fighting stays with combat, the next check is set.
         if fighting then
             local since = memo.combat_since or now
-            if memo.next_check < since + CHECK_SECOND_MS then memo.next_check = since + CHECK_SECOND_MS
+            -- next_check can be unset: the boss's shortcut above returns before setting it, and a
+            -- boss who stops being the boss (his death, round 169: the game's first crash of ours,
+            -- in the owner's play test) arrives here with it nil.
+            if (memo.next_check or now) < since + CHECK_SECOND_MS then memo.next_check = since + CHECK_SECOND_MS
             else memo.next_check = memo.next_check + CHECK_EVERY_MS end
             return true
         end
@@ -360,7 +382,7 @@ function stall_check(npc, gt)
         pcall(function()
             local be = npc:best_enemy()
             if be then
-                be_name = be:id() == 0 and "you" or (be:character_name() .. " (" .. be:id() .. ")")
+                be_name = be:id() == 0 and "you" or (enemy_name(be) .. " (" .. be:id() .. ")")
             end
         end)
         owner = "combat AI (enemy: " .. be_name .. ")"
@@ -375,11 +397,64 @@ function stall_check(npc, gt)
         nemesis_siege.siege_active() and ", siege (you are indoors)" or "", nemesis_events.ask("sneak_move", id) and ", sneaking" or "")   -- siege_active: nemesis_siege, are they waiting outside
 end
 
+-- What a silent hunter is doing, for the log: body state, mental state, his
+-- weapon and its ammo, whether he sees you, scripted animations left.
+local function frozen_state(npc)
+    local parts = {}
+    pcall(function()
+        local item = npc:active_item()
+        parts[#parts + 1] = "body " .. tostring(npc:body_state()) .. ", mental " .. tostring(npc:mental_state())
+        parts[#parts + 1] = "weapon " .. (item and (item:section() .. ", ammo " .. tostring(item:get_ammo_in_magazine())) or "none")
+        parts[#parts + 1] = "sees you " .. tostring(db.actor and npc:see(db.actor))
+        parts[#parts + 1] = "animations " .. tostring(npc:animation_count())
+    end)
+    return table.concat(parts, "; ")
+end
+
+-- Every tick from nemesis_core for each online member: a silent hunter (see SILENT_MS above) gets
+-- one kick, and with Debug logs on one line with frozen_state (owner, round 180: debug lines stay
+-- out of regular play): his scripted
+-- animations cleared, danger mode, and you shown to him (xcombat.show_enemy). The next play
+-- test's log tells what holds his fire and whether the kick helps.
+function silent_check(npc, gt)
+    local id = npc and npc:id()
+    local actor = db.actor
+    if not id or not actor or not nemesis_engine.alive(npc) then return end
+    local memo = fight_memo[id]
+    local r = nemesis_state.member(id)   -- member: nemesis_state, his member record
+    local aimed = false
+    pcall(function()
+        local be = npc:best_enemy()
+        aimed = be ~= nil and be:id() == actor:id() and npc:see(actor)
+            and npc:position():distance_to(actor:position()) <= SILENT_RANGE_M
+    end)
+    if not (memo and memo.res and r and not r.retreat_at and aimed) then
+        silent[id] = nil
+        return
+    end
+    local watch = silent[id]
+    if not watch then
+        silent[id] = { since = gt }
+        return
+    end
+    local quiet_from = math.max(watch.since, r.shot_at or 0)
+    if gt - quiet_from < SILENT_MS or (watch.kicked_at and gt - watch.kicked_at < SILENT_AGAIN_MS) then return end
+    watch.kicked_at = gt
+    if debug_on() then
+        log_msg("Nemesis: %s sees you within %s m and hasn't fired for %s s (%s); kicking him.", tostring(r.name or id),
+            tostring(SILENT_RANGE_M), string.format("%.1f", (gt - quiet_from) / 1000), frozen_state(npc))
+    end
+    -- src: engine script_game_object_script2.cpp (clear_animations, set_mental_state)
+    pcall(function() npc:clear_animations() end)
+    pcall(function() npc:set_mental_state(anim.danger) end)
+    if db.actor then pcall(_show_enemy, npc, db.actor) end
+end
+
 -- Forgets every fight memory, the dropped fights, the stall watch and the boss's focus. Called by
 -- nemesis_utils.reset_chase with no id: a new hunt, its end, a change of map, and a load (round 149).
 function reset()
     fight_memo = {}
-    npc_drop, stall = {}, {}
+    npc_drop, stall, silent = {}, {}, {}
     -- The boss's focus too (round 149): it outlived a hunt's end and a load. A boss sets his own
     -- again every tick (nemesis_boss.update, nemesis_emission.boss_update).
     focus = {}

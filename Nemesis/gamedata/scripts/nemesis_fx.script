@@ -103,13 +103,32 @@ end
 -- Removal: vanish queue, offline members, empty squads
 ---------------------------------------------------------------------------
 local vanish_queue = {}            -- [id] = time_global() at which the object is released
+local vanish_weapons = {}          -- [id] = the weapon he held (nemesis_engine.held_weapon), removed with him
 local squad_cleanup = {}           -- [squad id] = time_global() of the check
 local SQUAD_CLEANUP_MS = 3000      -- after the last vanish of the hunt
 
 -- The id must already be out of the hunt (drop_member), or the release guard refuses it.
-function queue_vanish(id, delay_ms)
+-- weapon_id (a dead hunter's held weapon, round 176) is removed with him when it lies on the ground.
+function queue_vanish(id, delay_ms, weapon_id)
     if not id then return end
     vanish_queue[id] = time_global() + (delay_ms or 0)
+    vanish_weapons[id] = weapon_id
+end
+
+-- Removes weapon weapon_id when it lies on the ground (no parent): the weapon a hunter dropped as
+-- he died, whose body just teleported out, so NPCs don't gather it where he fell (the owner's play
+-- test, 24 October 2026). One still in his inventory went with his body; one already picked up is left.
+local function remove_dropped_weapon(weapon_id)
+    local item = weapon_id and nemesis_engine.se(weapon_id)   -- se: nemesis_engine, the server object by id
+    if not item then return end
+    local parent = nil
+    -- src: engine xrServer_Objects_ALife.cpp (parent_id)
+    pcall(function() parent = item.parent_id end)
+    if parent ~= 65535 then return end
+    if remove_object(item) then
+        nemesis_compat.forget_dot_mark(weapon_id)   -- forget_dot_mark: nemesis_compat, the dot mod's marker for it
+        dbg("Nemesis: his dropped weapon %s went with him.", tostring(weapon_id))
+    end
 end
 
 -- The ids in the vanish queue (nemesis_core saves them with the hunt).
@@ -162,6 +181,8 @@ local function process_vanish(gt)
     for id, at in pairs(vanish_queue) do
         if gt >= at then
             vanish_queue[id] = nil
+            local weapon_id = vanish_weapons[id]
+            vanish_weapons[id] = nil
             local se = nemesis_engine.se(id)
             local is_npc = false
             is_npc = nemesis_engine.is_stalker(se)   -- is_stalker: nemesis_engine, by class id, a server object too (round 123)
@@ -169,6 +190,8 @@ local function process_vanish(gt)
                 local ok, err = remove_object(se)
                 if ok then
                     dbg("Nemesis: %s teleported out (removed).", tostring(id))
+                    nemesis_compat.forget_dot_mark(id)   -- forget_dot_mark: nemesis_compat, the dot mod's marker for him
+                    remove_dropped_weapon(weapon_id)
                 else
                     dbg("!Nemesis ERROR: could not remove %s (%s).", tostring(id), tostring(err))
                 end
@@ -327,13 +350,19 @@ end
 ---------------------------------------------------------------------------
 -- Cloak (MCM, on by default; always on for the boss)
 ---------------------------------------------------------------------------
--- A named hunter switches to the invisible model while he chases (not fights) more than
--- CLOAK_MIN_M away, at most once every CLOAK_COOLDOWN_MS. He reappears when he fights, gets
--- within REVEAL_M (not while the boss sneaks), takes a hit, or the option is off. His own
--- model is kept in his record (and saved), so it is put back after a load and when the hunt
--- ends with him alive.
-local CLOAK_MIN_M = 30
-local REVEAL_M = 15
+-- Only named hunters and the hunt's boss (a Legend too) cloak; regular squad members never do.
+-- The owner's rule (round 196): "it's a specialty for the Named Hunters and the Boss + Legend Boss".
+-- The emission boss and the Thunder Boss never cloak (their boss_no_cloak answers).
+-- A named hunter switches to the invisible model while he chases (not fights), at most once every
+-- CLOAK_COOLDOWN_MS. Each time he cloaks he rolls the distance he will reappear at, between
+-- REVEAL_MIN_M and REVEAL_MAX_M (the owner, round 196: they got way too close at 15 m, and a
+-- random distance makes it unpredictable; internal, no slider), and he cloaks only while he is
+-- farther away than that by CLOAK_MARGIN_M, so he can never cloak and reappear in one step. He
+-- reappears when he gets within it (not while the boss sneaks), fights, takes a hit, or the
+-- option is off. His own model is kept in his record (and saved), so it is put back after a load
+-- and when the hunt ends with him alive.
+local REVEAL_MIN_M, REVEAL_MAX_M = 60, 100
+local CLOAK_MARGIN_M = 5
 local CLOAK_COOLDOWN_MS = 20000
 local HIT_REVEAL_MS = 1500
 
@@ -427,12 +456,15 @@ function reveal(obj, r, gt, why)
     set_neutral(r.id, false)
     set_visual(obj, r.cloak_vis)
     r.cloak_vis = nil
+    r.reveal_m = nil
     r.cloak_off_at = gt or time_global()
     dbg("Nemesis: %s reappears (%s).", r.name or "A hunter", why or "?")
 end
 
--- He cloaks: his model kept in r.cloak_vis, the invisible one on.
-local function cloak(obj, r)
+-- He cloaks, distance_m from you: his model kept in r.cloak_vis, the invisible one on, and the
+-- distance he reappears at rolled (r.reveal_m: REVEAL_MIN_M up to REVEAL_MAX_M, never within
+-- CLOAK_MARGIN_M of where he stands now).
+local function cloak(obj, r, distance_m)
     local vis = get_visual(obj)
     if not vis or vis == "" or vis == INVISIBLE_VISUAL then return end
     r.cloak_vis = vis
@@ -440,13 +472,15 @@ local function cloak(obj, r)
         r.cloak_vis = nil
         return
     end
-    dbg("Nemesis: %s cloaks.", r.name or "A hunter")
+    r.reveal_m = math.random(REVEAL_MIN_M, math.min(REVEAL_MAX_M, math.floor(distance_m - CLOAK_MARGIN_M)))
+    dbg("Nemesis: %s cloaks (he reappears within %s m).", r.name or "A hunter", tostring(r.reveal_m))
 end
 
 
 -- Every tick for each online named hunter (nemesis_core): cloak or reveal him by the rules above.
 function cloak_update(obj, r, gt, actor)
     local id = r.id
+    if not (r.named or id == S.boss_id) then return end   -- regular squad members never cloak
     -- The boss cloaks until you have shot him; after that he stays visible and fights to
     -- the death, as he has since round 66, so the body you earn is never one that teleports for being cloaked.
     local enabled
@@ -462,15 +496,15 @@ function cloak_update(obj, r, gt, actor)
     if r.cloak_vis then
         if not enabled then reveal(obj, r, gt, "option off")
         elseif fighting then reveal(obj, r, gt, "fighting")
-        elseif d <= REVEAL_M and not nemesis_events.ask("sneak_move", id) then reveal(obj, r, gt, "close")
+        elseif d <= (r.reveal_m or REVEAL_MAX_M) and not nemesis_events.ask("sneak_move", id) then reveal(obj, r, gt, "close")
         elseif hit then reveal(obj, r, gt, "hit")
         elseif gt - (r.bump_at or -BUMP_MS) >= BUMP_MS then
             r.bump_at = gt
             if hostile_bump(obj) then reveal(obj, r, gt, "an enemy within 2 m") end
         end
-    elseif enabled and not fighting and not hit and d > CLOAK_MIN_M
+    elseif enabled and not fighting and not hit and d > REVEAL_MIN_M + CLOAK_MARGIN_M
         and gt - (r.cloak_off_at or -CLOAK_COOLDOWN_MS) >= CLOAK_COOLDOWN_MS then
-        cloak(obj, r)
+        cloak(obj, r, d)
     end
     local want = (r.cloak_vis and not r.player_struck) and true or false
     if want ~= (neutral[id] == true) then
@@ -689,19 +723,6 @@ swell_tick = function(gt)
     -- src: xlibs xpp.script (xpp.release)
     pcall(function() xpp.release(swell.h) end)
     swell = nil
-end
-
-local JOLT_PPE = "controller_hit.ppe"
--- The jolt when the boss strikes, a test switch for the owner (round 144, off by default):
--- controller_hit.ppe once, as it is (not cyclic: the engine ends it with its animation), the
--- moment his sneak ends and he opens fire (owner, 22 October). A picture effect, no sound.
--- Called by nemesis_boss.
-function boss_jolt()
-    if not nemesis_mcm.get_bool("boss_jolt", false) or not ppe_ok(JOLT_PPE) then return end
-    local h = nil
-    -- src: xlibs xpp.script (xpp.create_effector)
-    pcall(function() h = xpp.create_effector(JOLT_PPE, { cyclic = false }) end)
-    dbg("Nemesis: the boss's jolt%s.", h and "" or " failed")
 end
 
 ---------------------------------------------------------------------------

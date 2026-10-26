@@ -1,8 +1,8 @@
 <?xml version="1.0" encoding="windows-1251"?>
 <string_table>
-    <string id="ui_mcm_menu_nemesis"><text>Nemesis Wave Spawn System</text></string>
-    <string id="ui_mcm_nemesis"><text>Nemesis Wave Spawn System</text></string>
-    <string id="ui_mcm_nemesis_title"><text>Nemesis Wave Spawn System</text></string>
+    <string id="ui_mcm_menu_nemesis"><text>Nemesis Spawn System</text></string>
+    <string id="ui_mcm_nemesis"><text>Nemesis Spawn System</text></string>
+    <string id="ui_mcm_nemesis_title"><text>Nemesis Spawn System</text></string>
 
     <string id="ui_mcm_nemesis_page_general"><text>General</text></string>
     <string id="ui_mcm_nemesis_page_boss"><text>Boss</text></string>
@@ -11,6 +11,7 @@
     <string id="ui_mcm_nemesis_head_warnings"><text>Warnings</text></string>
     <string id="ui_mcm_nemesis_head_sound"><text>Sound</text></string>
     <string id="ui_mcm_nemesis_head_effects"><text>Effects</text></string>
+    <string id="ui_mcm_nemesis_head_compat"><text>Compatibility</text></string>
     <string id="ui_mcm_nemesis_head_hunters"><text>Hunters</text></string>
     <string id="ui_mcm_nemesis_head_names"><text>Names</text></string>
     <string id="ui_mcm_nemesis_head_appearance"><text>Appearance</text></string>
@@ -29,7 +30,7 @@
 
     <string id="ui_mcm_nemesis_difficulty"><text>Difficulty</text></string>
 
-    <string id="ui_mcm_nemesis_difficulty_desc"><text>Sets every slider that makes the game easier or harder at once: hunt timing, squad size and named hunters, how many maps they follow, retreat health, accuracy, damage reduction, escalation, the boss and the emission boss. Check boxes, volumes and effects are not touched. Medium is the defaults; Easy is about 20% easier, Hard about 20% harder. Change any of those by hand and this shows Custom. Picking a difficulty again overwrites them. Default Medium.</text></string>
+    <string id="ui_mcm_nemesis_difficulty_desc"><text>Sets every slider that makes the game easier or harder at once: hunt timing, squad size and named hunters, how many maps they follow, retreat health, accuracy, damage reduction, escalation, the boss and the emission boss. Check boxes, volumes and effects are not touched. Medium is the defaults; Easy is about 20% easier, Hard about 20% harder. Change any of those by hand and this shows Custom. Picking a difficulty again overwrites them. A pick applies at once, with no Apply needed (Cancel does not undo it). Default Medium.</text></string>
 
     <string id="ui_mcm_nemesis_difficulty_easy"><text>Easy</text></string>
 
@@ -40,7 +41,7 @@
     <string id="ui_mcm_nemesis_difficulty_custom"><text>Custom</text></string>
 
     <string id="ui_mcm_nemesis_teleport_volume"><text>Teleport sound volume (%)</text></string>
-    <string id="ui_mcm_nemesis_teleport_volume_desc"><text>Loudness of the teleport sound when a hunter breaks off or vanishes. 0 mutes it. Default 40.</text></string>
+    <string id="ui_mcm_nemesis_teleport_volume_desc"><text>Loudness of the teleport sound when a hunter breaks off or vanishes. 0 mutes it. Default 50.</text></string>
 
     <string id="ui_mcm_nemesis_hum_volume"><text>Psy hum volume (%)</text></string>
     <string id="ui_mcm_nemesis_hum_volume_desc"><text>A psy hum coming from the nearest named hunter, a sound you can place by ear: this volume within 10 m of him, fading out by 100 m. A named hunter is the main Nemesis enemy: hard to kill, he retreats when hurt and comes back stronger. 0 mutes it. Default 10.</text></string>
@@ -57,7 +58,7 @@
     <string id="ui_mcm_nemesis_warning_pda_desc"><text>A PDA message from an unknown frequency 30 to 120 seconds before a hunt starts. With this or the audio warning on, the hunt follows the warning; with both off it starts without one. Default off.</text></string>
 
     <string id="ui_mcm_nemesis_heartbeat_volume"><text>Heartbeat volume (%)</text></string>
-    <string id="ui_mcm_nemesis_heartbeat_volume_desc"><text>A heartbeat in your head while the boss is within 80 m. The closer he is, the faster it beats: 85 beats a minute at 80 m, up to Heartbeat top rate when he is on you. Either boss. 0 mutes it. Default 30.</text></string>
+    <string id="ui_mcm_nemesis_heartbeat_volume_desc"><text>A heartbeat in your head while the boss is within 80 m. The closer he is, the faster it beats: 85 beats a minute at 80 m, up to Heartbeat top rate when he is on you. Either boss. 0 mutes it. Default 60.</text></string>
     <string id="ui_mcm_nemesis_heartbeat_top"><text>Heartbeat top rate (bpm)</text></string>
     <string id="ui_mcm_nemesis_heartbeat_top_desc"><text>How fast your heart beats when the boss is on you. Default 140.</text></string>
     <string id="ui_mcm_nemesis_whispers_volume"><text>Whispers volume (%)</text></string>
@@ -70,18 +71,16 @@
     <string id="ui_mcm_nemesis_arrival_escalation_desc"><text>How much heavier the arrival call and screen effect get with each cycle after the first. Default 10.</text></string>
     <string id="ui_mcm_nemesis_arrival_max"><text>Arrival maximum increase (%)</text></string>
     <string id="ui_mcm_nemesis_arrival_max_desc"><text>The most the arrival can grow over its sliders, however high the cycle. Default 50.</text></string>
-    <string id="ui_mcm_nemesis_boss_jolt"><text>Jolt when the boss strikes</text></string>
-    <string id="ui_mcm_nemesis_boss_jolt_desc"><text>The screen jolts the moment the boss stops sneaking and opens fire. Off by default.</text></string>
     <string id="ui_mcm_nemesis_silence_before"><text>Silence before the warning</text></string>
     <string id="ui_mcm_nemesis_silence_before_desc"><text>Before the arrival warning the world goes quiet: sounds and music fade out over 3 s, a moment of dead air, then the radio crackles and the world comes back up under it. Only with Arrival warning audio on. The game's volume settings are not touched; everything is put back. Default on.</text></string>
     <string id="ui_mcm_nemesis_silence_length"><text>Silence length (s)</text></string>
-    <string id="ui_mcm_nemesis_silence_length_desc"><text>How long the dead air lasts before the warning. Default 0.75.</text></string>
-    <string id="ui_mcm_nemesis_lightning_volume"><text>Lightning strike volume (%)</text></string>
-    <string id="ui_mcm_nemesis_lightning_volume_desc"><text>Loudness of the lightning strike sound when the emission boss arrives. The emission is already loud, so it is off by default; his teleport burst (Teleport volume) marks his arrival. 0 mutes it. Default 0.</text></string>
+    <string id="ui_mcm_nemesis_silence_length_desc"><text>How long the dead air lasts before the warning. Default 1.</text></string>
+    <string id="ui_mcm_nemesis_lightning_volume"><text>Lightning volume (%)</text></string>
+    <string id="ui_mcm_nemesis_lightning_volume_desc"><text>Loudness of every lightning in the mod: the strike when the emission boss arrives, and the Thunder Boss's thunder when the sky strikes his raised hand, the crackle of each of his bolts and a bolt striking. 0 mutes them. Default 60.</text></string>
     <string id="ui_mcm_nemesis_npc_name"><text>Boss name</text></string>
     <string id="ui_mcm_nemesis_npc_name_desc"><text>Name of the Monolith boss, a rare and stronger named hunter who fights to the death. Other hunters always get random names. Default: Bogdan Kravets</text></string>
     <string id="ui_mcm_nemesis_isg_boss_name"><text>UNISG boss name</text></string>
-    <string id="ui_mcm_nemesis_isg_boss_name_desc"><text>Name of the UNISG boss, their best fighter, who hunts Monolith, Zombified and Sin players. Default: Lyutomyr Kat</text></string>
+    <string id="ui_mcm_nemesis_isg_boss_name_desc"><text>Name of the UNISG boss, their best fighter, who hunts Zombified and Sin players (and Monolith players when UNISG is chosen for them). Default: Lyutomyr Kat</text></string>
 
     <string id="ui_mcm_nemesis_boss_chance"><text>Boss chance (%)</text></string>
     <string id="ui_mcm_nemesis_boss_chance_desc"><text>Chance that a hunt brings the boss: a tougher, cloaked hunter with his own look and messages and an escort. It climbs by 2 every 4 hunts without him, and the 30th hunt without him brings him for sure. Only one boss at a time, at most one a day. Beating a hunt he was in halves the escalation. 0 = no boss at all. Default 4.</text></string>
@@ -94,7 +93,7 @@
     <string id="ui_mcm_nemesis_boss_misses_desc"><text>How many of the boss's first shots at you in a hunt always miss, a moment to react. Both bosses. 0 turns it off. Default 2.</text></string>
     <string id="ui_mcm_nemesis_boss_npc_damage_desc"><text>How hard the boss hits other stalkers and mutants, in percent of a normal hit. He fights anyone who fights him, but always prefers you; this makes him a killer against them. Your own damage from him is not affected. Default 200.</text></string>
     <string id="ui_mcm_nemesis_boss_escort"><text>Boss escort size</text></string>
-    <string id="ui_mcm_nemesis_boss_escort_desc"><text>How many named hunters come with the boss. They hunt you like any named hunter, the real threat and distraction, while he sneaks up to finish you. A boss hunt ignores Squad of 1 to 5 and Extra is a named hunter. 0 = he comes alone. Default 4.</text></string>
+    <string id="ui_mcm_nemesis_boss_escort_desc"><text>How many named hunters come with the boss. They hunt you like any named hunter, the real threat and distraction, while he sneaks up to finish you. A boss hunt ignores Squad of 1 to 5 and Extra is a named hunter. 0 = he comes alone. Default 3.</text></string>
     <string id="ui_mcm_nemesis_boss_distortion"><text>Boss presence distortion (%)</text></string>
     <string id="ui_mcm_nemesis_boss_distortion_desc"><text>A gentle wave over your screen while the boss is near: it starts softly at 60 m and grows to this strength at 5 m. It works while he is cloaked too, and fades out when he dies. 0 turns it off. Default 40.</text></string>
     <string id="ui_mcm_nemesis_boss_min_day"><text>Boss days after grace</text></string>
@@ -110,22 +109,24 @@
     <string id="ui_mcm_nemesis_prepare_uninstall"><text>Prepare for uninstall</text></string>
     <string id="ui_mcm_nemesis_prepare_uninstall_desc"><text>Tick and apply before you remove the mod: any running hunt is called off, every Nemesis squad is removed from the world, and no new hunt starts while the box stays ticked. A PDA message tells you when it is safe to save. Then save, remove the mod and load that save. Untick it to let the hunts come back.</text></string>
     <string id="ui_mcm_nemesis_wd_malfunction"><text>Wearable Devices mod Malfunction</text></string>
+    <string id="ui_mcm_nemesis_wd_pda_messages"><text>Messages on the Wearable Devices PDA mod</text></string>
+    <string id="ui_mcm_nemesis_wd_pda_messages_desc"><text>Only with the Wearable Devices PDA mod installed: that mod hides the game's message popups, so Nemesis messages would never show on screen. With this on, every Nemesis message also goes to its Messages page. Without that mod this does nothing. Default on.</text></string>
     <string id="ui_mcm_nemesis_wd_malfunction_desc"><text>Only with the Wearable Devices mod installed: when a hunt spawns, your device screens flicker at random for about 2.5 seconds. When the boss spawns, they also go black for 2 seconds after it. Without that mod this does nothing. Default on.</text></string>
 
     <string id="ui_mcm_nemesis_debug_logs"><text>Debug logs</text></string>
-    <string id="ui_mcm_nemesis_debug_logs_desc"><text>Write Nemesis diagnostic and error lines to the console. Leave this off unless you are tracking a problem. Lines that start with an exclamation mark are errors.</text></string>
+    <string id="ui_mcm_nemesis_debug_logs_desc"><text>Write every Nemesis diagnostic line to its own log file, appdata/logs/nemesis.log (next to the game's log). Leave this off unless you are tracking a problem. Error lines go into that file even with this off; lines that start with an exclamation mark are errors. Important errors also show in the game's log.</text></string>
 
     <string id="ui_mcm_nemesis_grace_period"><text>Grace period (days)</text></string>
-    <string id="ui_mcm_nemesis_grace_period_desc"><text>In-game days before the first hunt of a new game (or after installing the mod). Default 18.</text></string>
+    <string id="ui_mcm_nemesis_grace_period_desc"><text>In-game days before the first hunt of a new game (or after installing the mod). Default 8.</text></string>
 
     <string id="ui_mcm_nemesis_retreat_cooldown"><text>Time between hunts (hours)</text></string>
-    <string id="ui_mcm_nemesis_retreat_cooldown_desc"><text>In-game hours after a hunt ends before the next one can start. 0 = as soon as possible. Default 36.</text></string>
+    <string id="ui_mcm_nemesis_retreat_cooldown_desc"><text>In-game hours after a hunt ends before the next one can start. 0 = as soon as possible. Default 24.</text></string>
 
     <string id="ui_mcm_nemesis_hunt_duration"><text>Hunt time limit (hours)</text></string>
-    <string id="ui_mcm_nemesis_hunt_duration_desc"><text>If you survive this many in-game hours, the hunters give up and teleport away, and the next hunt is not stronger. Default 5.</text></string>
+    <string id="ui_mcm_nemesis_hunt_duration_desc"><text>If you survive this many in-game hours, the hunters give up and teleport away, and the next hunt is not stronger. Default 6.</text></string>
 
     <string id="ui_mcm_nemesis_retreat_health"><text>Retreat health (%)</text></string>
-    <string id="ui_mcm_nemesis_retreat_health_desc"><text>A named hunter breaks off and teleports away when his health drops this low. It is the same in every cycle. The bosses never retreat. Default 30.</text></string>
+    <string id="ui_mcm_nemesis_retreat_health_desc"><text>A named hunter breaks off and teleports away when his health drops this low. It is the same in every cycle. The bosses never retreat. Default 25.</text></string>
     <string id="ui_mcm_nemesis_esc_step"><text>Escalation per cycle (%)</text></string>
     <string id="ui_mcm_nemesis_esc_step_desc"><text>Each hunt you beat makes the next one stronger. That step is called a cycle. Each cycle after the first adds this much damage reduction to named hunters and bosses, up to Max escalation. 0 = no growth. Default 2.</text></string>
     <string id="ui_mcm_nemesis_esc_max"><text>Max escalation (%)</text></string>
@@ -135,7 +136,7 @@
 
     <string id="ui_mcm_nemesis_accuracy_boost"><text>Accuracy boost (%)</text></string>
 
-    <string id="ui_mcm_nemesis_accuracy_boost_desc"><text>How many more of their shots hit you at range than a normal stalker with the same weapon, in percent. Named hunters get this value, regular squad members half of it, and the boss this value plus 15. 0 turns it off. Default 10.</text></string>
+    <string id="ui_mcm_nemesis_accuracy_boost_desc"><text>How many more of their shots hit you at range than a normal stalker with the same weapon, in percent. Named hunters get this value, regular squad members half of it, and the boss this value plus 15. 0 turns it off. Default 20.</text></string>
     <string id="ui_mcm_nemesis_regular_dr"><text>Regular stalker damage reduction (%)</text></string>
     <string id="ui_mcm_nemesis_regular_dr_desc"><text>How much less damage the regular squad members take, from every hit, the killing one too: yours, other NPCs' and mutants'. They keep their own armour. It does not grow with the cycle. 0 makes them normal stalkers, who die to a headshot. Default 0.</text></string>
     <string id="ui_mcm_nemesis_named_dr"><text>Named hunter damage reduction (%)</text></string>
@@ -145,7 +146,7 @@
     <string id="ui_mcm_nemesis_reset_on_death_desc"><text>If a hunter kills you, the escalation is halved (cycle 8 becomes 4, never below 1), even when you reload a save. Default on.</text></string>
 
     <string id="ui_mcm_nemesis_load_custom_backup"><text>Load settings from Automatic Backup</text></string>
-    <string id="ui_mcm_nemesis_load_custom_backup_desc"><text>This will load your last saved custom settings. They are saved automatically when a difficulty setting is applied. The backup is kept, and the box unticks itself.</text></string>
+    <string id="ui_mcm_nemesis_load_custom_backup_desc"><text>This will load your last saved custom settings. They are saved automatically when you switch from Custom to Easy, Medium or Hard, including sliders you moved and had not applied yet. Switching between Easy, Medium and Hard leaves the backup as it is. The backup is kept, and the box unticks itself.</text></string>
     <string id="ui_mcm_nemesis_reset_escalation_now"><text>Reset escalation now</text></string>
     <string id="ui_mcm_nemesis_reset_escalation_now_desc"><text>Tick and apply to set the hunts back to their starting strength (cycle 1) right now. The box unticks itself.</text></string>
 
@@ -153,16 +154,16 @@
     <string id="ui_mcm_nemesis_max_damage_reduction"><text>Max damage reduction (%)</text></string>
     <string id="ui_mcm_nemesis_max_damage_reduction_desc"><text>The most of a hit's damage (yours or an NPC's) a hunt member can ever shrug off, however BR mitigation, damage reduction and escalation stack. At 70 they always take at least 30% of it, so a long run never becomes unwinnable. The armour class itself works through GAMMA ballistics on your bullets and comes on top. Default 70.</text></string>
     <string id="ui_mcm_nemesis_br_bonus"><text>Hunter armour class bonus</text></string>
-    <string id="ui_mcm_nemesis_br_bonus_desc"><text>Named hunters and bosses wear a copy of your armour class (BR). This much is added to it, and to the regular squad members' own armour, from their second hit on a body part (GAMMA ballistics loads it on the first). The same in every cycle. Needs GAMMA ballistics. Default 0.</text></string>
+    <string id="ui_mcm_nemesis_br_bonus_desc"><text>Named hunters and bosses wear a copy of your armour class (BR). This much is added to it, and to the regular squad members' own armour, from their second hit on a body part (GAMMA ballistics loads it on the first). The same in every cycle. Needs GAMMA ballistics. Default 0.05.</text></string>
     <string id="ui_mcm_nemesis_pct_bonus"><text>Hunter BR mitigation bonus (%)</text></string>
-    <string id="ui_mcm_nemesis_pct_bonus_desc"><text>Named hunters and bosses copy your armour's mitigation (BR%). This much is added to it, and to the regular squad members'. They never block more than 90 percent. The same in every cycle. Default 0.</text></string>
+    <string id="ui_mcm_nemesis_pct_bonus_desc"><text>Named hunters and bosses copy your armour's mitigation (BR%). This much is added to it, and to the regular squad members'. They never block more than 90 percent. The same in every cycle. Default 10.</text></string>
 
     <string id="ui_mcm_nemesis_head_bodies"><text>Bodies</text></string>
     <string id="ui_mcm_nemesis_reserve_kills"><text>Reserve your kills</text></string>
     <string id="ui_mcm_nemesis_reserve_kills_desc"><text>Nemesis stalkers you kill are not looted by NPCs. With AlifePlus installed, its own "reserve own kills" option decides (its range and time apply), and nothing is reserved while that option is off. Without AlifePlus a body stays yours for 2 in-game hours, or until you have been more than 150 m away from it for 3 minutes. On by default.</text></string>
     <string id="ui_mcm_nemesis_head_exe"><text>Latest exes</text></string>
     <string id="ui_mcm_nemesis_force_next"><text>Force the next hunt</text></string>
-    <string id="ui_mcm_nemesis_force_next_desc"><text>For testing. Pick one and apply: Boss brings the boss in the next hunt, ignoring the chance, the day limit and the once-a-day rule. Emission boss brings him now, even without an emission (a running hunt is called off for him; get indoors to see the haunted exits). It acts once and goes back to None. Default None.</text></string>
+    <string id="ui_mcm_nemesis_force_next_desc"><text>For testing. Pick one and apply: Boss brings the boss in the next hunt, ignoring the chance, the day limit and the once-a-day rule. Emission boss brings him now, even without an emission (a running hunt is called off for him; get indoors to see the haunted exits). A returning hunter: the next hunt's leader is one of the hunters kept for a return, ignoring Return chance. A Legend: a waiting Legend comes now, ignoring Legend chance, the hours and the lockout (never while a hunt runs or a boss is alive). The Legends' roll: the roll happens now, with its chance and its rules. When no Legend is waiting, both bring the Testing Legend now: a stand-in with the Legend's rules who uses none of the real names (his death retires nothing). It acts once and goes back to None. Default None.</text></string>
     <string id="ui_mcm_nemesis_force_next_none"><text>None</text></string>
     <string id="ui_mcm_nemesis_force_next_boss"><text>Boss</text></string>
     <string id="ui_mcm_nemesis_exe_ai"><text>Latest exe AI features</text></string>
@@ -199,20 +200,27 @@
     <string id="ui_mcm_nemesis_squad_w1_desc"><text>Relative chance the hunt is only the hunter. These five sliders are weights, not percents, so they do not need to add up to 100. Default 50.</text></string>
 
     <string id="ui_mcm_nemesis_squad_w2"><text>Squad of 2, weight</text></string>
-    <string id="ui_mcm_nemesis_squad_w2_desc"><text>Relative chance he brings one extra normal stalker. The extra can be killed. Default 25.</text></string>
+    <string id="ui_mcm_nemesis_squad_w2_desc"><text>Relative chance he brings one extra normal stalker. The extra can be killed. Default 40.</text></string>
 
     <string id="ui_mcm_nemesis_squad_w3"><text>Squad of 3, weight</text></string>
-    <string id="ui_mcm_nemesis_squad_w3_desc"><text>Relative chance of two extras with him. Default 14.</text></string>
+    <string id="ui_mcm_nemesis_squad_w3_desc"><text>Relative chance of two extras with him. Default 25.</text></string>
 
     <string id="ui_mcm_nemesis_squad_w4"><text>Squad of 4, weight</text></string>
-    <string id="ui_mcm_nemesis_squad_w4_desc"><text>Relative chance of three extras with him. Default 10.</text></string>
+    <string id="ui_mcm_nemesis_squad_w4_desc"><text>Relative chance of three extras with him. Default 20.</text></string>
 
     <string id="ui_mcm_nemesis_squad_w5"><text>Squad of 5, weight</text></string>
-    <string id="ui_mcm_nemesis_squad_w5_desc"><text>Relative chance of four extras with him. Default 6. Set a weight to 0 to stop that squad size.</text></string>
+    <string id="ui_mcm_nemesis_squad_w5_desc"><text>Relative chance of four extras with him. Default 10. Set a weight to 0 to stop that squad size.</text></string>
 
     <string id="ui_mcm_nemesis_named_chance"><text>Extra is a named hunter (%)</text></string>
-    <string id="ui_mcm_nemesis_named_chance_desc"><text>Chance that each extra squad member is another named hunter instead of a normal stalker. Named hunters carry a rank in their name, are hard to kill and retreat when hurt. 0 = only the leader is named, 100 = the whole squad. Default 15.</text></string>
+    <string id="ui_mcm_nemesis_named_chance_desc"><text>Chance that each extra squad member is another named hunter instead of a normal stalker. Named hunters carry a rank in their name, are hard to kill and retreat when hurt. 0 = only the leader is named, 100 = the whole squad. Default 25.</text></string>
     <string id="ui_mcm_nemesis_area_scaling"><text>Scale hunts by area</text></string>
     <string id="ui_mcm_nemesis_area_scaling_desc"><text>On: hunts in rookie areas are smaller (Cordon and Swamps: at most 2 hunters; Garbage, Dark Valley and similar: at most 3), and in late areas extras are more often named hunters (+10 in Red Forest, Radar and similar; +20 in Pripyat, Jupiter, Zaton and the CNPP). Boss hunts are not affected. Default on.</text></string>
+
+    <string id="ui_mcm_nemesis_monolith_hunters"><text>Monolith players are hunted by</text></string>
+    <string id="ui_mcm_nemesis_monolith_hunters_desc"><text>Who hunts you when you play the Monolith: the Military (default) or UNISG. Zombified and Sin players are always hunted by UNISG. The emission boss follows this choice. It applies from the next hunt, never to one already running.</text></string>
+    <string id="ui_mcm_nemesis_lst_army"><text>Military</text></string>
+    <string id="ui_mcm_nemesis_lst_isg"><text>UNISG</text></string>
+    <string id="ui_mcm_nemesis_army_boss_name"><text>Military boss name</text></string>
+    <string id="ui_mcm_nemesis_army_boss_name_desc"><text>Name of the Military boss, their best officer, who hunts Monolith players (when the Military hunts them). Default: Taras Hrytsenko</text></string>
 
 </string_table>

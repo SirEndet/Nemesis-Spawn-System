@@ -1,4 +1,5 @@
 -- Nemesis Utilities: the debug log, the settings readers and the hunt's squad sections.
+-- Release defaults use the owner-selected Medium profile; saved settings remain unchanged.
 -- Used by: every other Nemesis script (log_tag, log_msg, debug_on above all).
 -- Uses: nemesis_mcm (the settings), nemesis_lines (text, the boss names' defaults), nemesis_compat
 -- (Obrien's armour reads), nemesis_engine (section_exists), nemesis_chase, nemesis_combat and
@@ -48,8 +49,64 @@ local important_at = {}            -- [tag .. the formatted text] = time_global 
 -- The line's head: "[TAG 12.3s] ", tag and the game's running time in seconds (now: time_global).
 local function stamp(tag, now) return "[" .. tag .. " " .. string.format("%.1f", now / 1000) .. "s] " end
 
+-- Our own log file, the owner's design of round 156: appdata/logs/nemesis.log, through xlibs'
+-- xlog (xlog.script: buffered; written every 60 s, at once on an error, and on every save, map
+-- change and quit; a repeated line becomes "ROW(n times)"; the path is the engine's $logs$, the
+-- folder of the game's own log; a new file once one passes LOG_MAX_BYTES). The game's own log
+-- keeps only what a player must see: the version line, the important errors and the old-exes
+-- notice, each copied into our file too (log_copy; an important one with where it came from).
+-- Every other error line goes into our file always; every other line only with Debug logs on,
+-- and then our file is written out every tick (log_flush, from nemesis_core), so a crash to the
+-- desktop loses at most one tick of it.
+-- The lines wait in log_queue until the first update (log_ready): xlog finds the $logs$ folder in
+-- its own on_game_start, which can run after ours, and a line written out before it would land in
+-- the game's working folder. Without xlog the lines go to the game's log, as before round 156.
+local LOG_FILE, LOG_MAX_BYTES = "nemesis.log", 5 * 1024 * 1024
+local LOG_QUEUE_MAX = 2000          -- lines kept before the first update (a game start writes about 20)
+local file_log = nil                -- xlog's logger once log_ready ran; false when xlog is missing
+local log_queue = {}                -- { level, text } waiting for log_ready
+
+-- One line into our file, or into the queue before log_ready; level is xlog's ("debug", "error",
+-- "info" or "fatal"). Without xlog, into the game's log.
+local function to_file(level, text)
+    if file_log == nil then
+        if #log_queue < LOG_QUEUE_MAX then log_queue[#log_queue + 1] = { level, text } end
+        return
+    end
+    if file_log then
+        pcall(file_log[level], "%s", text)
+    else
+        printf("%s", text)
+    end
+end
+
+-- The first update after a game start or a load (nemesis_core): our logger opens once, through
+-- xlog.get_logger, and the queued lines go into it in their order.
+function log_ready()
+    if file_log == nil then
+        local ok, l = pcall(function()
+            -- src: xlibs xlog.script (xlog.get_logger)
+            return xlog.get_logger("NEMESIS", { outfile = LOG_FILE, level = "TRACE", stack_trace = false, max_file_size = LOG_MAX_BYTES })
+        end)
+        file_log = ok and type(l) == "table" and l or false
+    end
+    local q = log_queue
+    log_queue = {}
+    for _, e in ipairs(q) do to_file(e[1], e[2]) end
+end
+
+-- Our file written out now (nemesis_core, every tick while Debug logs is on).
+function log_flush()
+    if file_log then pcall(file_log.flush) end
+end
+
+-- A line of the game's own log copied into our file (the version line, a notice).
+function log_copy(text) to_file("info", text) end
+
 -- Writes one log line with its tag (fmt and the values, as printf): an important "!!" line
 -- always (at most once a minute per message, yellow), every other line only with Debug logs on.
+-- The lines go into our own file since round 156 (see above): an important line into the game's log and our
+-- file, an error line into our file always, any other line into our file with Debug logs on.
 -- Every script's local dbg comes here; the important errors are listed in critical_errors.md.
 function log_tag(tag, fmt, ...)
     if type(fmt) ~= "string" then return end
@@ -63,12 +120,19 @@ function log_tag(tag, fmt, ...)
         if last and now >= last and now - last < IMPORTANT_EVERY_MS then return end
         important_at[key] = now
         printf("%s", "~" .. stamp(tag, now) .. "NEMESIS IMPORTANT ERROR (please report): " .. text)
+        -- The same line in our file, with the calls that led to it (xlog's own traces are off).
+        local tb = ""
+        pcall(function() tb = debug.traceback("", 2) end)
+        to_file("fatal", stamp(tag, now) .. "NEMESIS IMPORTANT ERROR: " .. text .. (tb or ""))
         return
     end
-    if not debug_on() then return end
+    local err = fmt:sub(1, 1) == "!"
+    if not err and not debug_on() then return end
+    local body = err and fmt:sub(2) or fmt
+    local ok, text = pcall(string.format, body, ...)
+    if not ok then text = body end
     local head = stamp(tag, (time_global and time_global()) or 0)
-    if fmt:sub(1, 1) == "!" then fmt = "!" .. head .. fmt:sub(2) else fmt = head .. fmt end
-    printf(fmt, ...)
+    to_file(err and "error" or "debug", (err and "!" or "") .. head .. text)
 end
 
 -- The shared helpers' lines (this script, and scripts without a tag of their own): AI by
@@ -107,23 +171,28 @@ function spaced_name(name)
     return (string.gsub(name, SPACE_AT, "%1 %2"))
 end
 
--- The boss's name, by the hunt's faction: the Monolith's (MCM Boss name) or UNISG's own
--- (MCM UNISG boss name, round 93: their best fighter, not their leader). Lyutomyr ("fierce")
--- Kat ("executioner").
+-- The boss's name, by the hunt's faction: the Monolith's (MCM Boss name), UNISG's own
+-- (MCM UNISG boss name, round 93: their best fighter, not their leader; Lyutomyr ("fierce")
+-- Kat ("executioner")) or the Military's (MCM Military boss name, round 161: Taras Hrytsenko,
+-- their best officer, the owner's pick).
 function monolith_boss_name() return spaced_name(nemesis_mcm.get_string("npc_name", default_name("monolith"))) end   -- get_string: nemesis_mcm, a menu text box
 -- UNISG's boss name (MCM UNISG boss name, else its default in the game's language).
 function isg_boss_name() return spaced_name(nemesis_mcm.get_string("isg_boss_name", default_name("isg"))) end
+-- The Military's boss name (MCM Military boss name, else its default in the game's language).
+function army_boss_name() return spaced_name(nemesis_mcm.get_string("army_boss_name", default_name("army"))) end
 -- The MCM boxes' defaults (round 134), the same text as the fallbacks above.
 function default_boss_name(kind) return default_name(kind) end
 
--- The running hunt's boss name: UNISG's when the hunt's faction is "isg", else the Monolith's.
+-- The running hunt's boss name: UNISG's when the hunt's faction is "isg", the Military's when it
+-- is "army", else the Monolith's.
 function get_npc_name()
     if nemesis_state.S.faction == "isg" then return isg_boss_name() end
+    if nemesis_state.S.faction == "army" then return army_boss_name() end
     return monolith_boss_name()
 end
--- Either boss name (a body or a ghost is one of ours).
+-- Any of the three boss names (a body or a ghost is one of ours).
 function is_boss_name(n)
-    return n ~= nil and (n == monolith_boss_name() or n == isg_boss_name())
+    return n ~= nil and (n == monolith_boss_name() or n == isg_boss_name() or n == army_boss_name())
 end
 
 -- An MCM number held to lo..hi.
@@ -148,18 +217,18 @@ end
 -- Health fraction (0..1) at which a named hunter breaks off (MCM Retreat health). Fixed: the
 -- cycle no longer lowers it, since round 100.
 function get_retreat_health()
-    return clamped("retreat_health", 30, 10, 60) / 100
+    return clamped("retreat_health", 25, 10, 60) / 100
 end
 
 -- The armour bonus every mod NPC gets on top (round 100, MCM Hunter armour class bonus and
 -- Hunter BR% bonus): flat, the same in every cycle. Before, the armour grew each cycle, so one
 -- cycle could cross your ammo's AP and double the hits needed (a hidden step).
 function br_bonus()
-    return clamped("br_bonus", 0, 0, 0.5), clamped("pct_bonus", 0, 0, 50) / 100
+    return clamped("br_bonus", 0.05, 0, 0.5), clamped("pct_bonus", 10, 0, 50) / 100
 end
 
 -- Obrien GAMMA Overhaul: how its armour is read, and whether it is installed, live in
--- nemesis_compat (player_br_stats below calls it there; the test kit wraps nemesis_compat.obrien_on).
+-- nemesis_compat (player_br_stats below calls it there).
 -- The reads moved there to keep the outside mods in one script, round 109.
 
 -- An armour class held to 0 or more (nil reads as 0).
@@ -293,15 +362,29 @@ end
 -- factions close to it, the Zombified and Sin (user design, round 71).
 local UNISG_HUNTS = { monolith = true, zombied = true, greh = true }
 
--- The hunt's faction for the player you are now: "isg" for the factions above, else
--- "monolith". Called by nemesis_spawn at the warning and the spawn.
+-- Returns who hunts a Monolith player: "army" (the Military, the default) or "isg".
+-- Through: nemesis_mcm.get_string("monolith_hunters"), the Hunts page's drop-down.
+-- Then: faction_for_player below.
+-- For: the owner wants Monolith players hunted by the Military, with UNISG as the other
+-- choice; the Military is the Monolith's enemy in the game's own relations (round 161).
+local function monolith_hunters()
+    local v = nemesis_mcm.get_string("monolith_hunters", "army")   -- get_string: nemesis_mcm, a menu text or list value
+    if v == "isg" then return "isg" end
+    return "army"
+end
+
+-- The hunt's faction for the player you are now: a Monolith player gets the Military or UNISG
+-- (monolith_hunters), a Zombified or Sin player UNISG, everyone else "monolith". Called by
+-- nemesis_spawn at the warning and the spawn, and by nemesis_emission for his own faction.
 function faction_for_player()
-    return UNISG_HUNTS[player_community()] and "isg" or "monolith"
+    local comm = player_community()
+    if comm == "monolith" then return monolith_hunters() end
+    return UNISG_HUNTS[comm] and "isg" or "monolith"
 end
 
 -- The hunt squad: this mod's own squad_descr_nemesis.ltx (one generic stalker, no story id, no
 -- home smart). The emission boss's squads are his module's (round 115, nemesis_emission).
-local SQUADS = { monolith = "nemesis_hunter_squad", isg = "nemesis_hunter_squad_isg" }
+local SQUADS = { monolith = "nemesis_hunter_squad", isg = "nemesis_hunter_squad_isg", army = "nemesis_hunter_squad_army" }
 
 -- The hunt squad's section for faction (SQUADS), or nil with an important error when the
 -- mod's squad_descr file is not loaded (a broken install). Called by nemesis_spawn.
@@ -319,6 +402,10 @@ local MEMBER_POOL = {
     monolith = { "sim_default_monolith_3", "sim_default_monolith_2", "sim_default_monolith_4",
                  "sim_default_monolith_1", "sim_monolith_sniper" },
     isg = { "sim_default_isg_3", "sim_default_isg_4", "sim_default_isg_2", "sim_default_isg_1" },
+    -- The Military's extras: the game's own sim soldiers, the first as the leader's (round 161;
+    -- spawn_sections_general.ltx 591-840, community army).
+    army = { "sim_default_military_3", "sim_default_military_2", "sim_default_military_4",
+             "sim_default_military_1", "sim_default_military_3_sniper" },
 }
 
 -- A copy of the extras' sections for faction (MEMBER_POOL), for the warm-up after a load

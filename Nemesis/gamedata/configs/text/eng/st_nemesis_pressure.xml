@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="windows-1251"?>
+<string_table>
+    <!-- The Hunt's Eye (nemesis_pressure, round 164): its own strings, like the other modules'. -->
+    <string id="st_nemesis_caption_intercepted"><text>Intercepted transmission</text></string>
+    <string id="st_nemesis_eye_sign_monolith_1"><text>...the Monolith has spoken a name over %map%. Brothers, before the hour turns, we answer.</text></string>
+    <string id="st_nemesis_eye_sign_monolith_2"><text>...a heretic walks in %map%, carrying his little life like a lamp. We will put it out.</text></string>
+    <string id="st_nemesis_eye_sign_monolith_3"><text>...pray, brothers. One hour of prayer, then the pilgrimage. Our road is %map%.</text></string>
+    <string id="st_nemesis_eye_sign_monolith_4"><text>...%name%. The stone whispers it now. It wants him brought to the light.</text></string>
+    <string id="st_nemesis_eye_sign_monolith_5"><text>...do not fear his guns. Whoever dies for the Monolith does not die.</text></string>
+    <string id="st_nemesis_eye_sign_monolith_6"><text>...the unbeliever runs from the heart of the Zone. We are the heart of the Zone. %map%.</text></string>
+    <string id="st_nemesis_eye_sign_monolith_7"><text>...the light showed me his face in my sleep. I will know him at %map%.</text></string>
+    <string id="st_nemesis_eye_sign_monolith_8"><text>...gather the chosen. The Monolith asks for a sacrifice before dawn. %map%.</text></string>
+    <string id="st_nemesis_eye_sign_monolith_9"><text>...he killed our brothers. They are with the Monolith now. He will join them.</text></string>
+    <string id="st_nemesis_eye_sign_monolith_10"><text>...the voice grows louder, brothers. It says: within the hour.</text></string>
+    <string id="st_nemesis_eye_sign_monolith_11"><text>...no mercy for him, no prayer. Only the light. %map%.</text></string>
+    <string id="st_nemesis_eye_sign_monolith_12"><text>...glory to the Monolith. The stray at %map% will kneel, or he will burn.</text></string>
+    <string id="st_nemesis_eye_sign_isg_1"><text>...Overwatch, confirm: subject %name%, area %map%. Clean extraction, or none.</text></string>
+    <string id="st_nemesis_eye_sign_isg_2"><text>...protocol nine. No witnesses. Anyone near the subject is part of the subject.</text></string>
+    <string id="st_nemesis_eye_sign_isg_3"><text>...teleport window in sixty minutes. Coordinates locked: %map%.</text></string>
+    <string id="st_nemesis_eye_sign_isg_4"><text>...this conversation does not exist. By morning, neither will he.</text></string>
+    <string id="st_nemesis_eye_sign_isg_5"><text>...field team, scrub every trace. The institute was never in %map%.</text></string>
+    <string id="st_nemesis_eye_sign_isg_6"><text>...the subject has seen too much. Containment is authorised.</text></string>
+    <string id="st_nemesis_eye_sign_isg_7"><text>...beacon signature is fresh, area %map%. Team two, coils to full charge.</text></string>
+    <string id="st_nemesis_eye_sign_isg_8"><text>...if the stalkers ask, it was an anomaly. It is always an anomaly.</text></string>
+    <string id="st_nemesis_eye_sign_isg_9"><text>...he has slipped us before. Not again. Double team, suppressed weapons.</text></string>
+    <string id="st_nemesis_eye_sign_isg_10"><text>...encrypt, then burn after reading. Target: %map%. Window: one hour.</text></string>
+    <string id="st_nemesis_eye_sign_isg_11"><text>...his file already says 'deceased'. Make it accurate.</text></string>
+    <string id="st_nemesis_eye_sign_isg_12"><text>...no radio after this. We arrive, we finish, we were never there.</text></string>
+    <string id="st_nemesis_eye_sign_army_1"><text>...Command to all callsigns: target located, sector %map%. Shoot on sight.</text></string>
+    <string id="st_nemesis_eye_sign_army_2"><text>...no arrests, no questions. Come back with a body or don't come back.</text></string>
+    <string id="st_nemesis_eye_sign_army_3"><text>...grid confirmed: %map%. The teleport team loads in one hour.</text></string>
+    <string id="st_nemesis_eye_sign_army_4"><text>...the stalker %name% is on the colonel's list. Nobody on that list survives.</text></string>
+    <string id="st_nemesis_eye_sign_army_5"><text>...civilians in the area? There are no civilians in the Zone. Fire at will.</text></string>
+    <string id="st_nemesis_eye_sign_army_6"><text>...the institute's teleporter is ours again tonight. Move fast.</text></string>
+    <string id="st_nemesis_eye_sign_army_7"><text>...he has our boys' blood on him. Take your time with him.</text></string>
+    <string id="st_nemesis_eye_sign_army_8"><text>...Granite-6, you have the lead. Flush him into the open, the rest is easy.</text></string>
+    <string id="st_nemesis_eye_sign_army_9"><text>...repeat: the target is armed. So are we. And there are more of us.</text></string>
+    <string id="st_nemesis_eye_sign_army_10"><text>...the order is signed. %map%, one hour, full kit.</text></string>
+    <string id="st_nemesis_eye_sign_army_11"><text>...if he hides behind the traders' walls, we wait. The Zone is patient. So are we.</text></string>
+    <string id="st_nemesis_eye_sign_army_12"><text>...this is Sector Command. Radio silence from now on. Next report: target down.</text></string>
+    <string id="st_nemesis_eye_mark_taken"><text>A cold feeling at the back of your neck. Someone has your scent.</text></string>
+    <string id="st_nemesis_eye_mark_strong"><text>It's in your head now: they know your face, your walk, your smell.</text></string>
+    <string id="st_nemesis_eye_mark_gone"><text>The watched feeling fades. For now.</text></string>
+    <string id="st_nemesis_eye_targeted_monolith"><text>The Monolith's voices keep naming one place: %map%. The faithful are gathering here.</text></string>
+    <string id="st_nemesis_eye_targeted_isg"><text>Encrypted traffic, institute codes: %map% is now their operation area.</text></string>
+    <string id="st_nemesis_eye_targeted_army"><text>Military net: sector %map% is cleared for raids. Anyone in it is a target.</text></string>
+    <string id="st_nemesis_eye_cooled"><text>The chatter about %map% has died down. They have lost your trail here.</text></string>
+</string_table>

@@ -167,11 +167,31 @@ function file_exists(root, path)
     return ok and res and true or false
 end
 
+-- The full path of file path under engine root ("$game_config$", ...), as Anomaly's ini_file_ex
+-- builds it (_g.script: getFS():update_path(root, '') .. name); nil when it cannot be read.
+-- For: removing the player's old settings file after its migration (nemesis_config, round 186).
+function full_path(root, path)
+    local base = nil
+    -- src: engine fs_registrator_script.cpp (getFS().update_path)
+    pcall(function() base = getFS():update_path(root, "") end)
+    if type(base) ~= "string" then return nil end
+    return base .. path
+end
+
 -- A sound file present (path without ".ogg")?
 function sound_exists(path) return file_exists("$game_sounds$", path .. ".ogg") end
 
 -- A mesh present (path without ".ogf")?
 function mesh_exists(path) return file_exists("$game_meshes$", path .. ".ogf") end
+
+-- A string value of system.ltx (and its includes), or nil when the section or key is missing.
+-- For: the Thunder Boss's list of every community (game_relations.ltx, [game_relations] communities).
+function system_string(section, key)
+    local value = nil
+    -- src: engine script_ini_file_script.cpp (r_string_ex)
+    pcall(function() value = ini_sys:r_string_ex(section, key) end)
+    return value
+end
 
 -- An ini section present in system.ltx (and its includes, DLTX additions included)?
 function section_exists(sec)
@@ -179,6 +199,28 @@ function section_exists(sec)
     -- src: engine script_ini_file_script.cpp (section_exist)
     pcall(function() ok = ini_sys:section_exist(sec) end)
     return ok
+end
+
+---------------------------------------------------------------------------
+-- The exes
+---------------------------------------------------------------------------
+-- The modded exes' build date as a number, YYYYMMDD (20261011 for 11 October 2026), read from
+-- the engine itself, so it is right even when the exes' own scripts are not loaded. Nil on exes
+-- without the function (older or unmodded ones) or when it cannot be read. Used by
+-- nemesis_damage.install_br_hooks to tell old exes from new exes whose scripts are missing.
+function exes_build_date()
+    if type(get_modded_exes_version) ~= "function" then return nil end
+    local date = nil
+    -- src: engine script_ini_file_script.cpp (get_modded_exes_version, the build's __DATE__)
+    pcall(function() date = get_modded_exes_version() end)
+    if type(date) ~= "number" or date < 20000101 then return nil end
+    return date
+end
+
+-- A build date from exes_build_date as the engine's own log writes it ("2026.10.11"), or "?".
+function exes_date_text(date)
+    if not date then return "?" end
+    return string.format("%04d.%02d.%02d", math.floor(date / 10000), math.floor(date / 100) % 100, date % 100)
 end
 
 ---------------------------------------------------------------------------
@@ -293,7 +335,9 @@ end
 --     emission squads, the horde squads, the emission boss, the phantoms);
 --   * a member of such a squad (a squad still filling, the horde);
 --   * an id this check has already found ours this session (a body teleported out is no longer a
---     member when the vanish queue removes it).
+--     member when the vanish queue removes it);
+--   * the weapon a hunt member holds (held_weapon, round 176): it drops to the ground when he dies,
+--     and leaves with his body when that teleports out (else NPCs gather it where he fell).
 -- The player is never "ours": the documented effects on you (the ghosts' push and psy share,
 -- PDA lines, sounds) are separate calls, listed in lane_register.md.
 local OWN_PREFIX = "nemesis_"
@@ -327,9 +371,23 @@ function ours(id)
     if yes then known[id] = true end
     return yes
 end
+-- The id of the weapon living hunt member obj (id) holds, noted ours (see the list above), or nil.
+-- Called on the core's tick for every member online; nemesis_fx removes it with his body.
+function held_weapon(obj, id)
+    if not (obj and ours(id)) then return nil end
+    local item_id = nil
+    -- src: engine script_game_object_script2.cpp (active_item, id)
+    pcall(function()
+        local item = obj:active_item()
+        if item then item_id = item:id() end
+    end)
+    if item_id then known[item_id] = true end
+    return item_id
+end
+
 -- The id of a game or server object, or nil. A server object keeps its id as a number field
--- (se.id); a game object has the method id() (round 125: the kit's first run found the method
--- alone refused every server object: a squad's members, a name, a removal).
+-- (se.id); a game object has the method id() (round 125: the method alone refused every server
+-- object: a squad's members, a name, a removal).
 local function _oid(o)
     local v = o.id
     if type(v) == "number" then return v end
@@ -369,6 +427,20 @@ function set_health(o, v)
     return pcall(function() o:set_health_ex(v) end)
 end
 
+-- The Thunder Boss's bolt on you (round 165): share (0..1) of your current health taken, through
+-- all protection (no armour, no hit): the engine's change_health, which still takes nothing
+-- while you can't be harmed (god mode; EntityCondition.cpp 181-185). Never kills by itself: it is
+-- always a share of what is left. The player only. Returns true when it was applied.
+function drain_player_health(share)
+    local actor = db.actor
+    if not actor or not share or share <= 0 then return false end
+    local ok = pcall(function()
+        -- src: engine script_game_object_script2.cpp (health, change_health)
+        actor:change_health(-actor.health * math.min(1, share))
+    end)
+    return ok
+end
+
 -- Invulnerable on or off (a retreating named hunter, the smart cover guard). Ours only.
 function set_invulnerable(o, on)
     if not o then return false end
@@ -392,6 +464,19 @@ function set_character_name(s, name)
     if not ours(id_of(s)) then return refuse("rename", s) end
     -- src: engine xrServer_Objects_ALife_Monsters_script.cpp (set_character_name)
     return pcall(function() s:set_character_name(name) end)
+end
+
+-- Sets the rank points of server object s (a stalker of ours) to points; true when it was set.
+-- Refused, with the important error, for anything that is not ours.
+-- Through: the server object's own set_rank (the owner's OK, round 161: a new engine call).
+-- Then: the engine copies it to the stalker when he comes online, where Anomaly's ranks script and
+-- AlifeTactics read it (at_reaction.apply on npc_on_net_spawn).
+-- For: The Returning's ranks: a hunter who comes back is one rank higher (nemesis_returning).
+function set_rank(s, points)
+    if not (s and type(points) == "number") then return false end
+    if not ours(id_of(s)) then return refuse("rank", s) end
+    -- src: engine xrServer_Objects_ALife_Monsters_script4.cpp (set_rank)
+    return pcall(function() s:set_rank(points) end)
 end
 
 local PLAYER_KEYS = { toolkit_reward_count = true, toolkit_reward_last = true }   -- the player's keys we may write
@@ -475,10 +560,49 @@ function spawn_own_item(section, pos)
     return pcall(function() level.spawn_item(section, pos, 4294967295, 65535, false) end)
 end
 
+-- Sets the total goodwill of a (one of ours) toward b to value: the engine writes a's personal
+-- goodwill so that it, a's community's goodwill toward b and the two communities' relation add up
+-- to value (relation_registry.cpp ForceSetGoodwill; only rank and reputation still add on top).
+-- Ours only. For: the Thunder Boss, an enemy of you and of every NPC near him whatever your or
+-- their standing with the Loners (round 191, a new engine call, the owner's OK of 26 October;
+-- set_relation's enemy is a fixed -1000, one point under the enemy line).
+function force_set_goodwill(a, value, b)
+    if not (a and value and b) then return false end
+    if not ours(id_of(a)) then return refuse("force the goodwill of", a) end
+    -- src: engine script_game_object_inventory_owner.cpp (force_set_goodwill)
+    return pcall(function() a:force_set_goodwill(value, b) end)
+end
+
 -- a's relation toward b (game_object.enemy / neutral / friend). False when it fails.
 function set_relation(a, rel, b)
     if not (a and b) then return false end
     return pcall(function() a:set_relation(rel, b) end)
+end
+
+-- Sets community's goodwill toward character id (one of ours) to value. The engine keeps it in id's
+-- own relation entry (relation_registry.cpp SetCommunityGoodwill: objects(to_character)), and every
+-- member of that community adds it to his attitude toward id (relation_registry_inline.h GetAttitude),
+-- so nobody else's data changes. Ours only. For: the Thunder Boss, hostile to everyone (round 186,
+-- a new engine call, the owner's OK of 26 October).
+function set_community_goodwill_toward(community, id, value)
+    if not (community and id and value) then return false end
+    if not ours(id) then return refuse("set a community's goodwill toward", se(id)) end
+    -- src: engine level_script.cpp (relation_registry.set_community_goodwill)
+    return pcall(function() relation_registry.set_community_goodwill(community, id, value) end)
+end
+
+-- Sets game object o's community (one of ours, alive) to community. Ours only. For: the Thunder
+-- Boss's community at his death (round 186, a new engine call, the owner's OK of 26 October).
+-- Never on a dead one (round 189): the call also moves him to his community's team
+-- (Entity.cpp ChangeTeam), which a dead stalker has already left; on his body in the owner's play
+-- test it failed inside the engine, and GAMMA's "Busy Hands" guard found the game's scripts
+-- half-broken from then on.
+function set_community(o, community)
+    if not (o and community) then return false end
+    if not ours(id_of(o)) then return refuse("change the community of", o) end
+    if not alive(o) then return false end
+    -- src: engine script_game_object_inventory_owner.cpp (set_character_community)
+    return pcall(function() o:set_character_community(community, 0, 0) end)
 end
 
 ---------------------------------------------------------------------------

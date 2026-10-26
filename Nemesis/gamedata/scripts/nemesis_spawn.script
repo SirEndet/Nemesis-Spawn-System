@@ -1,4 +1,5 @@
 -- Nemesis Spawn
+-- Release defaults use the owner-selected Medium profile; saved settings remain unchanged.
 -- When a hunt may start, the arrival warning, where the squad is placed, how it is built
 -- (one real simulation squad, extras added one per tick), names, squad relations, and the
 -- squad's scripted target.
@@ -7,7 +8,8 @@
 -- nemesis_guard (member_ids), nemesis_state (fill_squad), nemesis_mcm (the Hunts page).
 -- Uses: nemesis_state, nemesis_engine (the doorway: squads, names, vertices), nemesis_utils,
 -- nemesis_mcm, nemesis_lines, nemesis_sound (the warning), nemesis_fx, nemesis_chase,
--- nemesis_events; xlibs xsmart, xsquad and xlevel; Anomaly's game_relations.
+-- nemesis_events (announcements; member_added since round 161); xlibs xsmart, xsquad, xlevel and
+-- xcreature (the spot survey); Anomaly's game_relations and SIMBOARD (the spot survey).
 --
 -- Spawn one real simulation squad (nemesis_hunter_squad), never loose stalkers. A stalker with
 -- no squad is deleted by the engine and culled first by AlifeGuard; both show up as a
@@ -37,10 +39,41 @@ function retry_later(gt) block_until = gt + SPAWN_RETRY_MS end
 local function in_grace(now)
     -- get_bool: nemesis_mcm, a menu checkbox (cached)
     if nemesis_mcm.get_bool("debug_mode", false) or S.spawned_count ~= 0 or not S.first_hunt then return false end
-    return now - S.first_hunt < nemesis_mcm.get_number("grace_period", 18) * 86400   -- get_number: nemesis_mcm, a menu number (cached)
+    return now - S.first_hunt < nemesis_mcm.get_number("grace_period", 8) * 86400   -- get_number: nemesis_mcm, a menu number (cached)
 end
 
--- Whether a hunt may start now: not blocked, not in the grace period, Time between hunts over.
+-- The most a module may shorten Time between hunts by (a share), whatever it answers: hunts
+-- never chain back to back (round 164; the Hunt's Eye keeps its own cap of half).
+local HUNT_WAIT_CUT_LIMIT = 0.5
+local SECONDS_PER_HOUR = 3600
+local DEBUG_WAIT_SECONDS = 120     -- Debug mode's Time between hunts (the slider is ignored)
+
+-- Time between hunts in game hours as it counts now: the slider, shortened by the share a module
+-- answers to hunt_wait_cut (the Hunt's Eye: the Mark and Targeted Ground, round 164); Debug
+-- mode's 120 game seconds as they are. Used by spawn_allowed and next_hunt_at.
+local function hunt_wait_hours()
+    if nemesis_mcm.get_bool("debug_mode", false) then return DEBUG_WAIT_SECONDS / SECONDS_PER_HOUR end
+    local hours = nemesis_mcm.get_number("retreat_cooldown", 24)
+    if hours < 0 then hours = 0 end
+    local cut = tonumber(nemesis_events.ask("hunt_wait_cut")) or 0   -- ask: nemesis_events, the first module's answer, or nil
+    cut = math.max(0, math.min(HUNT_WAIT_CUT_LIMIT, cut))
+    return hours * (1 - cut)
+end
+
+-- When, in game seconds, the next hunt's wait is over (the grace period's end for the first
+-- hunt, else the end of Time between hunts), or nil when there is no wait to count. A hunt may
+-- still wait after it for other reasons (a base, a talk, a module's hold). Asked by the Hunt's
+-- Eye (nemesis_pressure) to send its sign an hour before (round 164).
+function next_hunt_at()
+    if S.spawned_count == 0 and S.first_hunt and not nemesis_mcm.get_bool("debug_mode", false) then
+        return S.first_hunt + nemesis_mcm.get_number("grace_period", 8) * 86400
+    end
+    if not S.last_retreat then return nil end
+    return S.last_retreat + hunt_wait_hours() * SECONDS_PER_HOUR
+end
+
+-- Whether a hunt may start now: not blocked, not in the grace period, Time between hunts over,
+-- and no module holding it (hold_hunt: the Hunt's Eye's sign gives you its hour, round 164).
 local function spawn_allowed(gt)
     if gt < block_until then return false end
     local debug_mode = nemesis_mcm.get_bool("debug_mode", false)
@@ -50,25 +83,24 @@ local function spawn_allowed(gt)
         if now < S.last_retreat then
             S.last_retreat = now -- clock went backwards (older save); do not stay blocked
         end
-        -- Debug mode: 120 game seconds, the slider is ignored. Otherwise the slider, in hours.
-        local cooldown = nemesis_mcm.get_number("retreat_cooldown", 36)
-        if cooldown < 0 then cooldown = 0 end
-        if debug_mode then cooldown = 120 / 3600 end
+        local cooldown = hunt_wait_hours()
         if now - S.last_retreat < cooldown * 3600 then
             -- One line per hunt end and per slider change, so a quiet log is explained.
-            local key = tostring(S.last_retreat) .. "/" .. tostring(cooldown)
+            -- (to a tenth of an hour: the Hunt's Eye moves the wait a little every tick)
+            local key = tostring(S.last_retreat) .. "/" .. string.format("%.1f", cooldown)
             if cooldown_logged ~= key then
                 cooldown_logged = key
                 local left = (S.last_retreat + cooldown * 3600 - now) / 3600
                 if debug_mode then
                     dbg("Nemesis: next hunt in %s game seconds (Debug mode overrides Time between hunts).", string.format("%.0f", left * 3600))
                 else
-                    dbg("Nemesis: next hunt in %s game hours (Time between hunts = %s h).", string.format("%.1f", left), tostring(cooldown))
+                    dbg("Nemesis: next hunt in %s game hours (Time between hunts = %s h).", string.format("%.1f", left), string.format("%.1f", cooldown))
                 end
             end
             return false
         end
     end
+    if nemesis_events.ask("hold_hunt", now) == true then return false end
     return true
 end
 
@@ -264,12 +296,17 @@ local function perf_end()
     end
 end
 
+-- Whether an arrival warning is out and its hunt still to come. Asked by The Returning
+-- (nemesis_returning): no Legend comes while a hunt is announced (round 161).
+function warning_pending() return warn_spawn_at ~= nil end
+
 -- The arrival warning now; the hunt follows it after a random delay (see above).
 local function give_warning(gt)
     perf_begin("arrival warning")
     local delay = nemesis_mcm.get_bool("debug_mode", false) and WARN_DEBUG_S or math.random(WARN_MIN_S, WARN_MAX_S)
     warn_spawn_at = gt + delay * 1000
-    -- Lines and squad follow the player's faction at this moment (Monolith, Zombified, Sin -> UNISG).
+    -- Lines and squad follow the player's faction at this moment (Monolith -> the Military or UNISG,
+    -- Zombified and Sin -> UNISG).
     S.faction = nemesis_utils.faction_for_player()   -- faction_for_player: nemesis_utils, the hunt's faction for you
     -- The boss module rolls (round 135: asked, not named); without it no hunt brings a boss.
     local boss = nemesis_events.ask("boss_roll", "warning") == true
@@ -363,7 +400,9 @@ function keep_squad_friendly()
     for _, obj in ipairs(objs) do
         local r = S.m[obj:id()]
         if r and not r.retreat_at then
-            pcall(_set_rel, obj, enemy, actor)
+            -- A module may keep a member's own relation toward you (round 191: the Thunder Boss's
+            -- is stronger than enemy's -1000). ask: nemesis_events, the first module's answer, or nil
+            if not nemesis_events.ask("own_player_relation", obj:id()) then pcall(_set_rel, obj, enemy, actor) end
             pcall(_set_rel, actor, enemy, obj)
         end
     end
@@ -395,7 +434,7 @@ function member_ids(squad)
     return ids
 end
 
-local SQUAD_WEIGHTS = { 50, 25, 14, 10, 6 }
+local SQUAD_WEIGHTS = { 50, 40, 25, 20, 10 }
 
 -- Danger by area (MCM "Scale hunts by area", user design): xlibs rates each map 0 (Cordon,
 -- Swamps) to 5 (Pripyat, Jupiter); maps it does not know count as its default (2). Rookie areas
@@ -436,7 +475,7 @@ end
 -- Named hunters who come with the boss (MCM Boss escort size, 0..4). A boss hunt is the boss plus
 -- these, all named; Squad of 1 to 5 and Extra is a named hunter do not apply to it.
 local function boss_escort()
-    local n = math.floor(nemesis_mcm.get_number("boss_escort", 4) + 0.5)
+    local n = math.floor(nemesis_mcm.get_number("boss_escort", 3) + 0.5)
     if n < 0 then n = 0 end
     if n > 4 then n = 4 end
     return n
@@ -466,7 +505,7 @@ end
 
 -- Chance (0..100) that an extra member is another named hunter, plus the late-area bonus.
 local function named_chance(tier)
-    local chance = nemesis_mcm.get_number("named_chance", 15)
+    local chance = nemesis_mcm.get_number("named_chance", 25)
     if chance < 0 then chance = 0 end
     chance = chance + (tier and AREA_NAMED_BONUS[tier] or 0)
     if chance < 0 then chance = 0 end
@@ -518,6 +557,17 @@ local function spawn_extra(job)
         end
     end
     return nil
+end
+
+-- Announces each member of ids to the modules: member_added (id, named, name) with the name he
+-- carries now, so after a boss was made he carries the boss's. The Returning sets a named
+-- hunter's rank there, while he is still offline (round 161). Called once his record exists.
+local function announce_members(ids)
+    for _, mid in ipairs(ids) do
+        local r = nemesis_state.member(mid)   -- member: nemesis_state, his member record
+        -- emit: nemesis_events, every listener of the event
+        if r then nemesis_events.emit("member_added", mid, r.named, r.name) end
+    end
 end
 
 -- Staggered spawns, since a play test of round 93: each new stalker loads his model and textures, and
@@ -575,6 +625,7 @@ function fill_squad()
         ename = nemesis_lines.next_hunter_name(job.used_names, named)   -- next_hunter_name: nemesis_lines, a new name
     end
     nemesis_state.add_member(extra_id, named, ename)   -- add_member: nemesis_state, a new member record
+    announce_members({ extra_id })
     if fe then
         local r = nemesis_state.member(extra_id)   -- member: nemesis_state, his member record
         if r then r.follow_hp = fe.hp end
@@ -649,6 +700,10 @@ end
 -- taken first; with none in range, any side, as for a new hunt.
 local FOLLOW_SIDE_DEG = 45
 local FOLLOW_SIDE_COS = math.cos(math.rad(FOLLOW_SIDE_DEG))
+-- The side tries aim a little inside that cone (round 163): the navmesh snaps a spot to its
+-- vertex, and a spot aimed at the cone's very edge could land just outside it, so it was read as
+-- "another side" (and lost to a smart on another side).
+local FOLLOW_AIM_DEG = 40
 
 -- The unit direction (x, z) from apos toward the arrival point, or nil when you stand on it.
 local function side_dir(apos, toward)
@@ -712,12 +767,13 @@ local function pick_ring_vertex(actor, toward, from_lv)
     if from_lv and from_lv < NO_VERTEX then alv = from_lv end
     local best_lv, best_pos, best_d = nil, nil, 0
     local bases = base_smarts_on_level()
-    -- Following you: the first 16 tries look within FOLLOW_SIDE_DEG of the side you came in on.
+    -- Following you: the first 16 tries look within FOLLOW_AIM_DEG of the side you came in on
+    -- (inside FOLLOW_SIDE_DEG, see there).
     local sx, sz = side_dir(apos, toward)
     local base_ang = sx and math.atan2(sz, sx) or nil
     for try = 1, 32 do
         local ang = math.random() * 6.28318
-        if base_ang and try <= 16 then ang = base_ang + (math.random() * 2 - 1) * math.rad(FOLLOW_SIDE_DEG) end
+        if base_ang and try <= 16 then ang = base_ang + (math.random() * 2 - 1) * math.rad(FOLLOW_AIM_DEG) end
         local dir = vector()
         dir:set(math.cos(ang), 0, math.sin(ang))
         local want = dmin + math.random() * (dmax - dmin)
@@ -734,6 +790,224 @@ local function pick_ring_vertex(actor, toward, from_lv)
     end
     return best_lv, best_pos
 end
+
+---------------------------------------------------------------------------
+-- The spot survey (round 194, owner: "spawn them always in an empty place and if there is none
+-- THEN spawn it where there is the least enemies"; every hunt, any NPC, 60 m, staggered)
+---------------------------------------------------------------------------
+-- A random smart terrain is often someone's camp, and a hunt placed among five Duty could die at
+-- once. So every place a hunt may start (a new hunt, a followed one, a lone boss: the Thunder
+-- Boss, a Legend, the emission boss) is chosen from a survey:
+--   1. the candidates: every smart terrain in the spawn ring (ring_smarts, the same rules as
+--      before) and up to SURVEY_VERTEX_TRIES navmesh spots in it (ring_vertex_list);
+--   2. each is scored: the living stalkers and mutants within SURVEY_RADIUS_M (online ones by
+--      xlibs' online list; at a smart terrain also its offline squads, Anomaly's SIMBOARD);
+--   3. the pick: a random one of those with nobody near, else the one with the fewest (on the side
+--      you came in on first, when a hunt follows you); just before it is used, the pick is scored
+--      once more, and if someone walked in, the next best is taken.
+-- Staggered: SURVEY_STEP candidates are scored per call, one pass over the online list each. A
+-- new hunt's survey runs during its arrival warning (idle_tick); without a warning (the warning
+-- off, a lone boss, a followed hunt) the spawn waits the few slow ticks it takes. A survey older
+-- than SURVEY_MAX_AGE_MS, or after you moved SURVEY_MOVE_M, starts again. If the survey fails or
+-- finds no candidate, the old random pick is used. Extras join the squad where it stands.
+local SURVEY_RADIUS_M = 60         -- anyone this close to a spot counts against it (owner)
+local SURVEY_STEP = 12             -- candidates scored per call
+local SURVEY_SMARTS_MAX = 16       -- at most this many smart terrains, chosen at random
+local SURVEY_VERTEX_TRIES = 12     -- navmesh directions tried for the other candidates
+local SURVEY_MAX_AGE_MS = 30000
+local SURVEY_MOVE_M = 25
+local survey = nil                 -- runtime: { key, started_at, apos, list, next } while one runs
+local survey_failed_said = false
+
+-- Every smart terrain in the spawn ring away from bases, on your map (pick_spawn_smart's rules).
+local function ring_smarts(actor)
+    local dmin, dmax = spawn_range()
+    local apos = actor:position()
+    -- src: engine alife_simulator_script.cpp (alife().actor)
+    local sim_actor = alife():actor()
+    -- src: xlibs xsmart.script (xsmart.get_named_smarts)
+    local ok, by_name = pcall(xsmart.get_named_smarts)
+    if not ok or type(by_name) ~= "table" then return {} end
+    local bases = base_smarts_on_level()
+    local ring = {}
+    for _, smart in pairs(by_name) do
+        if smart and smart.position and not near_base(smart.position, BASE_KEEP_OUT_M, bases)
+            and sim_actor and nemesis_engine.same_level(smart, sim_actor) == true then   -- same_level: nemesis_engine, two objects on one map
+            local d = smart.position:distance_to(apos)
+            if d >= dmin and d <= dmax then ring[#ring + 1] = smart end
+        end
+    end
+    return ring
+end
+
+-- Up to tries navmesh spots in the spawn ring away from bases, cast from from_lv (else your own
+-- vertex) as pick_ring_vertex does: a list of { lv, pos }.
+local function ring_vertex_list(actor, from_lv, tries)
+    local dmin, dmax = spawn_range()
+    local alv, apos
+    pcall(function()
+        alv = actor:level_vertex_id()
+        apos = actor:position()
+    end)
+    if not alv or alv >= NO_VERTEX or not apos then return {} end
+    if from_lv and from_lv < NO_VERTEX then alv = from_lv end
+    local bases = base_smarts_on_level()
+    local found = {}
+    for try = 1, tries do
+        local ang = math.random() * 6.28318
+        local dir = vector()
+        dir:set(math.cos(ang), 0, math.sin(ang))
+        local lv = nil
+        -- vertex_toward: nemesis_engine, a vertex on a straight run (stops at walls)
+        pcall(function() lv = nemesis_engine.vertex_toward(alv, dir, dmin + math.random() * (dmax - dmin)) end)
+        if lv and lv < NO_VERTEX and lv ~= alv then
+            local pos = vertex_pos(lv)
+            if pos and not near_base(pos, BASE_KEEP_OUT_M, bases) then
+                local d = pos:distance_to(apos)
+                if d >= dmin and d <= dmax then found[#found + 1] = { lv = lv, pos = pos } end
+            end
+        end
+    end
+    return found
+end
+
+-- The survey's candidates around actor: { pos, lv, gv, smart, side }, side true when on the side
+-- toward (the arrival point of a followed hunt) points to.
+local function survey_candidates(actor, toward, from_lvs)
+    local apos = actor:position()
+    local sx, sz = side_dir(apos, toward)
+    local list = {}
+    local smarts = ring_smarts(actor)
+    while #smarts > SURVEY_SMARTS_MAX do table.remove(smarts, math.random(#smarts)) end
+    for _, smart in ipairs(smarts) do
+        list[#list + 1] = { pos = smart.position, lv = smart.m_level_vertex_id, gv = smart.m_game_vertex_id, smart = smart,
+                            side = sx ~= nil and on_side(apos, smart.position, sx, sz) }
+    end
+    local gv = actor:game_vertex_id()
+    local froms = (from_lvs and #from_lvs > 0) and from_lvs or { false }
+    for _, from in ipairs(froms) do
+        for _, v in ipairs(ring_vertex_list(actor, from or nil, math.ceil(SURVEY_VERTEX_TRIES / #froms))) do
+            list[#list + 1] = { pos = v.pos, lv = v.lv, gv = gv, side = sx ~= nil and on_side(apos, v.pos, sx, sz) }
+        end
+    end
+    return list
+end
+
+-- The offline NPCs of smart's squads (Anomaly's SIMBOARD: the squads that belong to it).
+local function offline_at_smart(smart)
+    local count = 0
+    pcall(function()
+        -- src: anomaly sim_board.script (SIMBOARD.smarts[id].squads)
+        local info = SIMBOARD and SIMBOARD.smarts and SIMBOARD.smarts[smart.id]
+        for squad_id in pairs(info and info.squads or {}) do
+            local squad = nemesis_engine.se(squad_id)   -- se: nemesis_engine, the server object by id
+            -- src: engine xrserver_objects_alife_monsters_script3.cpp (npc_count)
+            if squad and not squad.online then count = count + (squad:npc_count() or 0) end
+        end
+    end)
+    return count
+end
+
+-- Scores candidates first..last of list: their offline NPCs, then one pass over the online
+-- stalkers and mutants (alive, not you, none of ours) within SURVEY_RADIUS_M of each.
+local function score_candidates(list, first, last)
+    for i = first, last do list[i].score = list[i].smart and offline_at_smart(list[i].smart) or 0 end
+    local actor_id = db.actor and db.actor:id()
+    -- src: xlibs xcreature.script (xcreature.iterate_online, is_stalker, is_mutant)
+    for id, npc in xcreature.iterate_online() do
+        -- is_stalker, is_mutant: xlibs xcreature, by class
+        if npc and id ~= actor_id and not S.m[id] and (xcreature.is_stalker(npc) or xcreature.is_mutant(npc))
+            and nemesis_engine.alive(npc) then   -- alive: nemesis_engine, a safe life read
+            local spot = npc:position()
+            for i = first, last do
+                if spot:distance_to(list[i].pos) <= SURVEY_RADIUS_M then list[i].score = list[i].score + 1 end
+            end
+        end
+    end
+end
+
+-- Advances the survey around actor by one step (a new one when there is none, it is stale, or it
+-- was for another kind of spawn). Returns true when every candidate is scored.
+local function survey_advance(actor, toward, from_lvs)
+    local key = (toward and "side" or "any") .. ":" .. tostring(from_lvs and #from_lvs or 0)
+    local now = time_global()
+    local apos = actor:position()
+    if not survey or survey.key ~= key or now - survey.started_at > SURVEY_MAX_AGE_MS
+        or apos:distance_to(survey.apos) > SURVEY_MOVE_M then
+        survey = { key = key, started_at = now, apos = apos, list = survey_candidates(actor, toward, from_lvs), next = 1 }
+    end
+    local list = survey.list
+    if survey.next <= #list then
+        local last = math.min(#list, survey.next + SURVEY_STEP - 1)
+        score_candidates(list, survey.next, last)
+        survey.next = last + 1
+    end
+    return survey.next > #list
+end
+
+-- The best of list: on the side first when prefer_side, a random one with nobody near, else the
+-- fewest. skip: a candidate left out.
+local function best_candidate(list, prefer_side, skip)
+    local pool = {}
+    if prefer_side then
+        for _, c in ipairs(list) do
+            if c.side and c ~= skip then pool[#pool + 1] = c end
+        end
+    end
+    if #pool == 0 then
+        for _, c in ipairs(list) do
+            if c ~= skip then pool[#pool + 1] = c end
+        end
+    end
+    local lowest = nil
+    for _, c in ipairs(pool) do
+        if not lowest or c.score < lowest then lowest = c.score end
+    end
+    local fewest = {}
+    for _, c in ipairs(pool) do
+        if c.score == lowest then fewest[#fewest + 1] = c end
+    end
+    if #fewest == 0 then return nil end
+    return fewest[math.random(#fewest)]
+end
+
+-- The spawn spot around actor from the survey: a candidate { pos, lv, gv, smart, side }, nil while
+-- the survey still runs (call again next tick), or false when it has none or failed (the caller
+-- picks the old way). The pick is scored again first (see the head of this section).
+local function take_spot(actor, toward, from_lvs)
+    local ok, result = pcall(function()
+        if not survey_advance(actor, toward, from_lvs) then return nil end
+        local list = survey.list
+        local count = #list
+        survey = nil
+        if count == 0 then return false end
+        local pick = best_candidate(list, toward ~= nil, nil)
+        local before = pick.score
+        score_candidates({ pick }, 1, 1)
+        if pick.score > before and count > 1 then
+            local other = best_candidate(list, toward ~= nil, pick)
+            if other and other.score < pick.score then pick = other end
+        end
+        local empty = 0
+        for _, c in ipairs(list) do
+            if c.score == 0 then empty = empty + 1 end
+        end
+        dbg("Nemesis: spawn spot surveyed: %s places, %s with nobody within %s m; chosen a %s with %s.", tostring(count),
+            tostring(empty), tostring(SURVEY_RADIUS_M), pick.smart and "smart terrain" or "navmesh spot",
+            pick.score == 0 and "nobody near" or (tostring(pick.score) .. " NPCs near"))
+        return pick
+    end)
+    if ok then return result end
+    survey = nil
+    if not survey_failed_said then
+        survey_failed_said = true
+        dbg("!Nemesis ERROR: the spawn spot survey failed (%s); the old random pick is used.", tostring(result))
+    end
+    return false
+end
+
+-- Whether a survey is running (spawn_lone_boss's "no spot" line waits for it).
+local function surveying() return survey ~= nil end
 
 -- The squad without a smart: what SIMBOARD:create_squad does, minus the smart.
 local function create_squad_at(section, pos, lv, gv)
@@ -791,13 +1065,21 @@ local function try_spawn(gt, follow)
         return
     end
 
-    perf_begin(follow and "squad arrival (follow)" or "squad spawn")
     local toward = follow and follow.ax and vector():set(follow.ax, 0, follow.az) or nil
-    local spawn_smart, from_side = pick_spawn_smart(actor, toward)
-    local ring_lv, ring_pos = nil, nil
+    -- The surveyed spot (round 194, see take_spot); nil: the survey runs on, the next tick comes back.
+    local surveyed = take_spot(actor, toward, nil)
+    if surveyed == nil then return end
+    perf_begin(follow and "squad arrival (follow)" or "squad spawn")
+    local spawn_smart, from_side, ring_lv, ring_pos = nil, nil, nil, nil
+    if surveyed then
+        spawn_smart, from_side = surveyed.smart, surveyed.side
+        if not spawn_smart then ring_lv, ring_pos = surveyed.lv, surveyed.pos end
+    else
+        spawn_smart, from_side = pick_spawn_smart(actor, toward)
+    end
     -- Following you, your side wins over a smart: no smart on your side, a navmesh spot on it.
     local sx, sz = side_dir(actor:position(), toward)
-    if spawn_smart and sx and not from_side then
+    if not surveyed and spawn_smart and sx and not from_side then
         local lv2, pos2 = pick_ring_vertex(actor, toward)
         if pos2 and on_side(actor:position(), pos2, sx, sz) then
             spawn_smart, ring_lv, ring_pos, from_side = nil, lv2, pos2, true
@@ -883,6 +1165,7 @@ local function try_spawn(gt, follow)
                 if e.boss then nemesis_events.ask("follow_boss", mid, follow) end
             end
         end
+        announce_members(members)
         S.boss_hunt = follow.boss_hunt or S.boss_hunt
         for _, mid in ipairs(members) do arrival_fx(mid) end
         S.hunt_start = follow.hunt_start or nemesis_engine.game_seconds()
@@ -891,9 +1174,12 @@ local function try_spawn(gt, follow)
         local leader_boss = nemesis_events.ask("boss_roll", "spawn", warning_on()) == true
         for i, mid in ipairs(members) do
             local named = (i == 1) or (math.random(100) <= chance)
-            nemesis_state.add_member(mid, named, nemesis_lines.next_hunter_name(used_names, named))
+            -- The leader is the only place a returning hunter is put, and never when he is the
+            -- boss: the boss keeps the boss's name (The Returning, round 161).
+            nemesis_state.add_member(mid, named, nemesis_lines.next_hunter_name(used_names, named, i == 1 and not leader_boss))
             if i == 1 and leader_boss then nemesis_events.ask("make_boss", mid) end   -- one boss roll per hunt
         end
+        announce_members(members)
         -- (the boss's chance counts this hunt on hunt_started: his module, round 135)
         if S.boss_id then
             for _, mid in ipairs(members) do arrival_fx(mid) end
@@ -963,7 +1249,10 @@ local function try_spawn(gt, follow)
     elseif S.boss_id then
         nemesis_lines.boss_news(nemesis_lines.boss_line())   -- boss_line: nemesis_lines, the boss's hunt-start line
     else
-        nemesis_lines.send_news(nemesis_lines.taunt(S.cycle), leader)   -- taunt: nemesis_lines, the hunt-start taunt by cycle
+        -- A returning leader says his own line instead of the taunt (the start_line answer of
+        -- The Returning since round 161); leader: nemesis_state, the first named hunter.
+        local own = nemesis_events.ask("start_line", nemesis_state.leader())
+        nemesis_lines.send_news(own or nemesis_lines.taunt(S.cycle), leader)   -- taunt: nemesis_lines, the hunt-start taunt by cycle
     end
     perf_step("PDA message")
     local dist = (spawn_smart and spawn_smart.position or ring_pos):distance_to(actor:position())
@@ -989,6 +1278,9 @@ function idle_tick(gt, actor, slow)
     if warn_on then
         if not warn_spawn_at then
             give_warning(gt)
+        elseif gt < warn_spawn_at then
+            -- The spot survey runs during the warning (round 194, see take_spot).
+            pcall(survey_advance, actor, nil, nil)
         elseif gt >= warn_spawn_at then
             if nemesis_events.ask("take_hunt", gt) then   -- a module brings its own hunt (the emission boss)
                 warn_spawn_at = nil
@@ -1027,7 +1319,7 @@ function spawn_lone_boss(faction, from_lvs, who)
         lv, pos, gv = spot.lv, spot.pos, spot.gv
     end
     if not lv or not pos or not gv then
-        dbg("Nemesis: no smart and no free vertex in the spawn range for the %s, retrying.", label)
+        if not surveying() then dbg("Nemesis: no smart and no free vertex in the spawn range for the %s, retrying.", label) end
         return nil
     end
     local section = who.section
@@ -1053,6 +1345,7 @@ function spawn_lone_boss(faction, from_lvs, who)
         nemesis_state.add_member(mid, true, name)
     end
     who.make_boss(members[1])
+    announce_members(members)
     S.spawned_count = S.spawned_count + 1
     S.hunt_start = nemesis_engine.game_seconds()
     S.phase = "hunting"
@@ -1070,6 +1363,10 @@ end
 -- emission boss's spot can be picked as his horde comes (from his side) and kept for his arrival.
 function pick_lone_boss_spot(actor, from_lvs)
     if not actor then return nil end
+    -- The surveyed spot (round 194, see take_spot); nil while the survey runs, so the caller asks again.
+    local surveyed = take_spot(actor, nil, from_lvs)
+    if surveyed == nil then return nil end
+    if surveyed then return { pos = surveyed.pos, lv = surveyed.lv, gv = surveyed.gv } end
     -- src: engine script_game_object_script2.cpp (game_vertex_id)
     local lv, pos, gv = nil, nil, actor:game_vertex_id()
     local smart = pick_spawn_smart(actor, nil)
@@ -1208,20 +1505,23 @@ function mcm_page()
             { id = "title", type = "slide", link = "ui_options_slider_player", text = "ui_mcm_nemesis_title", size = {512, 50}, spacing = 20 },
             { id = "line_timing", type = "line" },
             { id = "head_timing", type = "title", text = "ui_mcm_nemesis_head_timing", align = "l", clr = nemesis_mcm.HEAD_CLR },
-            { id = "grace_period", type = "track", val = 2, def = 18, min = 0, max = 21, step = 1, prec = 0, hint = "nemesis_grace_period" },
-            { id = "retreat_cooldown", type = "track", val = 2, def = 36, min = 0, max = 72, step = 1, prec = 0, hint = "nemesis_retreat_cooldown" },
-            { id = "hunt_duration", type = "track", val = 2, def = 5, min = 4, max = 12, step = 1, prec = 0, hint = "nemesis_hunt_duration" },
+            { id = "grace_period", type = "track", val = 2, def = 8, min = 0, max = 21, step = 1, prec = 0, hint = "nemesis_grace_period" },
+            { id = "retreat_cooldown", type = "track", val = 2, def = 24, min = 0, max = 72, step = 1, prec = 0, hint = "nemesis_retreat_cooldown" },
+            { id = "hunt_duration", type = "track", val = 2, def = 6, min = 4, max = 12, step = 1, prec = 0, hint = "nemesis_hunt_duration" },
             { id = "line_squad", type = "line" },
             { id = "head_squad", type = "title", text = "ui_mcm_nemesis_head_squad", align = "l", clr = nemesis_mcm.HEAD_CLR },
             { id = "spawn_dist_min", type = "track", val = 2, def = 80, min = 40, max = 100, step = 5, prec = 0, hint = "nemesis_spawn_dist_min" },
             { id = "spawn_dist_max", type = "track", val = 2, def = 140, min = 60, max = 140, step = 5, prec = 0, hint = "nemesis_spawn_dist_max" },
             { id = "squad_w1", type = "track", val = 2, def = 50, min = 0, max = 100, step = 1, prec = 0, hint = "nemesis_squad_w1" },
-            { id = "squad_w2", type = "track", val = 2, def = 25, min = 0, max = 100, step = 1, prec = 0, hint = "nemesis_squad_w2" },
-            { id = "squad_w3", type = "track", val = 2, def = 14, min = 0, max = 100, step = 1, prec = 0, hint = "nemesis_squad_w3" },
-            { id = "squad_w4", type = "track", val = 2, def = 10, min = 0, max = 100, step = 1, prec = 0, hint = "nemesis_squad_w4" },
-            { id = "squad_w5", type = "track", val = 2, def = 6, min = 0, max = 100, step = 1, prec = 0, hint = "nemesis_squad_w5" },
-            { id = "named_chance", type = "track", val = 2, def = 15, min = 0, max = 100, step = 5, prec = 0, hint = "nemesis_named_chance" },
+            { id = "squad_w2", type = "track", val = 2, def = 40, min = 0, max = 100, step = 1, prec = 0, hint = "nemesis_squad_w2" },
+            { id = "squad_w3", type = "track", val = 2, def = 25, min = 0, max = 100, step = 1, prec = 0, hint = "nemesis_squad_w3" },
+            { id = "squad_w4", type = "track", val = 2, def = 20, min = 0, max = 100, step = 1, prec = 0, hint = "nemesis_squad_w4" },
+            { id = "squad_w5", type = "track", val = 2, def = 10, min = 0, max = 100, step = 1, prec = 0, hint = "nemesis_squad_w5" },
+            { id = "named_chance", type = "track", val = 2, def = 25, min = 0, max = 100, step = 5, prec = 0, hint = "nemesis_named_chance" },
             { id = "area_scaling", type = "check", val = 1, def = true, hint = "nemesis_area_scaling" },
+            -- Who hunts a Monolith player (round 161, owner): the Military by default, or UNISG.
+            { id = "monolith_hunters", type = "list", val = 0, def = "army", no_str = true, hint = "nemesis_monolith_hunters",
+              content = { { "army", "ui_mcm_nemesis_lst_army" }, { "isg", "ui_mcm_nemesis_lst_isg" } } },
             { id = "line_behaviour", type = "line" },
             { id = "head_behaviour", type = "title", text = "ui_mcm_nemesis_head_behaviour", align = "l", clr = nemesis_mcm.HEAD_CLR },
             { id = "last_known_chase", type = "check", val = 1, def = true, hint = "nemesis_last_known_chase" },
@@ -1236,8 +1536,8 @@ end
 -- This page's share of the presets (see above).
 function mcm_presets()
     return {
-        easy = { grace_period = 21, retreat_cooldown = 43, hunt_duration = 4, named_chance = 10, follow_maps = 1, squad_w1 = 60, squad_w2 = 30, squad_w3 = 14, squad_w4 = 8, squad_w5 = 4 },
-        medium = { grace_period = 18, retreat_cooldown = 36, hunt_duration = 5, named_chance = 15, follow_maps = 2, squad_w1 = 50, squad_w2 = 25, squad_w3 = 14, squad_w4 = 10, squad_w5 = 6 },
-        hard = { grace_period = 15, retreat_cooldown = 29, hunt_duration = 6, named_chance = 20, follow_maps = 3, squad_w1 = 40, squad_w2 = 20, squad_w3 = 14, squad_w4 = 12, squad_w5 = 8 },
+        easy = { grace_period = 9, retreat_cooldown = 28, hunt_duration = 4, named_chance = 20, follow_maps = 1, squad_w1 = 60, squad_w2 = 48, squad_w3 = 25, squad_w4 = 16, squad_w5 = 8 },
+        medium = { grace_period = 8, retreat_cooldown = 24, hunt_duration = 6, named_chance = 25, follow_maps = 2, squad_w1 = 50, squad_w2 = 40, squad_w3 = 25, squad_w4 = 20, squad_w5 = 10 },
+        hard = { grace_period = 7, retreat_cooldown = 20, hunt_duration = 8, named_chance = 30, follow_maps = 3, squad_w1 = 40, squad_w2 = 32, squad_w3 = 25, squad_w4 = 24, squad_w5 = 12 },
     }
 end

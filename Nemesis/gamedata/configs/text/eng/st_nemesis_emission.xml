@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="windows-1251"?>
 <string_table>
-    <!-- Nemesis Wave Spawn System: the emission boss's own lines and name (round 134) -->
+    <!-- Nemesis Spawn System: the emission boss's own lines and name (round 134) -->
     <string id="st_nemesis_em_greh_arrival_1"><text>The Zone breathes, %name%. I walk in its breath.</text></string>
     <string id="st_nemesis_em_greh_arrival_2"><text>The sky burns for you. I am what it sends.</text></string>
     <string id="st_nemesis_em_greh_arrival_3"><text>You hide from the Zone's breath. I was born in it.</text></string>
@@ -36,5 +36,21 @@
     <string id="st_nemesis_em_isg_reload_1"><text>Reloading, %name%?</text></string>
     <string id="st_nemesis_em_boss_name"><text>Ilarion Hrech</text></string>
     <string id="st_nemesis_em_msg_on_his_way"><text>The emission boss is already on his way.</text></string>
+
+    <string id="st_nemesis_em_army_arrival_1"><text>Shielded suit holding. Walking in, %name%.</text></string>
+    <string id="st_nemesis_em_army_arrival_2"><text>You thought the emission would cover you. It covers me.</text></string>
+    <string id="st_nemesis_em_army_arrival_3"><text>Blowout drill: they hide, we collect. You hid.</text></string>
+    <string id="st_nemesis_em_army_arrival_4"><text>Your shelter glows on my thermal, %name%.</text></string>
+    <string id="st_nemesis_em_army_arrival_5"><text>Every way out is covered. Something out here is on my side.</text></string>
+    <string id="st_nemesis_em_army_arrival_6"><text>The lab calls this a field test. I call it hunting season.</text></string>
+    <string id="st_nemesis_em_army_arrival_7"><text>The Zone keeps you in. I'm coming in.</text></string>
+    <string id="st_nemesis_em_army_arrival_8"><text>No evacuation during an emission. For you, none at all.</text></string>
+    <string id="st_nemesis_em_army_boss_escape_1"><text>The storm is over, and so is my window. Next one, %name%.</text></string>
+    <string id="st_nemesis_em_army_boss_escape_2"><text>Recalled after the blowout. You're still on the list.</text></string>
+    <string id="st_nemesis_em_army_follow_1"><text>Left your shelter, %name%? Bad idea in this weather.</text></string>
+    <string id="st_nemesis_em_army_follow_2"><text>Target moved mid-emission. Still walking.</text></string>
+    <string id="st_nemesis_em_army_boss_stash_1"><text>Colonel %boss% is down. His cache coordinates went out on the army net.</text></string>
+    <string id="st_nemesis_em_army_boss_stash_2"><text>Army channel: '%boss% KIA.' Then coordinates: his cache.</text></string>
+    <string id="st_nemesis_em_army_reload_1"><text>Reloading, %name%?</text></string>
 
 </string_table>

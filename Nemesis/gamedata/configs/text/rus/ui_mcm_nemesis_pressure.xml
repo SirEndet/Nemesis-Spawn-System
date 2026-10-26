@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="windows-1251"?>
+<string_table>
+    <!-- The Hunt's Eye (nemesis_pressure, round 164): its own strings, like the other modules'. -->
+    <string id="ui_mcm_nemesis_page_pressure"><text>Око охоты</text></string>
+    <string id="ui_mcm_nemesis_head_pressure"><text>Знаки перед охотой</text></string>
+    <string id="ui_mcm_nemesis_pressure_enabled"><text>Око охоты</text></string>
+    <string id="ui_mcm_nemesis_pressure_enabled_desc"><text>Знаки перед охотой, Метка и Целевая территория. Выкл.: ничего из этого, охоты приходят как прежде. По умолчанию вкл.</text></string>
+    <string id="ui_mcm_nemesis_signs_lead"><text>Знаки заранее (часы)</text></string>
+    <string id="ui_mcm_nemesis_signs_lead_desc"><text>Игровые часы между перехваченными переговорами в КПК и охотой: охота ждёт, пока они пройдут. Одинаково на любой сложности. 0: без знаков. По умолчанию 1.</text></string>
+    <string id="ui_mcm_nemesis_head_mark"><text>Метка</text></string>
+    <string id="ui_mcm_nemesis_mark_boss_kill"><text>Метка за убийство босса</text></string>
+    <string id="ui_mcm_nemesis_mark_boss_kill_desc"><text>На сколько растёт Метка, когда вы убиваете босса (босса, босса выброса или Легенду), из 100. Считается ваш выстрел или ваша помощь. По умолчанию 20.</text></string>
+    <string id="ui_mcm_nemesis_mark_named_kill"><text>Метка за убийство именного</text></string>
+    <string id="ui_mcm_nemesis_mark_named_kill_desc"><text>На сколько растёт Метка, когда вы убиваете именного охотника, из 100. Охотники помнят, что вы с ними сделали. По умолчанию 10.</text></string>
+    <string id="ui_mcm_nemesis_mark_squad_kill"><text>Метка за убийство из отряда</text></string>
+    <string id="ui_mcm_nemesis_mark_squad_kill_desc"><text>На сколько растёт Метка, когда вы убиваете обычного бойца отряда охоты, из 100. Другие сталкеры ничего не добавляют. По умолчанию 2.</text></string>
+    <string id="ui_mcm_nemesis_mark_retreat"><text>Метка за отступление</text></string>
+    <string id="ui_mcm_nemesis_mark_retreat_desc"><text>На сколько растёт Метка, когда ваши попадания заставляют именного охотника отступить: он видел ваше лицо. По умолчанию 8.</text></string>
+    <string id="ui_mcm_nemesis_mark_sooner"><text>Метка: охоты раньше (%)</text></string>
+    <string id="ui_mcm_nemesis_mark_sooner_desc"><text>Насколько раньше приходит следующая охота при полной Метке: время между охотами сокращается на эту долю (при слабой Метке меньше). Вместе с Целевой территорией не больше половины. По умолчанию 30.</text></string>
+    <string id="ui_mcm_nemesis_mark_fade_hours"><text>Метка гаснет за (часы)</text></string>
+    <string id="ui_mcm_nemesis_mark_fade_hours_desc"><text>Игровые часы, за которые полная Метка гаснет сама. 0: сама не гаснет. По умолчанию 48.</text></string>
+    <string id="ui_mcm_nemesis_mark_sleep_cut"><text>Сон ослабляет Метку (%)</text></string>
+    <string id="ui_mcm_nemesis_mark_sleep_cut_desc"><text>Какую часть Метки снимает сон. По умолчанию 50.</text></string>
+    <string id="ui_mcm_nemesis_mark_antipsy_cut"><text>Пси-защита ослабляет Метку (%)</text></string>
+    <string id="ui_mcm_nemesis_mark_antipsy_cut_desc"><text>Какую часть Метки снимает средство от пси-воздействия (пси-блокада и всё, что защищает от пси). По умолчанию 35.</text></string>
+    <string id="ui_mcm_nemesis_head_targeting"><text>Целевая территория</text></string>
+    <string id="ui_mcm_nemesis_target_hunt"><text>Нацеливание за охоту</text></string>
+    <string id="ui_mcm_nemesis_target_hunt_desc"><text>На сколько растёт нацеливание карты с каждой охотой на ней, чем бы она ни кончилась, из 100. По умолчанию 15.</text></string>
+    <string id="ui_mcm_nemesis_target_retreat"><text>Нацеливание за отступление</text></string>
+    <string id="ui_mcm_nemesis_target_retreat_desc"><text>На сколько растёт нацеливание карты, когда ваши попадания заставляют именного охотника отступить на ней: он сообщит, где вы. По умолчанию 10.</text></string>
+    <string id="ui_mcm_nemesis_target_time_step"><text>Нацеливание за пребывание</text></string>
+    <string id="ui_mcm_nemesis_target_time_step_desc"><text>На сколько растёт нацеливание карты, на которой вы находитесь, каждые «Срок пребывания» часов. По умолчанию 10.</text></string>
+    <string id="ui_mcm_nemesis_target_step_hours"><text>Срок пребывания (часы)</text></string>
+    <string id="ui_mcm_nemesis_target_step_hours_desc"><text>Игровые часы на одной карте, за которые её нацеливание растёт на «Нацеливание за пребывание». По умолчанию 12.</text></string>
+    <string id="ui_mcm_nemesis_target_cool_rate"><text>Скорость остывания (x)</text></string>
+    <string id="ui_mcm_nemesis_target_cool_rate_desc"><text>Во сколько раз быстрее карта остывает, пока вы в другом месте, чем растёт, пока вы на ней: задерживаться наказуемо, исследовать выгодно. По умолчанию 3.</text></string>
+    <string id="ui_mcm_nemesis_target_travel_drop"><text>Спад за переход</text></string>
+    <string id="ui_mcm_nemesis_target_travel_drop_desc"><text>На сколько падает нацеливание всех карт при переходе на другую карту: вы сбиваете их со следа. По умолчанию 20.</text></string>
+    <string id="ui_mcm_nemesis_target_antipsy_drop"><text>Спад от пси-защиты</text></string>
+    <string id="ui_mcm_nemesis_target_antipsy_drop_desc"><text>На сколько падает нацеливание текущей карты, когда вы принимаете средство от пси-воздействия: они теряют вас из виду. По умолчанию 30.</text></string>
+    <string id="ui_mcm_nemesis_target_sooner"><text>Нацеливание: охоты раньше (%)</text></string>
+    <string id="ui_mcm_nemesis_target_sooner_desc"><text>Насколько раньше приходят охоты на полностью нацеленной карте: время между охотами сокращается на эту долю. Вместе с Меткой не больше половины. По умолчанию 25.</text></string>
+    <string id="ui_mcm_nemesis_target_reach"><text>Нацеливание: знают вашу землю (%)</text></string>
+    <string id="ui_mcm_nemesis_target_reach_desc"><text>На полностью нацеленной карте охотники узнают ваши запомненные места на столько дальше (радиус растёт на эту долю). По умолчанию 100.</text></string>
+</string_table>

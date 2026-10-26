@@ -1,8 +1,8 @@
 -- Nemesis Compat: the doorway to every other mod (made in round 109). Each part is detected at
 -- runtime and does nothing without its mod, so no other mod is ever required.
 -- Used by: nemesis_core, nemesis_damage, nemesis_fx, nemesis_guard, nemesis_utils,
--- nemesis_emission (each for the parts named in the table below).
--- Uses: the other mods' own tables (grok_bo, arszi_psy, wd_attach, ap_api, surge_manager,
+-- nemesis_emission, nemesis_lines (each for the parts named in the table below).
+-- Uses: the other mods' own tables (grok_bo, arszi_psy, wd_attach, zz_wd_pda_redirect, ap_api, surge_manager,
 -- phantom_manager, xr_wounded's db.storage), xlibs (xlevel, xcombat), nemesis_engine,
 -- nemesis_mcm, nemesis_state, nemesis_utils (log_tag, log_msg).
 -- Every other mod (or vanilla script another mod replaces) the Nemesis talks to, in one place,
@@ -13,6 +13,8 @@
 --   GAMMA ballistics (grok_bo)          grok_bo()           nemesis_damage seeds its bone armour (never wraps it, round 139)
 --   GAMMA psy rework (arszi_psy)        psy_rework()        the emission ghosts' psy hit
 --   Wearable Devices (wd_attach)        wearable()          nemesis_fx's malfunction
+--   the Wearable Devices PDA mod        wd_pda()            nemesis_lines puts our PDA messages on its Messages page
+--     (zz_wd_pda_redirect)
 --   AlifePlus (ap_api)                  alifeplus()         ownership, reserved kills
 --   Obrien GAMMA Overhaul (br_class)    obrien_on() ...     how hunters copy your armour
 --   surge_manager, its ignore list      surge_on(), surge_deadly(), surge_ignore_list()
@@ -20,6 +22,8 @@
 --   phantom_manager                     phantom_count()
 --   xr_wounded (GAMMA: Modular Tweaks)  no_downed()         named hunters never lie down
 --   the latest demonized exes           exe_ai_on() ...     hold, target bias, hit redirect
+--   AlifeTactics (at_reaction)          alifetactics()      who turns The Returning's ranks into skill
+--   the latest exes' rank levers        rank_levers()       The Returning's Nemesis mode (vision, bursts)
 --
 -- A global that does not exist makes Anomaly try to load a script of that name (EF-048), so a
 -- lookup that can miss is either behind a file check or done at most once a minute.
@@ -84,6 +88,80 @@ function wearable()
 end
 -- True when its script file is there (for the debug line "found, but not its functions").
 function wearable_file() return wd_api_file == true end
+
+---------------------------------------------------------------------------
+-- The Wearable Devices PDA mod (realzelda414, BennyDollaz)
+---------------------------------------------------------------------------
+-- Always called "the Wearable Devices PDA mod", never just "WD": it is a different mod from
+-- Wearable Devices above. Never ship, copy or patch its files; we only call its public entry
+-- point (lane register C8).
+local wd_pda_api = nil   -- false / nil until looked up
+
+-- Finds the Wearable Devices PDA mod's message table, wd_pda_redirect, with its public
+-- push_external_faction; returns that table, or false without the mod (or without that function).
+-- Through: nemesis_engine.file_exists first, since a missing global would make Anomaly try to load
+-- a script of that name (EF-048); then the table under its file's name, zz_wd_pda_redirect (its
+-- own header note: other files see its globals only that way). Looked up once per load
+-- (forget_runtime).
+-- Then: nemesis_lines.send_news mirrors each PDA message we send onto that mod's Messages page.
+-- For: once that mod has shown a message it moves the game's news window off-screen and leaves
+-- it there (zz_wd_pda_redirect.script 325-354), so popups sent straight through give_game_news,
+-- ours included, never show. Its entry point for such mods puts them on its own page (round 157).
+function wd_pda()
+    if wd_pda_api == nil then
+        wd_pda_api = false
+        if nemesis_engine.file_exists("$game_scripts$", "zz_wd_pda_redirect.script") then
+            pcall(function()
+                local t = zz_wd_pda_redirect and zz_wd_pda_redirect.wd_pda_redirect
+                if type(t) == "table" and type(t.push_external_faction) == "function" then wd_pda_api = t end
+            end)
+            if not wd_pda_api then dbg("!zz_wd_pda_redirect.script found but not its push_external_faction; our messages stay off its page.") end
+        end
+    end
+    return wd_pda_api
+end
+
+---------------------------------------------------------------------------
+-- AlifeTactics (damian_sirbu)
+---------------------------------------------------------------------------
+local at_found = nil               -- true / false once looked up, nil until then
+
+-- Whether AlifeTactics' rank effects are installed: its at_reaction script with apply, the
+-- function that reads a stalker's rank when he comes online (AlifeTactics at_reaction.script
+-- 317-355). Looked up once per load (forget_runtime), behind the file check (EF-048).
+-- Then: The Returning shows its "Rank effects by" choice and uses AlifeTactics' curves.
+-- For: the owner wants AlifeTactics used where it is installed, our sliders where it isn't (round 161).
+function alifetactics()
+    if at_found == nil then
+        at_found = false
+        if nemesis_engine.file_exists("$game_scripts$", "at_reaction.script") then
+            pcall(function() at_found = type(at_reaction) == "table" and type(at_reaction.apply) == "function" end)
+        end
+    end
+    return at_found
+end
+
+-- Sets a named hunter's sight and bursts for The Returning's Nemesis mode: vision (1.0 = vanilla)
+-- multiplies how fast and from how far he notices you, burst (1.0 = vanilla) his burst length.
+-- Through: xlibs xcombat.set_vision_speed, set_view_distance_factor and set_fire_queue_scale
+-- (xcombat.script 1083, 1097, 1112; no-ops on older exes). The pause between bursts stays
+-- vanilla (-1). Returns true when the exe took them.
+-- Then: nothing is kept; the engine forgets them when he goes offline, so The Returning sets them
+-- each time he comes online.
+-- For: Nemesis mode drives the rank effects for our hunters only (round 161).
+function rank_levers(obj, vision, burst)
+    if not obj then return false end
+    local ok = false
+    pcall(function()
+        -- src: xlibs xcombat.script (xcombat.set_vision_speed)
+        ok = xcombat.set_vision_speed(obj, vision) == true
+        -- src: xlibs xcombat.script (xcombat.set_view_distance_factor)
+        xcombat.set_view_distance_factor(obj, vision)
+        -- src: xlibs xcombat.script (xcombat.set_fire_queue_scale)
+        xcombat.set_fire_queue_scale(obj, burst, -1)
+    end)
+    return ok
+end
 
 ---------------------------------------------------------------------------
 -- AlifePlus
@@ -368,10 +446,96 @@ function release_hold(id, obj)
 end
 
 ---------------------------------------------------------------------------
+-- Dynamic Faction Relations Customizer, when installed (round 186)
+---------------------------------------------------------------------------
+-- DFRC decides every death's faction consequences in one function, calculate_relation_change
+-- (victim, killer, observer records with .section; called by name from its online, offline,
+-- observed and delayed-report paths). The Thunder Boss is a Loner against the world (owner,
+-- 26 October): a death where he is the killer or the victim must not move any faction's
+-- relations (his kills would otherwise count as Loner kills). The hook skips exactly those, by his
+-- own NPC section (nobody else has it; not an id, so recycled ids and delayed reports after a load
+-- are safe); every other death goes to DFRC's function unchanged. It returns nothing its callers use.
+local dfrc_hooked = false
+local dfrc_skip_logged = false
+local dfrc_skip_section = nil      -- the NPC section whose deaths DFRC skips (the Thunder Boss's)
+
+-- Whether DFRC record t (its victim_tbl / killer_tbl) is of the skipped section.
+local function dfrc_skipped(t) return type(t) == "table" and dfrc_skip_section ~= nil and t.section == dfrc_skip_section end
+
+-- calculate_relation_change in our place: nothing for a death with the skipped section, else orig.
+local function dfrc_relation_wrap(orig, victim_tbl, killer_tbl, ...)
+    if dfrc_skipped(victim_tbl) or dfrc_skipped(killer_tbl) then
+        if not dfrc_skip_logged then
+            dfrc_skip_logged = true
+            dbg("Nemesis: DFRC: a death with the Thunder Boss moves no faction's relations (logged once).")
+        end
+        return
+    end
+    return orig(victim_tbl, killer_tbl, ...)
+end
+
+-- Puts dfrc_relation_wrap on DFRC's calculate_relation_change once, for NPC section section (the
+-- Thunder Boss's, from his module at each load's first update). Nothing without DFRC. xlibs'
+-- xevent first; when another mod holds that hook or there is no xevent, the function as it is now
+-- is wrapped, so both keep working. Logged either way.
+-- src: Dynamic Faction Relations Customizer dynamic_faction_relations_customizer.script (calculate_relation_change)
+function hook_dfrc_skip(section)
+    dfrc_skip_section = section
+    if dfrc_hooked then return true end
+    -- The file first: touching a missing global makes Anomaly look for a script of that name (round 157).
+    if not nemesis_engine.file_exists("$game_scripts$", "dynamic_faction_relations_customizer.script") then return false end   -- file_exists: nemesis_engine, a file in an engine root
+    local dfrc = nil
+    pcall(function() dfrc = dynamic_faction_relations_customizer end)
+    if not (type(dfrc) == "table" and type(dfrc.calculate_relation_change) == "function") then return false end
+    local how = nil
+    local have_xevent = type(xevent) == "table" and type(xevent.register_hook) == "function"
+    local taken = false
+    if have_xevent then
+        -- src: xlibs xevent.script (xevent.is_hooked)
+        pcall(function() taken = xevent.is_hooked("dynamic_faction_relations_customizer", "calculate_relation_change") == true end)
+        if not taken then
+            -- src: xlibs xevent.script (xevent.register_hook)
+            local ok, done = pcall(xevent.register_hook, "dynamic_faction_relations_customizer", "calculate_relation_change", dfrc_relation_wrap)
+            if ok and done then how = "xlibs xevent hook" end
+        end
+    end
+    if not how then
+        local orig = dfrc.calculate_relation_change
+        -- The wrapped function: our check, then the function as it was.
+        dfrc.calculate_relation_change = function(...) return dfrc_relation_wrap(orig, ...) end
+        how = (taken and "wrapped on top of another mod's xevent hook")
+            or (have_xevent and "wrapped (xevent refused the hook)")
+            or "wrapped (this xlibs has no xevent)"
+    end
+    dfrc_hooked = true
+    dbg("Nemesis: DFRC found: deaths with the Thunder Boss move no faction's relations (%s).", how)
+    return true
+end
+
+---------------------------------------------------------------------------
+-- Interaction Dot Marks (Catspaw), when installed
+---------------------------------------------------------------------------
+-- The dot mod re-registers a dead NPC as a body marker the moment he dies and never notices the
+-- object being removed (no net-destroy hook), so a hunter's body we teleport out 0.1 s later left a
+-- marker with nothing under it: an "invisible body" (the owner's play test, 24 October 2026).
+-- Called by nemesis_fx after it removed one of ours (a body, his dropped weapon): the dot mod's own
+-- public cleanup forgets that id. Only ids we removed; nothing else of the dot mod is touched.
+function forget_dot_mark(id)
+    if not id then return end
+    pcall(function()
+        -- src: Interaction Dot Marks ui_hud_dotmarks.script (unregister_scanned_entity)
+        if ui_hud_dotmarks and ui_hud_dotmarks.unregister_scanned_entity then ui_hud_dotmarks.unregister_scanned_entity(id) end
+    end)
+end
+
+---------------------------------------------------------------------------
 -- Runtime
 ---------------------------------------------------------------------------
--- Forgets the Wearable Devices lookup, so it is looked up again after a load. Called by
--- nemesis_fx.reset_runtime, from the core's first update (Obrien has its own, reset_obrien).
+-- Forgets the Wearable Devices, Wearable Devices PDA mod and AlifeTactics lookups, so they are looked up again
+-- after a load. Called by nemesis_fx.reset_runtime, from the core's first update (Obrien has its
+-- own, reset_obrien).
 function forget_runtime()
     wd_api, wd_api_file = nil, nil
+    wd_pda_api = nil
+    at_found = nil
 end

@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="windows-1251"?>
+<string_table>
+    <!-- The Thunder Boss (nemesis_thunder_boss, round 165): its own strings, like the other modules'. -->
+    <string id="ui_mcm_nemesis_page_thunder_boss"><text>Громовой босс</text></string>
+    <string id="ui_mcm_nemesis_head_thunder"><text>Его молнии</text></string>
+    <string id="ui_mcm_nemesis_thunder_enabled"><text>Громовой босс</text></string>
+    <string id="ui_mcm_nemesis_thunder_enabled_desc"><text>Громовой босс и его молнии. Выкл.: он не приходит. По умолчанию вкл.</text></string>
+    <string id="ui_mcm_nemesis_thunder_dr"><text>Снижение урона Громового босса (%)</text></string>
+    <string id="ui_mcm_nemesis_thunder_dr_desc"><text>Насколько меньше урона он получает, пока его рука поднята и он бьёт молниями (неподвижный, он заряжен собственным электричеством), ровно: это заменяет все прочие снижения и предел максимального снижения урона. В остальное время он получает урон как босс («Снижение урона босса»): это ваш момент. По умолчанию 90.</text></string>
+    <string id="ui_mcm_nemesis_thunder_damage"><text>Урон молнии (%)</text></string>
+    <string id="ui_mcm_nemesis_thunder_damage_desc"><text>Какую часть вашего текущего здоровья забирает каждый попавший в вас разряд, сквозь любую защиту. Не стойте на месте: каждый залп бьёт туда, где вы были полсекунды назад. По умолчанию 7.</text></string>
+    <string id="ui_mcm_nemesis_thunder_range"><text>Дальность молнии (м)</text></string>
+    <string id="ui_mcm_nemesis_thunder_range_desc"><text>Как далеко его молнии достают вас. Если вы дальше (или он вас не видит), он бьёт видимого им враждебного NPC в пределах «Дальности молнии по NPC», и последний разряд заклинания его убивает. По умолчанию 30.</text></string>
+    <string id="ui_mcm_nemesis_force_next_thunder_boss"><text>Громовой босс</text></string>
+    <string id="ui_mcm_nemesis_thunder_chance"><text>Шанс Громового босса за грозу (%)</text></string>
+    <string id="ui_mcm_nemesis_thunder_chance_desc"><text>Шанс, один раз за грозу, что из неё придёт Громовой босс: только когда нет охоты и нет живого босса, после первой охоты игры, никогда во время выброса или пси-шторма и 5 реальных минут после него (гроза после выброса — не его). С погодой GAMMA гроза бывает примерно раз в полтора дня. 0 — сам он не приходит (кнопка «Вызвать следующую охоту» всё равно его приводит). По умолчанию 15.</text></string>
+    <string id="ui_mcm_nemesis_thunder_gap_days"><text>Дней между его визитами</text></string>
+    <string id="ui_mcm_nemesis_thunder_gap_days_desc"><text>Сколько игровых дней минимум между двумя визитами Громового босса: никакая гроза не приведёт его раньше. 0 — без перерыва. По умолчанию 5.</text></string>
+    <string id="ui_mcm_nemesis_thunder_regen"><text>Восстановление при заклинании (%/с)</text></string>
+    <string id="ui_mcm_nemesis_thunder_regen_desc"><text>Сколько полного здоровья он восстанавливает каждую секунду, пока его рука поднята и он бьёт молниями: давите на него между заклинаниями. 0 — нет. По умолчанию 4.</text></string>
+    <string id="ui_mcm_nemesis_thunder_name"><text>Имя Громового босса</text></string>
+    <string id="ui_mcm_nemesis_thunder_name_desc"><text>Имя Громового босса, легендарного одиночки, который охотится ради забавы. По умолчанию: Данило Раскат</text></string>
+    <string id="ui_mcm_nemesis_thunder_npc_range"><text>Дальность молнии по NPC (м)</text></string>
+    <string id="ui_mcm_nemesis_thunder_npc_range_desc"><text>Как далеко его молнии достают враждебного NPC, когда вы вне его дальности: последний разряд его убивает. Никогда не сюжетный NPC, ваш спутник или торговец. По умолчанию 45.</text></string>
+    <string id="ui_mcm_nemesis_thunder_npc_dr"><text>Снижение урона Громового босса от NPC (%)</text></string>
+    <string id="ui_mcm_nemesis_thunder_npc_dr_desc"><text>Насколько меньше урона ему наносят другие сталкеры и мутанты, всегда: они мало чем помогут против него (как с боссом выброса). Ваши выстрелы не затрагиваются. По умолчанию 60.</text></string>
+</string_table>

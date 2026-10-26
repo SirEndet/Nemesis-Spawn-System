@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="windows-1251"?>
 <string_table>
-    <!-- Nemesis Wave Spawn System: what the hunters say and the names they carry (round 134) -->
+    <!-- Nemesis Spawn System: what the hunters say and the names they carry (round 134) -->
     <string id="st_nemesis_mono_warning_1"><text>За тобой следят.</text></string>
     <string id="st_nemesis_mono_warning_2"><text>Помехи на всех частотах. Что-то приближается.</text></string>
     <string id="st_nemesis_mono_warning_3"><text>КПК ловит обрывки молитвы «Монолита». Сигнал всё ближе.</text></string>
@@ -194,6 +194,65 @@
     <string id="st_nemesis_msg_backup_loaded"><text>Ваши собственные настройки загружены из автоматической копии.</text></string>
     <string id="st_nemesis_msg_backup_none"><text>Автоматической копии пока нет.</text></string>
     <string id="st_nemesis_msg_escalation_reset"><text>Эскалация сброшена. Следующая охота начнётся с цикла 1.</text></string>
-    <string id="st_nemesis_msg_old_exes"><text>Ваши модифицированные exe старше 15 сентября 2026 года. С баллистикой GAMMA ваши выстрелы могут убить именных охотников, вместо того чтобы заставить их отступить. Обновите модифицированные exe, чтобы это исправить.</text></string>
+    <string id="st_nemesis_msg_old_exes"><text>Ваши модифицированные exe (сборка %s) старше 15 сентября 2026 года. С баллистикой GAMMA ваши выстрелы могут убить именных охотников, вместо того чтобы заставить их отступить. Обновите модифицированные exe, чтобы это исправить.</text></string>
+    <string id="st_nemesis_msg_exes_scripts_missing"><text>Ваши модифицированные exe (сборка %s) достаточно новые, но их собственные скрипты не загружены: другой мод заменяет configs/mod_script_dxml.ltx или scripts/_g_patches.script, либо папка gamedata от exe не установлена. С баллистикой GAMMA ваши выстрелы могут убить именных охотников, вместо того чтобы заставить их отступить. Переустановите модифицированные exe вместе с их gamedata или поставьте заменяющий мод выше них.</text></string>
+
+    <string id="st_nemesis_army_warning_1"><text>Армейская рация на твоей частоте. Зачитывают твою последнюю позицию.</text></string>
+    <string id="st_nemesis_army_warning_2"><text>КПК ловит военную сеть. Звучит слово «сектант», потом твоё имя.</text></string>
+    <string id="st_nemesis_army_warning_3"><text>Вдалеке лопасти вертолёта, потом тишина. Патруль идёт пешком.</text></string>
+    <string id="st_nemesis_army_warning_4"><text>Перехват: «Цель из %faction%. Огонь на поражение».</text></string>
+    <string id="st_nemesis_army_warning_5"><text>Зона тебя пометила, %name%. Армия тоже.</text></string>
+    <string id="st_nemesis_army_taunt_t1_1"><text>Контакт: одиночка из %faction%. Отделение, вперёд.</text></string>
+    <string id="st_nemesis_army_taunt_t1_2"><text>Приказ простой: найти сектанта, покончить с сектантом.</text></string>
+    <string id="st_nemesis_army_taunt_t1_3"><text>Твой Монолит тебя здесь не услышит.</text></string>
+    <string id="st_nemesis_army_taunt_t2_1"><text>В прошлый раз ты ушёл, %name%. Полковник был недоволен.</text></string>
+    <string id="st_nemesis_army_taunt_t2_2"><text>Вторая зачистка. Людей мы взяли больше.</text></string>
+    <string id="st_nemesis_army_taunt_t3_1"><text>%name%. Твоё лицо висит на каждой доске на блокпосту.</text></string>
+    <string id="st_nemesis_army_taunt_t3_2"><text>Это давно уже не просто приказ.</text></string>
+    <string id="st_nemesis_army_taunt_t4_1"><text>%name%. Первый в списке. Никто не вернётся домой, пока ты не ляжешь.</text></string>
+    <string id="st_nemesis_army_taunt_t4_2"><text>Всё кончится тем, что тебя увезут в кузове грузовика.</text></string>
+    <string id="st_nemesis_army_retreat_1"><text>Отходим. Отметьте квадрат, мы вернёмся.</text></string>
+    <string id="st_nemesis_army_retreat_2"><text>Эвакуация! Это ещё не конец.</text></string>
+    <string id="st_nemesis_army_retreat_3"><text>Назад, перегруппироваться. Мы за тобой вернёмся, %name%.</text></string>
+    <string id="st_nemesis_army_time_up_1"><text>Нас отзывают на базу. Считай, тебе повезло.</text></string>
+    <string id="st_nemesis_army_time_up_2"><text>Командование нас выводит. В следующий раз, %name%.</text></string>
+    <string id="st_nemesis_army_time_up_3"><text>Приказ об отзыве. Твоё имя остаётся в списке.</text></string>
+    <string id="st_nemesis_army_boss_1"><text>Командование подписало тебе смертный приговор, %name%. Я его доставлю.</text></string>
+    <string id="st_nemesis_army_boss_2"><text>Я вычищал целые гнёзда %faction%. Ты всего лишь ещё один.</text></string>
+    <string id="st_nemesis_army_boss_3"><text>У капеллана для тебя ничего не нашлось. У меня тоже.</text></string>
+    <string id="st_nemesis_army_boss_4"><text>Значит, ты из %faction%. Институту ты нужен в мешке.</text></string>
+    <string id="st_nemesis_army_boss_5"><text>Правила ведения боя для тебя отменены.</text></string>
+    <string id="st_nemesis_army_boss_6"><text>Остальные из %faction% — следующие. Ты первый.</text></string>
+    <string id="st_nemesis_army_boss_7"><text>Стой смирно. По-солдатски: будет быстро.</text></string>
+    <string id="st_nemesis_army_boss_8"><text>Второй выстрел мне не понадобится, %name%.</text></string>
+    <string id="st_nemesis_army_boss_warning_1"><text>Армейский канал: «Полковник %boss% принял командование охотой». Сигнал всё сильнее.</text></string>
+    <string id="st_nemesis_army_boss_warning_2"><text>КПК зависает. Военный перехват знает твои координаты.</text></string>
+    <string id="st_nemesis_army_boss_warning_3"><text>Все армейские частоты разом замолкают.</text></string>
+    <string id="st_nemesis_army_boss_stash_1"><text>Полковник %boss% убит. Координаты его тайника ушли в армейскую сеть.</text></string>
+    <string id="st_nemesis_army_boss_stash_2"><text>Армейский канал: «%boss% — двухсотый». Потом координаты: его тайник.</text></string>
+    <string id="st_nemesis_army_boss_escape_1"><text>Отозван на базу. Это не конец.</text></string>
+    <string id="st_nemesis_army_boss_escape_2"><text>Командование приказывает уходить. Наслаждайся тишиной, пока она есть.</text></string>
+    <string id="st_nemesis_army_boss_escape_3"><text>Меня выводят. В следующий раз отзыва не будет.</text></string>
+    <string id="st_nemesis_army_dread_1"><text>Ты у меня в ночном прицеле. Иди дальше.</text></string>
+    <string id="st_nemesis_army_dread_2"><text>Отсюда я считаю твои шаги.</text></string>
+    <string id="st_nemesis_army_dread_3"><text>Ты меня не увидишь. Разведку никто не видит.</text></string>
+    <string id="st_nemesis_army_dread_4"><text>Ближе, чем ты думаешь, %name%.</text></string>
+    <string id="st_nemesis_army_dread_5"><text>Уже оглядываешься, %name%?</text></string>
+    <string id="st_nemesis_army_sneak_1"><text>%name%. Не двигайся. Я прямо за тобой.</text></string>
+    <string id="st_nemesis_army_rush_1"><text>Беги, %name%. Солдаты бегают дольше.</text></string>
+    <string id="st_nemesis_army_close_1"><text>Достаточно близко, %name%. Отбой.</text></string>
+    <string id="st_nemesis_army_follow_1"><text>Другая карта тебя не спрячет, %name%.</text></string>
+    <string id="st_nemesis_army_follow_2"><text>Цель сменила позицию. Преследование продолжается.</text></string>
+    <string id="st_nemesis_army_follow_3"><text>Ты ушёл, %name%. Армия тоже.</text></string>
+    <string id="st_nemesis_army_reload_1"><text>Перезаряжаешься, %name%?</text></string>
+    <string id="st_nemesis_army_known_spot_1"><text>Та же позиция, что и в прошлый раз, %name%? Небрежно.</text></string>
+    <string id="st_nemesis_army_known_spot_2"><text>Это место у нас на карте ещё с прошлого раза, %name%.</text></string>
+    <string id="st_nemesis_rank_army_1"><text>Ефрейтор</text></string>
+    <string id="st_nemesis_rank_army_2"><text>Сержант</text></string>
+    <string id="st_nemesis_rank_army_3"><text>Лейтенант</text></string>
+    <string id="st_nemesis_rank_army_4"><text>Капитан</text></string>
+    <string id="st_nemesis_rank_army_5"><text>Майор</text></string>
+    <string id="st_nemesis_rank_army_6"><text>Полковник</text></string>
+    <string id="st_nemesis_boss_name_army"><text>Тарас Гриценко</text></string>
 
 </string_table>

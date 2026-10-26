@@ -1,12 +1,13 @@
 -- Nemesis Sound: every sound of the mod in one place (the owner's wish; gathered in round 126).
+-- Release defaults use the owner-selected Medium profile; saved settings remain unchanged.
 -- Used by: nemesis_core, nemesis_spawn (the warning, arrivals), nemesis_fx (the teleport sound,
 -- the hum's distances), nemesis_emission (the lightning), nemesis_lines (the PDA beep),
 -- nemesis_mcm (this file's menu section).
 -- Uses: xlibs xsound (play), the engine's sound_object (the hum, the warm-up), nemesis_engine
 -- (sound_exists, obj, the world's volume factors for the silence), nemesis_mcm (get_number), nemesis_state (name_of), nemesis_utils (log_tag).
--- Which file plays (pick, psy_voices), how loud (volume: the sliders on the General page), and
+-- Which file plays (pick, hum_file), how loud (volume: the sliders on the General page), and
 -- every sound the mod plays:
---   warning(boss)      the arrival warning: the radio static, for the boss also the psy voices
+--   warning(boss)      the arrival warning: the radio static (the boss's too, since round 150)
 --   teleport(spot)     the teleport sound with the burst (a retreat, a teleport death, arrivals)
 --   play_at(path, pos, volume)   any 3D one-shot (the emission boss's lightning goes through it)
 --   hum_update / hum_stop        the psy hum on the nearest named hunter
@@ -56,16 +57,21 @@ function pick(key, paths)
     return sound_pick[key] or nil
 end
 
-local PSY_L = { "anomaly\\psy_voices_1_l" }
-local PSY_R = { "anomaly\\psy_voices_1_r" }
+-- The psy hum's files, the first one that exists plays. It must be a mono file: the engine plays
+-- any 2-channel file in your head, at the volume set, wherever it is placed (xray-monolith xrSound
+-- SoundRender_Core.cpp play_at_pos: channels_num() == 2 switches it to 2D), and the hum is
+-- there to tell you where a hunter is. The Yantar psy voices (15.9 s) are mono, and no GAMMA mod
+-- replaces them (measured with ffprobe in the owner's profile). The psy antenna's own file comes
+-- second: mono in Anomaly, but GAMMA's Audio Expansion replaces it with a stereo one, so with
+-- it the hum was in your head (the owner's play test of round 148; changed in round 158).
+local HUM_FILES = { "characters_voice\\scenario\\yantar\\psy_voices_1", "anomaly\\psy_voices_1_l" }
 
--- The psy voices' files (the ones vanilla's psy antenna and the burer play), left and right
--- channel, through pick. If the right one is missing, the left one plays alone. Returns nil when
--- neither exists. Used by warning (the boss's), the hum and the warm-up.
-function psy_voices()
-    local l = pick("psy voices (left)", PSY_L)
-    if not l then return nil end
-    return l, pick("psy voices (right)", PSY_R)
+-- Returns the psy hum's file (the first of HUM_FILES that exists), or nil when none exists.
+-- Through: pick (above, cached once per session).
+-- Then: hum_update plays it on a named hunter; warm_tick loads it ahead of the first hunt.
+-- For: a hum that comes from where the hunter is (see HUM_FILES).
+function hum_file()
+    return pick("psy hum", HUM_FILES)
 end
 
 -- An MCM volume slider id (0..100 %) as 0..1, kept in range; default when it isn't set.
@@ -103,7 +109,7 @@ end
 -- Plays the teleport sound at position spot, at the Teleport volume slider. nemesis_fx calls it
 -- with its burst (play_retreat_fx): a hunter teleporting out, a body teleported away, an arrival.
 function teleport(spot)
-    return play_at("anomaly\\teleport_incoming", spot, volume("teleport_volume", 40))
+    return play_at("anomaly\\teleport_incoming", spot, volume("teleport_volume", 50))
 end
 
 -- Plays the PDA "tips" beep, the one GAMMA's own skill messages play (haru_skills), through
@@ -131,8 +137,8 @@ end
 ---------------------------------------------------------------------------
 -- The psy hum
 ---------------------------------------------------------------------------
--- The psy hum (round 102, user design: positional). The psy voices (the left file: one mono
--- channel, what the psy antenna and the burer play) looped as a 3D sound on one named hunter,
+-- The psy hum (round 102, user design: positional). A mono psy voices file (hum_file) looped
+-- as a 3D sound on one named hunter,
 -- moved with him every tick (sound_object:set_position, as other GAMMA mods move a looped hum).
 -- The engine's 3D sound does the rest: Psy hum volume within HUM_FULL_M of him, fading out at
 -- HUM_MAX_M. One source, no second hum at your ear. He keeps it while he is still in range and
@@ -167,7 +173,7 @@ function hum_update(nearest, near_id, hum_d)
     local p = obj:position()
     local pos = vector():set(p.x, p.y + 1.5, p.z)
     if not hum then
-        local path = psy_voices()
+        local path = hum_file()
         if not path then return end
         local ok, snd = pcall(function()
             -- src: engine script_sound_script.cpp (sound_object)
@@ -241,7 +247,7 @@ end
 -- when there is no living boss on this map. Out of range, or the volume at 0: it stops.
 function heart_update(boss_d)
     if not boss_d or boss_d > HEART_FROM_M then return heart_stop("the boss is out of range") end
-    if volume("heartbeat_volume", 30) <= 0 then return heart_stop("volume 0") end
+    if volume("heartbeat_volume", 60) <= 0 then return heart_stop("volume 0") end
     heart_d, heart_d_at = boss_d, time_global()
 end
 
@@ -268,7 +274,7 @@ function heart_frame(gt)
         heart.bpm = math.max(want, heart.bpm - step)
     end
     if gt < heart.next_at then return end
-    play(heart.path, volume("heartbeat_volume", 30))
+    play(heart.path, volume("heartbeat_volume", 60))
     local gap = 60000 / heart.bpm
     heart.next_at = math.max(heart.next_at + gap, gt + gap / 2)
 end
@@ -483,7 +489,7 @@ function silence_begin(boss, on_warning)
     if silence then return false end
     local fx0, mu0 = nemesis_engine.sound_factors()
     if not (fx0 and mu0) then return false end
-    local hold = nemesis_mcm.get_number("silence_length", 0.75)
+    local hold = nemesis_mcm.get_number("silence_length", 1)
     if hold < 0.5 then hold = 0.5 end
     if hold > 1 then hold = 1 end
     owed = nil
@@ -595,9 +601,7 @@ function warm_tick(gt)
     if not warm_due or gt < warm_due then return end
     warm_due = nil
     local paths = { pick("warning static", STATIC_SOUNDS), "anomaly\\teleport_incoming" }
-    local l, r = psy_voices()
-    paths[#paths + 1] = l
-    paths[#paths + 1] = r
+    paths[#paths + 1] = hum_file()
     local n = 0
     for _, p in pairs(paths) do
         -- src: engine script_sound_script.cpp (sound_object)
@@ -619,17 +623,16 @@ function mcm_sound_section()
         { id = "line_sound", type = "line" },
         { id = "head_sound", type = "title", text = "ui_mcm_nemesis_head_sound", align = "l", clr = nemesis_mcm.HEAD_CLR },
         { id = "warning_volume", type = "track", val = 2, def = 70, min = 0, max = 100, step = 5, prec = 0, hint = "nemesis_warning_volume" },
-        { id = "teleport_volume", type = "track", val = 2, def = 40, min = 0, max = 100, step = 5, prec = 0, hint = "nemesis_teleport_volume" },
+        { id = "teleport_volume", type = "track", val = 2, def = 50, min = 0, max = 100, step = 5, prec = 0, hint = "nemesis_teleport_volume" },
         { id = "hum_volume", type = "track", val = 2, def = 10, min = 0, max = 100, step = 5, prec = 0, hint = "nemesis_hum_volume" },
-        { id = "heartbeat_volume", type = "track", val = 2, def = 30, min = 0, max = 100, step = 5, prec = 0, hint = "nemesis_heartbeat_volume" },
+        { id = "heartbeat_volume", type = "track", val = 2, def = 60, min = 0, max = 100, step = 5, prec = 0, hint = "nemesis_heartbeat_volume" },
         { id = "heartbeat_top", type = "track", val = 2, def = 140, min = 120, max = 180, step = 5, prec = 0, hint = "nemesis_heartbeat_top" },
         { id = "arrival_call_volume", type = "track", val = 2, def = 50, min = 0, max = 100, step = 5, prec = 0, hint = "nemesis_arrival_call_volume" },
         { id = "arrival_ppe", type = "track", val = 2, def = 40, min = 0, max = 100, step = 5, prec = 0, hint = "nemesis_arrival_ppe" },
         { id = "arrival_escalation", type = "track", val = 2, def = 10, min = 0, max = 25, step = 1, prec = 0, hint = "nemesis_arrival_escalation" },
         { id = "arrival_max", type = "track", val = 2, def = 50, min = 0, max = 100, step = 5, prec = 0, hint = "nemesis_arrival_max" },
-        { id = "boss_jolt", type = "check", val = 1, def = false, hint = "nemesis_boss_jolt" },
         { id = "silence_before", type = "check", val = 1, def = true, hint = "nemesis_silence_before" },
-        { id = "silence_length", type = "track", val = 2, def = 0.75, min = 0.5, max = 1, step = 0.05, prec = 2, hint = "nemesis_silence_length" },
-        { id = "lightning_volume", type = "track", val = 2, def = 0, min = 0, max = 100, step = 5, prec = 0, hint = "nemesis_lightning_volume" },
+        { id = "silence_length", type = "track", val = 2, def = 1, min = 0.5, max = 1, step = 0.05, prec = 2, hint = "nemesis_silence_length" },
+        { id = "lightning_volume", type = "track", val = 2, def = 60, min = 0, max = 100, step = 5, prec = 0, hint = "nemesis_lightning_volume" },
     }
 end

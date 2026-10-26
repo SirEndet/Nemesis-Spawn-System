@@ -1,7 +1,7 @@
 -- Nemesis Events: the mod's small event bus (made in round 111; questions added in round 115).
 -- Used by: nemesis_core, nemesis_spawn, nemesis_guard, nemesis_chase, nemesis_combat,
--- nemesis_damage, nemesis_fx, nemesis_lines (they announce and ask), and the two modules,
--- nemesis_emission and nemesis_boss (they listen and answer).
+-- nemesis_damage, nemesis_fx, nemesis_lines, nemesis_mcm (they announce and ask), and the three
+-- modules, nemesis_emission, nemesis_boss and nemesis_returning (they listen and answer).
 -- Uses: nemesis_utils (log_tag) only.
 -- A few moments that several parts of the mod react to are announced here, instead of the
 -- script where they happen calling every part by name. Kept small on purpose (the owner's wish):
@@ -29,6 +29,12 @@
 --   uninstall        ()                                    Prepare for uninstall: leave nothing running
 --   offline_too_long ()                                    the hunt is called off, it stayed offline
 --                                                           (the hunters' respawn)
+--   member_added     (id, named, name)                     a member's record exists (a new hunt, an
+--                                                           extra, a follow, a lone boss), before he
+--                                                           comes online; name is the one he carries
+--                                                           (The Returning sets his rank, round 161)
+--   member_broke_off (id, r, yours)                        a named hunter breaks off; yours: your hit
+--                                                           did it (kept to come back, round 161)
 --
 -- Questions (ask): the first answer that is not nil wins; nil means "not mine, ask the next".
 --   take_hunt     (gt)                  true: a module brings its own hunt instead (spawn holds back)
@@ -47,6 +53,10 @@
 --   follow_boss   (id, follow)          true: the module made him the boss of the followed hunt
 --   squad_section (faction, follow)     the squad section a followed hunt comes back in, or nil
 --   force         (kind)                true or false: the module handled this Force the next hunt pick
+--   hunter_name   (faction, used, leader)  a named hunter's name (with his title), or nil for the usual
+--                                       random one; leader: the squad's first member (round 161)
+--   start_line    (id)                  the hunt-start line of the leader id instead of the taunt, or nil
+--   menu_page     ()                    one MCM page to show instead of the whole menu, or nil
 --   The boss module's questions (nemesis_boss; added in round 135):
 --   boss_roll     (when, warning_on)    true: the hunt's leader is the boss ("warning": rolled at the
 --                                       arrival warning; "spawn": at spawn, the warning's roll or a new one)
@@ -143,7 +153,7 @@ function ask(question, ...)
     return nil
 end
 
--- How many listeners event has. For the test kit (its module steps); the mod itself never calls it.
+-- How many listeners event has (a check from outside; the mod itself never calls it).
 function count(event) return listeners[event] and #listeners[event] or 0 end
--- How many answers question has. For the test kit, like count.
+-- How many answers question has, like count.
 function count_answers(question) return answers[question] and #answers[question] or 0 end

@@ -1,0 +1,490 @@
+-- Nemesis Pressure: the Hunt's Eye, the mod's fourth module (round 164, the owner's design of
+-- Release defaults use the owner-selected Medium profile; saved settings remain unchanged.
+-- 23 October 2026). Three pressures you can see coming, each with its sliders and a switch:
+--   Signs before the hunt   an hour before a hunt, intercepted chatter on your PDA tells you who
+--                           is coming; the hunt waits until that hour has passed;
+--   the Mark                what you do to the hunters brands you (owner, 24 October 2026, round
+--                           174): a boss you kill (most), a named hunter you kill or make break
+--                           off, a regular hunt member you kill (least); while marked, the next
+--                           hunt comes sooner. It fades with time, sleep eases it, an anti-psy
+--                           item clears it;
+--   Targeted Ground         each map has a targeting meter: it grows with every hunt fought on
+--                           it, every named hunter you make break off there, and every 12 hours
+--                           you stay; it cools three times as fast on the maps you are not on,
+--                           drops with every map travel and with an anti-psy item. A targeted map
+--                           brings its hunts sooner, and they know your remembered spots from
+--                           further away.
+-- Escalation is not touched (owner): no bigger squads, no tougher hunters.
+-- Used by: nobody by name (a module: it registers itself in its own on_game_start, at the end of
+-- this file); nemesis_mcm finds its menu page through its PAGES list.
+-- Uses: nemesis_state (S, the member records), nemesis_member (is_boss), nemesis_events (its answers and listeners),
+-- nemesis_core (add_job), nemesis_spawn (next_hunt_at), nemesis_lines (text, the PDA),
+-- nemesis_utils (the hunt's faction, log_tag, clamped), nemesis_engine (time, the map's name),
+-- nemesis_mcm (the settings); Anomaly's ini_sys (an item's psy protection) and its callbacks
+-- (actor_on_item_use, actor_on_sleep).
+--
+-- How it plugs in (the module pattern of round 115, see nemesis_events):
+--   hunt_wait_cut   the share Time between hunts is shortened by (the Mark and this map's
+--                   targeting; at most HUNT_WAIT_CUT_CAP together);
+--   hold_hunt       a hunt waits until its sign has been out for Signs lead;
+--   spot_reach      how much wider the remembered-spot radius is on this map;
+--   hunt_started, member_broke_off, member_died   the meters grow; runtime_reset   a map travel;
+--   saving, loaded  its own key in the save; a slow job   time passes for the meters.
+-- src (plain reads used throughout this file): engine script_game_object_script2.cpp (id)
+
+local hunt_state = nemesis_state.S
+
+-- Writes an [EYE] debug line, through nemesis_utils.log_tag (the tagged logger, Debug logs only).
+local function debug_line(...) nemesis_utils.log_tag("EYE", ...) end
+
+local SAVE_KEY = "nemesis_pressure"
+local SAVE_VERSION = 1
+local METER_MAX = 100              -- the Mark and each map's targeting run from 0 to this
+local HUNT_WAIT_CUT_CAP = 0.5      -- together they never shorten Time between hunts by more than half
+local SECONDS_PER_HOUR = 3600
+local PERCENT = 100
+
+-- The PDA lines' thresholds. Two numbers each, so a meter that wobbles across one does not send
+-- the same line again and again.
+local MARK_TAKEN_AT = 10           -- the Mark "takes hold"
+local MARK_STRONG_AT = 70          -- the Mark is strong (one line, until it falls under MARK_TAKEN_AT again)
+local MAP_TARGETED_AT = 50         -- a map is targeted for raids
+local MAP_COOLED_AT = 25           -- a targeted map has cooled down
+
+local LOGGED_CHANGE = 1            -- a meter's change is written to the debug log from this size up
+                                   -- (time moves them a little every slow tick, 2 s)
+local SIGN_LINES_PER_FACTION = 12  -- st_nemesis_eye_sign_<faction>_1 .. 12, in English and Russian (owner: 12 each)
+local PSY_PROTECTION_FIELD = "boost_telepat_protection"   -- an item's psy protection, in its section
+
+-- The module's state, saved under SAVE_KEY.
+local eye = nil
+-- Returns a fresh state (a new game, or before a save is read).
+local function blank_state()
+    return {
+        mark = 0,                  -- the Mark on you, 0..METER_MAX
+        map_targeting = {},        -- [map name] = its targeting meter, 0..METER_MAX
+        maps_announced = {},       -- [map name] = true while the PDA has called it targeted
+        mark_announced = false,    -- the Mark's "taken" line went out and its "gone" not yet
+        mark_strong_said = false,  -- the Mark's "strong" line went out since it last took hold
+        last_map = nil,            -- the map you were on at the last update (a travel is a change)
+        sign_for_wait = nil,       -- which wait the sign was sent for (wait_key)
+        sign_sent_at = nil,        -- game seconds the sign went out
+        last_sign_line = nil,      -- the sign line last used (never twice in a row)
+    }
+end
+eye = blank_state()
+
+local last_update_seconds = nil    -- runtime: game seconds of the meters' last time step
+
+---------------------------------------------------------------------------
+-- Settings (this page's sliders; see mcm_page below)
+---------------------------------------------------------------------------
+-- Whether the Hunt's Eye is on (its page's switch, on by default).
+local function enabled() return nemesis_mcm.get_bool("pressure_enabled", true) end   -- get_bool: nemesis_mcm, a menu checkbox (cached)
+-- A menu number of this page held to minimum..maximum.
+local function setting(id, default, minimum, maximum) return nemesis_utils.clamped(id, default, minimum, maximum) end   -- clamped: nemesis_utils, a menu number held to a range
+-- Whether Debug mode is on (the signs then never hold a hunt: debug hunts come fast).
+local function debug_mode() return nemesis_mcm.get_bool("debug_mode", false) end
+
+---------------------------------------------------------------------------
+-- Meters
+---------------------------------------------------------------------------
+-- Returns value held to 0..METER_MAX.
+local function held(value) return math.max(0, math.min(METER_MAX, value)) end
+
+-- The map you are on now, or nil.
+local function current_map() return nemesis_engine.level_name() end   -- level_name: nemesis_engine, this map's name
+
+-- The targeting meter of map (0 for none).
+local function targeting_of(map) return map and eye.map_targeting[map] or 0 end
+
+-- Sends a PDA notice under the Nemesis caption.
+local function notice(text_id, map)
+    local line = nemesis_lines.text(text_id)   -- text: nemesis_lines, a string table's text
+    if map then
+        local map_name = nemesis_lines.text(map)
+        line = string.gsub(line, "%%map%%", function() return map_name end)
+    end
+    nemesis_lines.send_news(line)   -- send_news: nemesis_lines, a PDA message
+end
+
+-- The Mark changed to value (held): its PDA lines when it takes hold, grows strong, or is gone.
+local function set_mark(value, why)
+    local before = eye.mark
+    eye.mark = held(value)
+    if math.abs(eye.mark - before) >= LOGGED_CHANGE then
+        debug_line("Nemesis: the Mark %s -> %s (%s).", string.format("%.1f", before), string.format("%.1f", eye.mark), tostring(why))
+    end
+    if not eye.mark_announced and eye.mark >= MARK_TAKEN_AT then
+        eye.mark_announced = true
+        notice("st_nemesis_eye_mark_taken")
+    elseif eye.mark_announced and not eye.mark_strong_said and eye.mark >= MARK_STRONG_AT then
+        eye.mark_strong_said = true
+        notice("st_nemesis_eye_mark_strong")
+    elseif eye.mark_announced and eye.mark <= 0 then
+        eye.mark_announced = false
+        eye.mark_strong_said = false
+        notice("st_nemesis_eye_mark_gone")
+    elseif eye.mark < MARK_TAKEN_AT then
+        eye.mark_strong_said = false
+    end
+end
+
+-- Map's targeting changed to value (held): its PDA lines when it becomes targeted or cools down.
+-- Only the map you are on is announced (you hear what is said about where you are).
+local function set_targeting(map, value, why)
+    if not map then return end
+    local before = targeting_of(map)
+    local now_value = held(value)
+    eye.map_targeting[map] = now_value > 0 and now_value or nil
+    if math.abs(now_value - before) >= LOGGED_CHANGE then
+        debug_line("Nemesis: %s's targeting %s -> %s (%s).", map, string.format("%.1f", before), string.format("%.1f", now_value), tostring(why))
+    end
+    if map ~= current_map() then
+        if now_value < MAP_COOLED_AT then eye.maps_announced[map] = nil end
+        return
+    end
+    if not eye.maps_announced[map] and now_value >= MAP_TARGETED_AT then
+        eye.maps_announced[map] = true
+        local faction = nemesis_utils.faction_for_player()   -- faction_for_player: nemesis_utils, the hunt's faction for you
+        notice("st_nemesis_eye_targeted_" .. faction, map)
+    elseif eye.maps_announced[map] and now_value < MAP_COOLED_AT then
+        eye.maps_announced[map] = nil
+        notice("st_nemesis_eye_cooled", map)
+    end
+end
+
+-- Time passes (a slow job): the Mark fades over Mark fades over (hours; 0 = never), the map you
+-- are on gains Targeting per step every Targeting step hours, and every other map cools at
+-- Cooling rate times that.
+local function pass_time()
+    local now = nemesis_engine.game_seconds()   -- game_seconds: nemesis_engine, in-game seconds
+    if not last_update_seconds or now < last_update_seconds then
+        last_update_seconds = now          -- the first step, or the clock went back (an older save)
+        return
+    end
+    local hours = (now - last_update_seconds) / SECONDS_PER_HOUR
+    last_update_seconds = now
+    if hours <= 0 or not enabled() then return end
+    local fade_hours = setting("mark_fade_hours", 48, 0, 168)
+    if fade_hours > 0 and eye.mark > 0 then
+        set_mark(eye.mark - METER_MAX * hours / fade_hours, "fades")
+    end
+    local step = setting("target_time_step", 10, 0, 30)
+    local step_hours = setting("target_step_hours", 12, 1, 48)
+    local cooling = setting("target_cool_rate", 3, 1, 10)
+    local growth = step * hours / step_hours
+    local here = current_map()
+    if here and growth > 0 then set_targeting(here, targeting_of(here) + growth, "time on the map") end
+    for map, value in pairs(eye.map_targeting) do
+        if map ~= here then set_targeting(map, value - growth * cooling, "cools") end
+    end
+end
+
+---------------------------------------------------------------------------
+-- What raises and lowers them
+---------------------------------------------------------------------------
+-- A hunt member died (member_died, order 12: before the boss module forgets its boss at 20):
+-- when you killed him (your shot or your assist, the core's rule), the Mark grows by Mark per
+-- boss kill for the hunt's boss (the boss, the emission boss or a Legend), by Mark per named kill
+-- for a named hunter, by Mark per squad kill for a regular hunt member. The owner moved the Mark
+-- from the hits you took to these kills in round 174: it is what you do to them, not what they do to you.
+local function on_member_died(id, record, by_you)
+    if not enabled() or not by_you or not record then return end
+    if nemesis_member.is_boss(id) then   -- is_boss: nemesis_member, the running hunt's boss
+        set_mark(eye.mark + setting("mark_boss_kill", 20, 0, 50), "a boss you killed")
+    elseif record.named then
+        set_mark(eye.mark + setting("mark_named_kill", 10, 0, 30), "a named hunter you killed")
+    else
+        set_mark(eye.mark + setting("mark_squad_kill", 2, 0, 10), "a hunt member you killed")
+    end
+end
+
+-- A named hunter broke off (member_broke_off): when your hits did it, the Mark grows by Mark per
+-- retreat and this map's targeting by Targeting per retreat (he got away and tells them where).
+local function on_broke_off(_, record, by_you)
+    if not enabled() or not by_you or not (record and record.named) then return end
+    set_mark(eye.mark + setting("mark_retreat", 8, 0, 30), "a named hunter you made break off")
+    local here = current_map()
+    set_targeting(here, targeting_of(here) + setting("target_retreat", 10, 0, 30), "a named hunter broke off here")
+end
+
+-- A hunt started (hunt_started): this map's targeting grows by Targeting per hunt, whatever the
+-- hunt's end will be (owner: every hunt fought counts).
+local function on_hunt_started()
+    if not enabled() then return end
+    local here = current_map()
+    set_targeting(here, targeting_of(here) + setting("target_hunt", 15, 0, 50), "a hunt here")
+end
+
+-- Whether item section protects from psy (its psy protection above 0: Anomaly's Psy-Block and
+-- sleeping pills, and whatever a modpack gives it to).
+local function is_anti_psy(section)
+    local protection = 0
+    -- src: anomaly _g.script (ini_file.r_float_ex)
+    pcall(function() protection = ini_sys:r_float_ex(section, PSY_PROTECTION_FIELD) or 0 end)
+    return protection > 0
+end
+
+-- You used an item (actor_on_item_use): an anti-psy one eases the Mark by Mark: anti-psy cut %
+-- and lowers this map's targeting by Targeting: anti-psy drop.
+local function on_item_use(_, section)
+    if not enabled() or type(section) ~= "string" or not is_anti_psy(section) then return end
+    set_mark(eye.mark * (1 - setting("mark_antipsy_cut", 35, 0, 100) / PERCENT), "an anti-psy item (" .. section .. ")")
+    local here = current_map()
+    set_targeting(here, targeting_of(here) - setting("target_antipsy_drop", 30, 0, 100), "an anti-psy item")
+end
+
+-- You slept (actor_on_sleep): the Mark eases by Mark: sleep cut %.
+local function on_sleep()
+    if not enabled() then return end
+    set_mark(eye.mark * (1 - setting("mark_sleep_cut", 50, 0, 100) / PERCENT), "a night's sleep")
+end
+
+-- You came to a new map (seen on the first update after a load: a map travel loads the game):
+-- every map's targeting drops by Targeting: travel drop.
+local function on_travel(from_map, to_map)
+    debug_line("Nemesis: map travel, %s -> %s.", tostring(from_map), tostring(to_map))
+    local drop = setting("target_travel_drop", 20, 0, 100)
+    for map, value in pairs(eye.map_targeting) do set_targeting(map, value - drop, "a map travel") end
+end
+
+---------------------------------------------------------------------------
+-- Their effects
+---------------------------------------------------------------------------
+-- The share Time between hunts is shortened by now (hunt_wait_cut): the Mark's share of Mark:
+-- sooner % plus this map's targeting's share of Targeting: sooner %, at most HUNT_WAIT_CUT_CAP.
+local function hunt_wait_cut()
+    if not enabled() then return nil end
+    local mark_part = eye.mark / METER_MAX * setting("mark_sooner", 30, 0, 50) / PERCENT
+    local map_part = targeting_of(current_map()) / METER_MAX * setting("target_sooner", 25, 0, 50) / PERCENT
+    local cut = math.min(HUNT_WAIT_CUT_CAP, mark_part + map_part)
+    if cut <= 0 then return nil end
+    return cut
+end
+
+-- How much wider the remembered-spot radius is on map (spot_reach): 1 plus its targeting's share
+-- of Targeting: spot reach %.
+local function spot_reach(map)
+    if not enabled() then return nil end
+    local value = targeting_of(map)
+    if value <= 0 then return nil end
+    return 1 + value / METER_MAX * setting("target_reach", 100, 0, 200) / PERCENT
+end
+
+---------------------------------------------------------------------------
+-- Signs before the hunt
+---------------------------------------------------------------------------
+-- Which wait the next hunt is at the end of: the first hunt's (the grace period), or the one
+-- since the last hunt ended. A sign is sent once per wait.
+local function wait_key()
+    if (hunt_state.spawned_count or 0) == 0 then return "first" end
+    return tostring(hunt_state.last_retreat)
+end
+
+-- Signs lead in game seconds (0: no signs).
+local function sign_lead_seconds() return setting("signs_lead", 1, 0, 6) * SECONDS_PER_HOUR end
+
+-- Sends the sign for this wait: one of the hunt faction's chatter lines (never the last one), under
+-- the intercepted-frequency caption.
+local function send_sign(now)
+    local faction = nemesis_utils.faction_for_player()
+    local choices = {}
+    for index = 1, SIGN_LINES_PER_FACTION do
+        if index ~= eye.last_sign_line then choices[#choices + 1] = index end
+    end
+    local index = choices[math.random(#choices)]
+    eye.last_sign_line = index
+    eye.sign_for_wait = wait_key()
+    eye.sign_sent_at = now
+    local line = nemesis_lines.text("st_nemesis_eye_sign_" .. faction .. "_" .. index)
+    local here = current_map()
+    local map_name = here and nemesis_lines.text(here) or ""
+    line = string.gsub(line, "%%map%%", function() return map_name end)
+    nemesis_lines.send_news(nemesis_lines.fill_line(line), nemesis_lines.text("st_nemesis_caption_intercepted"))   -- fill_line: nemesis_lines, the usual placeholders
+    debug_line("Nemesis: the sign before the hunt (%s line %s); the hunt waits %s h from now.", faction, tostring(index),
+        string.format("%.1f", sign_lead_seconds() / SECONDS_PER_HOUR))
+end
+
+-- A slow job: the sign goes out Signs lead before the next hunt's wait ends, while no hunt runs.
+local function sign_tick()
+    if not enabled() or hunt_state.phase ~= "idle" or hunt_state.follow then return end
+    local lead = sign_lead_seconds()
+    if lead <= 0 or eye.sign_for_wait == wait_key() then return end
+    local hunt_at = nemesis_spawn.next_hunt_at()   -- next_hunt_at: nemesis_spawn, when the next hunt's wait ends
+    if not hunt_at then return end
+    local now = nemesis_engine.game_seconds()
+    if now >= hunt_at - lead then send_sign(now) end
+end
+
+-- Whether the hunt must still wait (hold_hunt): until its sign has been out for Signs lead. A wait
+-- that ended before the sign could go out (the Mark shortened it) gets its sign now, and its hour.
+-- Debug mode never holds a hunt (the sign is still sent).
+local function hold_hunt(now)
+    if not enabled() then return nil end
+    local lead = sign_lead_seconds()
+    if lead <= 0 then return nil end
+    if eye.sign_for_wait ~= wait_key() then send_sign(now) end
+    if debug_mode() then return nil end
+    if now < (eye.sign_sent_at or now) + lead then return true end
+    return nil
+end
+
+---------------------------------------------------------------------------
+-- Save and load
+---------------------------------------------------------------------------
+-- Returns map_targeting as one string: "map=value;...".
+local function pack_maps(maps)
+    local parts = {}
+    for map, value in pairs(maps) do parts[#parts + 1] = map .. "=" .. string.format("%.2f", value) end
+    return table.concat(parts, ";")
+end
+
+-- Returns the maps back from pack_maps's string; a malformed item is skipped.
+local function unpack_maps(text)
+    local maps = {}
+    for map, value in string.gmatch(type(text) == "string" and text or "", "([^;=]+)=([%d%.]+)") do
+        local number = tonumber(value)
+        if number and number > 0 then maps[map] = held(number) end
+    end
+    return maps
+end
+
+-- The saving listener: the module's own key in the save.
+local function on_saving(save_data)
+    if type(save_data) ~= "table" then return end
+    local announced = {}
+    for map in pairs(eye.maps_announced) do announced[#announced + 1] = map end
+    save_data[SAVE_KEY] = { v = SAVE_VERSION, mark = eye.mark, maps = pack_maps(eye.map_targeting),
+                            announced = table.concat(announced, ";"), mark_announced = eye.mark_announced or nil,
+                            mark_strong = eye.mark_strong_said or nil, last_map = eye.last_map,
+                            sign_for = eye.sign_for_wait, sign_at = eye.sign_sent_at, sign_line = eye.last_sign_line }
+end
+
+-- The loaded listener: the module's state back from its key (a save without it starts empty).
+local function on_loaded(save_data)
+    eye = blank_state()
+    local saved = type(save_data) == "table" and save_data[SAVE_KEY] or nil
+    if type(saved) ~= "table" then return end
+    eye.mark = held(tonumber(saved.mark) or 0)
+    eye.map_targeting = unpack_maps(saved.maps)
+    for map in string.gmatch(type(saved.announced) == "string" and saved.announced or "", "[^;]+") do eye.maps_announced[map] = true end
+    eye.mark_announced = saved.mark_announced == true
+    eye.mark_strong_said = saved.mark_strong == true
+    eye.last_map = type(saved.last_map) == "string" and saved.last_map or nil
+    eye.sign_for_wait = type(saved.sign_for) == "string" and saved.sign_for or nil
+    eye.sign_sent_at = tonumber(saved.sign_at)
+    eye.last_sign_line = tonumber(saved.sign_line)
+end
+
+-- Writes one status line (Debug logs): the Mark, and every map's targeting.
+local function status_line()
+    local maps = {}
+    for map, value in pairs(eye.map_targeting) do maps[#maps + 1] = map .. " " .. string.format("%.0f", value) end
+    table.sort(maps)
+    debug_line("Nemesis: the Hunt's Eye: the Mark %s; targeting: %s.", string.format("%.0f", eye.mark),
+        #maps > 0 and table.concat(maps, ", ") or "none")
+end
+
+-- The first update after a load or of a new game (runtime_reset): a new game starts empty; a map
+-- other than the one saved is a map travel; the time step starts again from now.
+local function on_runtime_reset(loaded)
+    if not loaded then eye = blank_state() end
+    local here = current_map()
+    if loaded and eye.last_map and here and here ~= eye.last_map then on_travel(eye.last_map, here) end
+    eye.last_map = here or eye.last_map
+    last_update_seconds = nemesis_engine.game_seconds()
+    if loaded then status_line() end
+end
+
+---------------------------------------------------------------------------
+-- The module: everything the core and the spawn ask it, and everything it listens to, added
+-- here (the module pattern since round 115; this module since round 164). Nothing calls it by
+-- name. An answer returns nil for "not mine"; never false where nil is
+-- meant.
+---------------------------------------------------------------------------
+function on_game_start()
+    local name = "The Hunt's Eye"
+    local answers, listeners = 0, 0
+    -- Adds answer fn to question under this module's name, counted for the line at the end.
+    local function answer(question, fn)
+        answers = answers + 1
+        nemesis_events.answer(question, name, fn)   -- answer: nemesis_events, a module's answer to a question
+    end
+    -- Adds listener fn to event under this module's name, counted for the line at the end.
+    local function listen(event, fn)
+        listeners = listeners + 1
+        nemesis_events.on(event, name, fn)   -- on: nemesis_events, a listener to an event
+    end
+    answer("hunt_wait_cut", hunt_wait_cut)
+    answer("hold_hunt", hold_hunt)
+    answer("spot_reach", spot_reach)
+    listen("hunt_started", on_hunt_started)
+    listen("member_broke_off", on_broke_off)
+    listeners = listeners + 1
+    nemesis_events.on("member_died", name, on_member_died, 12)   -- order 12: the boss is still the boss
+    listen("runtime_reset", on_runtime_reset)
+    listen("saving", on_saving)
+    listen("loaded", on_loaded)
+    -- add_job: nemesis_core, a job on the core's tick or slow tick
+    nemesis_core.add_job("slow", "the Hunt's Eye's meters", pass_time, 62, true)
+    nemesis_core.add_job("slow", "the sign before the hunt", sign_tick, 63, true)
+    -- src: anomaly _g.script (RegisterScriptCallback)
+    RegisterScriptCallback("actor_on_item_use", on_item_use)
+    RegisterScriptCallback("actor_on_sleep", on_sleep)
+    debug_line("Nemesis: The Hunt's Eye is in (%s answers, %s listeners, 2 slow jobs, 2 callbacks).", tostring(answers), tostring(listeners))
+end
+
+---------------------------------------------------------------------------
+-- Settings: this script declares the Hunt's Eye's page (round 164; the owner: a page of its own)
+---------------------------------------------------------------------------
+-- nemesis_mcm puts the menu together from the scripts that own its pages and saves every value
+-- under "nemesis/pressure/<id>". Labels and tooltips come from ui_mcm_nemesis_<id> (this module's
+-- configs/text/<language>/ui_mcm_nemesis_pressure.xml). mcm_presets: this page's share of Easy,
+-- Medium and Hard, made by the round 113 rule (20% each way, see nemesis_mcm); Signs lead is in none
+-- (Hard would turn the warning off: the fairness rule). Both are called when the menu is built,
+-- never at load.
+function mcm_page()
+    return { id = "pressure", sh = true, text = "ui_mcm_nemesis_page_pressure", gr = {
+        { id = "title", type = "slide", link = "ui_options_slider_player", text = "ui_mcm_nemesis_title", size = {512, 50}, spacing = 20 },
+        { id = "head_pressure", type = "title", text = "ui_mcm_nemesis_head_pressure", align = "l", clr = nemesis_mcm.HEAD_CLR },
+        { id = "pressure_enabled", type = "check", val = 1, def = true, hint = "nemesis_pressure_enabled" },
+        { id = "signs_lead", type = "track", val = 2, def = 1, min = 0, max = 6, step = 1, prec = 0, hint = "nemesis_signs_lead" },
+        { id = "line_mark", type = "line" },
+        { id = "head_mark", type = "title", text = "ui_mcm_nemesis_head_mark", align = "l", clr = nemesis_mcm.HEAD_CLR },
+        { id = "mark_boss_kill", type = "track", val = 2, def = 20, min = 0, max = 50, step = 1, prec = 0, hint = "nemesis_mark_boss_kill" },
+        { id = "mark_named_kill", type = "track", val = 2, def = 10, min = 0, max = 30, step = 1, prec = 0, hint = "nemesis_mark_named_kill" },
+        { id = "mark_squad_kill", type = "track", val = 2, def = 2, min = 0, max = 10, step = 1, prec = 0, hint = "nemesis_mark_squad_kill" },
+        { id = "mark_retreat", type = "track", val = 2, def = 8, min = 0, max = 30, step = 1, prec = 0, hint = "nemesis_mark_retreat" },
+        { id = "mark_sooner", type = "track", val = 2, def = 30, min = 0, max = 50, step = 5, prec = 0, hint = "nemesis_mark_sooner" },
+        { id = "mark_fade_hours", type = "track", val = 2, def = 48, min = 0, max = 168, step = 1, prec = 0, hint = "nemesis_mark_fade_hours" },
+        { id = "mark_sleep_cut", type = "track", val = 2, def = 50, min = 0, max = 100, step = 5, prec = 0, hint = "nemesis_mark_sleep_cut" },
+        { id = "mark_antipsy_cut", type = "track", val = 2, def = 35, min = 0, max = 100, step = 5, prec = 0, hint = "nemesis_mark_antipsy_cut" },
+        { id = "line_targeting", type = "line" },
+        { id = "head_targeting", type = "title", text = "ui_mcm_nemesis_head_targeting", align = "l", clr = nemesis_mcm.HEAD_CLR },
+        { id = "target_hunt", type = "track", val = 2, def = 15, min = 0, max = 50, step = 1, prec = 0, hint = "nemesis_target_hunt" },
+        { id = "target_retreat", type = "track", val = 2, def = 10, min = 0, max = 30, step = 1, prec = 0, hint = "nemesis_target_retreat" },
+        { id = "target_time_step", type = "track", val = 2, def = 10, min = 0, max = 30, step = 1, prec = 0, hint = "nemesis_target_time_step" },
+        { id = "target_step_hours", type = "track", val = 2, def = 12, min = 1, max = 48, step = 1, prec = 0, hint = "nemesis_target_step_hours" },
+        { id = "target_cool_rate", type = "track", val = 2, def = 3, min = 1, max = 10, step = 1, prec = 0, hint = "nemesis_target_cool_rate" },
+        { id = "target_travel_drop", type = "track", val = 2, def = 20, min = 0, max = 100, step = 5, prec = 0, hint = "nemesis_target_travel_drop" },
+        { id = "target_antipsy_drop", type = "track", val = 2, def = 30, min = 0, max = 100, step = 5, prec = 0, hint = "nemesis_target_antipsy_drop" },
+        { id = "target_sooner", type = "track", val = 2, def = 25, min = 0, max = 50, step = 5, prec = 0, hint = "nemesis_target_sooner" },
+        { id = "target_reach", type = "track", val = 2, def = 100, min = 0, max = 200, step = 10, prec = 0, hint = "nemesis_target_reach" },
+    } }
+end
+
+-- This page's share of the presets (see above).
+function mcm_presets()
+    return {
+        easy = { mark_boss_kill = 16, mark_named_kill = 8, mark_squad_kill = 1, mark_retreat = 6, mark_sooner = 20, mark_fade_hours = 38, mark_sleep_cut = 60,
+                 mark_antipsy_cut = 40, target_time_step = 8, target_step_hours = 14, target_cool_rate = 4, target_hunt = 12,
+                 target_retreat = 8, target_travel_drop = 25, target_antipsy_drop = 35, target_sooner = 20, target_reach = 80 },
+        medium = { mark_boss_kill = 20, mark_named_kill = 10, mark_squad_kill = 2, mark_retreat = 8, mark_sooner = 30, mark_fade_hours = 48, mark_sleep_cut = 50,
+                   mark_antipsy_cut = 35, target_time_step = 10, target_step_hours = 12, target_cool_rate = 3, target_hunt = 15,
+                   target_retreat = 10, target_travel_drop = 20, target_antipsy_drop = 30, target_sooner = 25, target_reach = 100 },
+        hard = { mark_boss_kill = 24, mark_named_kill = 12, mark_squad_kill = 3, mark_retreat = 10, mark_sooner = 40, mark_fade_hours = 58, mark_sleep_cut = 40,
+                 mark_antipsy_cut = 30, target_time_step = 12, target_step_hours = 10, target_cool_rate = 2, target_hunt = 18,
+                 target_retreat = 12, target_travel_drop = 15, target_antipsy_drop = 25, target_sooner = 30, target_reach = 120 },
+    }
+end

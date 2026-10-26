@@ -1,10 +1,10 @@
 # Nemesis error lines: which ones always show
 
-Nemesis writes its log lines only with **Debug logs** on (MCM, Debug & tools), with one exception: an **important error** is always written, whatever Debug logs says. It shows in the console in bright yellow, labelled `NEMESIS IMPORTANT ERROR (please report)`, and each message at most once a minute, so one that repeats cannot flood the log.
+Nemesis writes its lines into its own log file, `appdata/logs/nemesis.log` (next to the game's log; since 1.0.3): every line with **Debug logs** on (MCM, Debug & tools), and error lines always. The game's own log stays quiet, with one exception: an **important error** is always written there too, whatever Debug logs says. It shows in the console in bright yellow, labelled `NEMESIS IMPORTANT ERROR (please report)`, and each message at most once a minute, so one that repeats cannot flood the log.
 
-An error is important when it may lead to a crash or a broken save, or breaks something lasting without a word. In the code such a line is marked `!!` (`nemesis_utils.log_tag`). Every other error line (`!Nemesis ERROR`) is written only with Debug logs on: the mod copes with it (a feature stays off for the session, or one try fails and is tried again).
+An error is important when it may lead to a crash or a broken save, or breaks something lasting without a word. In the code such a line is marked `!!` (`nemesis_utils.log_tag`). Other error lines (`!Nemesis ERROR`) are always written to `nemesis.log`, including with Debug logs off; they do not normally appear in the game log. Ordinary diagnostic lines require Debug logs. The mod can recover from these errors, for example by disabling one feature or retrying an operation.
 
-**If you see an important error, please report it** with your log (Debug logs on, if you can make it happen again).
+**If you see an important error, please report it** with both logs (`xray_<name>.log` and `nemesis.log`; Debug logs on, if you can make it happen again).
 
 ## A. Always shown: may crash the game, or leave a save that will not load
 
@@ -30,8 +30,13 @@ An error is important when it may lead to a crash or a broken save, or breaks so
 ## Also always shown (a notice, not an error)
 
 - `nemesis_damage`: "these modded exes have no callback tiers (added 15 September 2026) ...": with GAMMA ballistics on exes older than 15 September 2026, Nemesis can't protect its named hunters from your shots. Update the modded exes. Also sent once as a PDA message.
-- `nemesis_core`: "Nemesis Wave Spawn System <version> loaded": the version that ran, for bug reports.
+- `nemesis_core`: "Nemesis Spawn System <version> loaded": the version that ran, for bug reports.
 
-## C. Debug logs only (the mod copes)
+## C. In `nemesis.log` only (the mod copes)
 
-Everything else marked `!Nemesis ERROR`, for example: a horde squad that could not be created (the horde stays away), a missing sound or screen effect file (that effect stays off), a PDA message that failed (retried once with a vanilla icon), a chase action that could not be added (that hunter is left to the game's own AI), a missing `treasure_manager` (no boss stash), a menu option nothing answered.
+Everything else marked `!Nemesis ERROR`, for example: a horde squad that could not be created (the horde stays away), a missing sound or screen effect file (that effect stays off), a PDA message that failed (retried once with a vanilla icon), a chase action that could not be added (that hunter is left to the game's own AI), a missing `treasure_manager` (no boss stash), a menu option nothing answered, a PDA message the Wearable Devices PDA mod did not take (missing from its Messages page, still in the PDA's history), a Legend who could not come (he stays waiting), the Thunder Boss's cast action that could not be added (he fights with his gun only), a Thunder Boss who could not come (the Force pick is dropped), the chase gate that failed (logged once; the chase lets that hunter go, combat takes him: the game no longer crashes there, since round 169), a chase step that failed (logged once; that step is skipped).
+
+## D. Expected lines (not errors)
+
+- `nemesis_guard`: "release guard (expected): kept the hunt squad / hunt member <id> from Anomaly's release while the hunt runs": when the hunt squad's last member dies (often the boss at the end of a boss hunt), Anomaly asks to delete the squad; the guard keeps it while the hunt runs, and the mod removes the empty squad after the hunt. A plain Debug logs line since round 182 (before: an error-marked line with a traceback).
+- `nemesis_core`: "Nemesis DIAG: hunt member <id> unregistered (...)" right after leaving the game: the level unloads its objects; harmless at a quit.

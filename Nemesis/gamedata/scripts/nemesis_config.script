@@ -1,8 +1,9 @@
--- Nemesis Config: the player's own small file, gamedata/configs/nwss_player.ltx, which this mod
--- alone reads and writes (made in round 117).
+-- Nemesis Config: the player's own small file, gamedata/configs/nss_player.ltx, which this mod
+-- alone reads and writes (made in round 117; named nwss_player.ltx before 1.0.3, see migrate).
 -- Used by: nemesis_guard (the death record, section [death]), nemesis_mcm (the settings backup,
 -- section [custom_backup]).
--- Uses: Anomaly's ini_file_ex (_g.script: a writable ini file with save), nemesis_utils (log_tag).
+-- Uses: Anomaly's ini_file_ex (_g.script: a writable ini file with save, collect_section),
+-- nemesis_engine (file_exists), nemesis_utils (log_tag).
 -- Written the way Anomaly writes axr_options.ltx and other mods write theirs (Body Health System,
 -- Wearable Devices): ini_file_ex(name, true), w_value, save (Anomaly's _g.script). Under Mod
 -- Organizer it lands in the overwrite folder. The game never reads it as configuration (it is no
@@ -12,8 +13,10 @@
 --   [death]          pending (1 or 0), at (game seconds of the death), cycle (the cycle then):
 --                    killed by a hunter, the next loaded save from before that death has its
 --                    escalation halved (nemesis_guard). 0 once applied.
---   [custom_backup]  your own settings, kept before a difficulty replaces them (nemesis_mcm).
+--   [custom_backup]  your own settings, kept when you leave Custom for a difficulty (nemesis_mcm).
 --                    "from" says which difficulty was applied.
+--   [migrated]       from: the old file the two sections above were copied from, once (migrate);
+--                    old_removed: the old file is gone or emptied (remove_old_file), from the next start.
 --
 -- Why a value and not a file that comes and goes (the owner's choice, round 117): the old marker file
 -- (nemesis_death_reset.txt) was deleted with os.remove, which never worked under Mod Organizer's
@@ -24,9 +27,96 @@
 local function dbg(...) nemesis_utils.log_tag("CONFIG", ...) end
 
 -- The file's name under gamedata/configs; nemesis_mcm and nemesis_guard name it in their log lines.
-FILE = "nwss_player.ltx"
+FILE = "nss_player.ltx"
+-- The same file before 1.0.3, under the mod's old name (Nemesis Wave Spawn System). Read, never written.
+OLD_FILE = "nwss_player.ltx"
+-- What the old file held that the new one carries on: the death record and the settings backup.
+local MIGRATED_SECTIONS = { "death", "custom_backup" }
 
 local ini = nil                    -- the open file (ini_file_ex, advanced mode)
+
+-- Carries the old file's death record and settings backup into new file f, for the owner's 1.0.3
+-- rename of the mod (from round 186): only when f holds neither section yet (the new file is preferred) and the
+-- old file exists. The old file is opened read-only and never saved, so it stays as it was; the
+-- new file gets the sections, a [migrated] note, and is saved. Runs at each session's first open,
+-- so a player who skipped versions is still carried over.
+local function migrate(f)
+    for _, section in ipairs(MIGRATED_SECTIONS) do
+        -- src: anomaly _g.script ini_file_ex (section_exist)
+        local has = false
+        pcall(function() has = f:section_exist(section) end)
+        if has then return end
+    end
+    if not nemesis_engine.file_exists("$game_config$", OLD_FILE) then return end   -- file_exists: nemesis_engine, a file in an engine root
+    -- src: anomaly _g.script ini_file_ex (ini_file_ex)
+    local ok, old = pcall(ini_file_ex, OLD_FILE)
+    if not (ok and old) then
+        dbg("!Nemesis ERROR: the old settings file %s could not be read (%s); nothing carried over.", OLD_FILE, tostring(old))
+        return
+    end
+    local copied = 0
+    for _, section in ipairs(MIGRATED_SECTIONS) do
+        local values = nil
+        -- src: anomaly _g.script ini_file_ex (collect_section)
+        pcall(function() values = old:collect_section(section) end)
+        for key, value in pairs(values or {}) do
+            -- src: anomaly _g.script ini_file_ex (w_value)
+            if pcall(function() f:w_value(section, key, value) end) then copied = copied + 1 end
+        end
+    end
+    if copied == 0 then return end
+    pcall(function()
+        -- src: anomaly _g.script ini_file_ex (w_value, save)
+        f:w_value("migrated", "from", OLD_FILE)
+        f:save()
+    end)
+    dbg("Nemesis: %s values (the death record and the settings backup) carried over from %s into %s; the old file goes at the next start.",
+        tostring(copied), OLD_FILE, FILE)
+end
+
+-- The old file goes once the new one is safe (the owner, 26 October: automatic, after the copy):
+-- only when new file f carries the [migrated] note and a fresh reader finds it on disk (X-Ray indexes
+-- files at the game start, so that is from the start after the copy: a copy that never reached the
+-- disk keeps the old file). Then the old file is removed (os.remove, by its full path); if it is
+-- still there (a Mod Organizer virtual folder does not let it go, round 117), its two sections are
+-- emptied and saved, so nothing is read from it again. [migrated] old_removed marks it done.
+local function remove_old_file(f)
+    local migrated, done = nil, nil
+    -- src: anomaly _g.script ini_file_ex (r_value)
+    pcall(function()
+        migrated = f:r_value("migrated", "from")
+        done = f:r_value("migrated", "old_removed")
+    end)
+    if migrated ~= OLD_FILE or done then return end
+    if not nemesis_engine.file_exists("$game_config$", OLD_FILE) then return end   -- file_exists: nemesis_engine, a file in an engine root
+    local on_disk = false
+    -- src: anomaly _g.script ini_file_ex (ini_file_ex, section_exist)
+    pcall(function() on_disk = ini_file_ex(FILE):section_exist("migrated") end)
+    if not on_disk then return end
+    local path = nemesis_engine.full_path("$game_config$", OLD_FILE)   -- full_path: nemesis_engine, a file's path under an engine root
+    local removed = false
+    -- src: lua os (os.remove)
+    if path then removed = pcall(function() assert(os.remove(path)) end) end
+    local how = "removed"
+    if not removed then
+        how = "emptied (it could not be removed)"
+        pcall(function()
+            -- src: anomaly _g.script ini_file_ex (ini_file_ex, collect_section, remove_line, w_value, save)
+            local old = ini_file_ex(OLD_FILE, true)
+            for _, section in ipairs(MIGRATED_SECTIONS) do
+                for key in pairs(old:collect_section(section) or {}) do old:remove_line(section, key) end
+            end
+            old:w_value("migrated", "to", FILE)
+            old:save()
+        end)
+    end
+    pcall(function()
+        -- src: anomaly _g.script ini_file_ex (w_value, save)
+        f:w_value("migrated", "old_removed", 1)
+        f:save()
+    end)
+    dbg("Nemesis: the old settings file %s is %s; %s holds your settings now.", OLD_FILE, how, FILE)
+end
 
 -- Opens the file once per session and keeps it: ini_file_ex in advanced mode (writable; Anomaly's
 -- _g.script). Returns nil when this game has no ini_file_ex or opening fails (an error line,
@@ -37,7 +127,13 @@ local function open()
     if type(ini_file_ex) == "nil" then return nil end
     -- src: anomaly _g.script ini_file_ex (ini_file_ex)
     local ok, f = pcall(ini_file_ex, FILE, true)
-    if ok and f then ini = f else dbg("!Nemesis ERROR: %s could not be opened (%s).", FILE, tostring(f)) end
+    if ok and f then
+        ini = f
+        migrate(ini)
+        remove_old_file(ini)
+    else
+        dbg("!Nemesis ERROR: %s could not be opened (%s).", FILE, tostring(f))
+    end
     return ini
 end
 

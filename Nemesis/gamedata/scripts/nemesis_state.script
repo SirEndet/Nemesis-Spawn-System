@@ -118,13 +118,16 @@ function remember_spot(lvl, pos, now)
     if on_level > SPOT_MAX then table.remove(S.spots, oldest) end
 end
 
--- Whether pos on level lvl is within SPOT_NEAR_M of a spot remembered in the last SPOT_DAYS.
--- Called by nemesis_core, which then tells the chase that they know where you are.
-function known_spot(lvl, pos, now)
+-- Whether pos on level lvl is within SPOT_NEAR_M of a spot remembered in the last SPOT_DAYS;
+-- reach_factor (1 when not given) widens that radius (the Hunt's Eye on a targeted map: they
+-- know your ground better, round 164). Called by nemesis_core, which then tells the chase that
+-- they know where you are.
+function known_spot(lvl, pos, now, reach_factor)
     if not lvl or not pos or not now then return false end
+    local near_m = SPOT_NEAR_M * math.max(1, tonumber(reach_factor) or 1)
     for _, p in ipairs(S.spots) do
         if p.lvl == lvl and now - p.t < SPOT_DAYS * 86400 and now >= p.t
-            and flat_dist2(p, pos) <= SPOT_NEAR_M * SPOT_NEAR_M then
+            and flat_dist2(p, pos) <= near_m * near_m then
             return true
         end
     end

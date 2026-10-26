@@ -1,0 +1,1299 @@
+-- Nemesis Thunder Boss: the mod's fifth module (round 165, the owner's design of 23 October 2026:
+-- "this will be 100% for the Thunder Boss"; reshaped in round 195). Danylo Raskat, a Loner against
+-- the world who fights with lightning.
+--   Who he is    a real Loner (his own NPC section and squad); every faction is his enemy and he
+--                is theirs, you too; his death and his kills move no faction's standing (Relations).
+--   His cast     after a short charge he puts his weapon away and raises his hand, a bolt from the
+--                sky strikes into it, and he looses CAST_VOLLEYS volleys of arcs, aimed at where the
+--                target was AIM_DELAY_MS before: keep moving and they miss. A bolt that reaches you
+--                takes Lightning damage % of your current health, through all protection; an NPC
+--                target dies on his volley's last bolt. While his hand is up he takes far less damage
+--                and heals; after the cast, half the time, a long wild suppression burst.
+--   His coming   rarely, out of a real thunderstorm (Thunder Boss chance per storm, Days between his
+--                visits), or at once by Force the next hunt; alone, as the hunt's boss, in lightning.
+--                An NPC's kill takes him away in lightning too; killed by you, his body stays.
+-- The file, in order: state and settings; Relations; Effects; Targets; The cast; The cast action
+-- (the engine's planner); The frame job; Coming and going; Save and load; The module (its answers
+-- and listeners); the menu page.
+-- Used by: nobody by name (a module: on_game_start registers it); nemesis_mcm finds its menu page
+-- through its PAGES list; nemesis_damage, nemesis_spawn, nemesis_chase, nemesis_core, nemesis_guard,
+-- nemesis_boss and nemesis_fx ask its answers.
+-- Uses: nemesis_state (S, the member records), nemesis_events (its answers and listeners),
+-- nemesis_core (add_job), nemesis_chase (takeover_planner_ids), nemesis_spawn (spawn_lone_boss),
+-- nemesis_fx (his model), nemesis_combat (set_focus), nemesis_lines (text), nemesis_sound (his
+-- sounds), nemesis_compat (surge_on, hook_dfrc_skip), nemesis_engine (objects, time, his relations
+-- and community, drain_player_health), nemesis_utils (log_tag, clamped, the hunt's faction and
+-- squad), nemesis_mcm (the settings); xlibs xcreature (is_unscriptable, is_trader: never a protected
+-- target), xcombat (is_line_blocked, set_fire_queue_scale) and xgraft (TAKEOVER_ID); Anomaly's
+-- state_mgr (combat_action_ids); the engine's particles, script lights, hits and the planner
+-- (property_evaluator, action_base).
+-- Release defaults use the owner-selected Medium profile; saved settings remain unchanged.
+-- src (plain reads used throughout this file): engine script_game_object_script2.cpp (id, position, alive)
+
+local hunt_state = nemesis_state.S
+
+-- Writes a [THUNDER] debug line, through nemesis_utils.log_tag (the tagged logger, Debug logs only).
+local function debug_line(...) nemesis_utils.log_tag("THUNDER", ...) end
+
+local SAVE_KEY = "nemesis_thunder_boss"
+local NAME_TEXT = "st_nemesis_thunder_boss_name"   -- his default name, Danylo Raskat (the owner's pick; a string table text)
+local SAVE_VERSION = 1
+
+---------------------------------------------------------------------------
+-- State
+---------------------------------------------------------------------------
+local casters = {}                 -- [id] = true for the running hunt's casters: the Thunder Boss (saved)
+local force_pending = false        -- Force the next hunt: Thunder Boss, waiting for a hunt-free moment (saved)
+local storm_rolled = false         -- this storm's roll is made (one roll a storm; saved)
+local last_visit_seconds = nil     -- game seconds of his last arrival (Days between his visits; saved)
+local last_surge_ms = nil          -- runtime: time_global an emission or psy storm was last seen on
+local casts = {}                   -- runtime: [caster id] = the running cast (see start_cast)
+local next_cast_at = {}            -- runtime: [caster id] = time_global when he may cast again
+local cast_installed = {}          -- runtime: [caster id] = true once his cast action is on his manager
+local planners_held = {}           -- runtime: [caster id] = { [planner id] = true } planners already waiting on his cast
+local aura_next_at = {}            -- runtime: [caster id] = time_global of his next aura crackle
+local surge_falls = {}             -- runtime: [caster id] = { from = time_global his hand came down, next_at }
+local charges = {}                 -- runtime: [caster id] = { ends_at, spark_at, sound_at } while he charges
+local suppression_ends_at = {}     -- runtime: [caster id] = time_global his suppression burst ends
+local planner_refs = {}            -- runtime: [caster id] = { evaluator, action } kept alive for the manager
+local target_history = {}          -- runtime: [target id] = { { at, x, y, z }, ... } where he was, newest last
+local live_effects = {}            -- runtime: { { object, stop_at }, ... } particles and lights to switch off
+local travel_strikes = {}          -- runtime: { { at, spot, loud }, ... } his coming's or going's strikes still to come, by time
+local effect_failed = {}           -- runtime: [effect name] = true once its failure is in the Debug logs
+local communities = nil            -- runtime: every community of the game (all_communities), read once
+local community_given = {}         -- runtime: [caster id] = the community we last gave him
+local hostility_next_at = {}       -- runtime: [caster id] = time_global of his next hostility step
+
+---------------------------------------------------------------------------
+-- Settings (this page's sliders; see mcm_page below)
+---------------------------------------------------------------------------
+-- Whether the Thunder Boss is on (his page's switch, on by default).
+local function enabled() return nemesis_mcm.get_bool("thunder_enabled", true) end   -- get_bool: nemesis_mcm, a menu checkbox (cached)
+-- A menu number of this page held to minimum..maximum.
+local function setting(id, default, minimum, maximum) return nemesis_utils.clamped(id, default, minimum, maximum) end   -- clamped: nemesis_utils, a menu number held to a range
+-- Lightning range at you, in metres (the slider).
+local function lightning_range_m() return setting("thunder_range", 30, 10, 60) end
+-- Lightning range at NPCs, in metres (the slider; owner, round 168: further than at you).
+local function npc_range_m() return setting("thunder_npc_range", 45, 10, 80) end
+-- His damage reduction against NPCs and mutants, a share (the slider; as the emission boss's).
+local function npc_cut() return setting("thunder_npc_dr", 60, 0, 95) / 100 end
+-- The share of your current health a bolt takes (Lightning damage %).
+local function lightning_share() return setting("thunder_damage", 7, 1, 20) / 100 end
+-- His healing while his hand is up, a share of his full health per second (Regeneration while casting %).
+local function regen_per_second() return setting("thunder_regen", 4, 0, 10) / 100 end
+-- His flat damage cut while his hand is up (Thunder Boss damage reduction %; owner: only then).
+local function caster_cut() return setting("thunder_dr", 90, 50, 95) / 100 end
+-- His chance per thunderstorm, % (the slider).
+local function storm_chance() return setting("thunder_chance", 15, 0, 100) end
+-- In-game days at least between his visits (the slider).
+local function gap_days() return setting("thunder_gap_days", 5, 0, 14) end
+
+---------------------------------------------------------------------------
+-- Relations
+---------------------------------------------------------------------------
+-- Who he is (owner, 26 October 2026: "Thunder Boss is Loner, exempt listed if possible, with a status
+-- of being enemies with EVERYONE, he is a lone man against the world"), since round 186:
+--   a real Loner: his own NPC section and squad (configs/mod_system_nemesis_thunder.ltx,
+--     squad_descr_nemesis_thunder.ltx), a copy of Anomaly's top-rank Loner (Coming and going);
+--   everyone fights him: every community's goodwill toward him at HOSTILE_GOODWILL (kept in his own
+--     relation entry; hostile_to_all);
+--   he fights you and everyone near him: his own total goodwill toward them at HIS_GOODWILL, every
+--     HOSTILITY_STEP_MS (hostility_step), but never a story NPC or a trader (he would break a quest);
+--   no standing change from his death: at the hit that may kill him, or below LOW_HEALTH_DEATH_COMMUNITY
+--     (a bleeding death has no hit), his community is DEATH_COMMUNITY, the game's own enemy of all,
+--     which the Dynamic Faction Relations Customizer and "Killing Friends Reduces Goodwill" leave
+--     alone and Anomaly counts as an enemy kill; his body keeps it (round 189: changing a dead
+--     stalker's community moves his team in the engine, which a dead one has left, and that left
+--     the game's scripts half-broken in the owner's play test);
+--   no standing change from his kills: DFRC skips every death he is part of (nemesis_compat.hook_dfrc_skip).
+local HOSTILE_GOODWILL = -5000             -- the engine clamps it to community_goodwill_limits
+local HIS_GOODWILL = -3000                 -- his own total toward you and NPCs (personal_goodwill_limits' low end)
+local LIVING_COMMUNITY = "stalker"         -- a Loner while he lives
+local DEATH_COMMUNITY = "arena_enemy"      -- at his death
+local LOW_HEALTH_DEATH_COMMUNITY = 0.2     -- at or below this health he carries DEATH_COMMUNITY
+local HEALTH_BACK_TO_LONER = 0.3           -- above this (healing while casting) a Loner again
+local HOSTILITY_STEP_MS = 2000             -- how often his enemies near him are set
+local HOSTILITY_RANGE_M = 100              -- how far around him (beyond Lightning range at NPCs)
+local HOSTILITY_MAX = 40                   -- at most this many NPCs a step
+
+-- Every community of the game: the names in game_relations.ltx's [game_relations] communities (a
+-- name, a number, ...), read once. Empty when it cannot be read.
+local function all_communities()
+    if communities then return communities end
+    communities = {}
+    local text = nemesis_engine.system_string("game_relations", "communities")   -- system_string: nemesis_engine, a value of system.ltx
+    for token in string.gmatch(text or "", "[^,]+") do
+        local word = string.match(token, "^%s*(.-)%s*$")
+        if word ~= "" and not tonumber(word) then communities[#communities + 1] = word end
+    end
+    return communities
+end
+
+-- Every community hostile to him (see the head of Relations): their goodwill toward id at
+-- HOSTILE_GOODWILL, on his own relation entry. You too (the actor_ communities are in the list).
+local function hostile_to_all(id)
+    local set = 0
+    for _, community in ipairs(all_communities()) do
+        -- set_community_goodwill_toward: nemesis_engine, a community's goodwill toward one of ours
+        if nemesis_engine.set_community_goodwill_toward(community, id, HOSTILE_GOODWILL) then set = set + 1 end
+    end
+    debug_line("Nemesis: the Thunder Boss is everyone's enemy (%s of %s communities).", tostring(set), tostring(#all_communities()))
+end
+
+-- Gives caster (id) community, once per change (community_given).
+local function give_community(caster, id, community)
+    if community_given[id] == community then return end
+    if nemesis_engine.set_community(caster, community) then   -- set_community: nemesis_engine, the community of one of ours
+        community_given[id] = community
+        debug_line("Nemesis: the Thunder Boss's community is %s now.", community)
+    end
+end
+
+-- His own total goodwill toward you and every stalker within HOSTILITY_RANGE_M of him at
+-- HIS_GOODWILL, every HOSTILITY_STEP_MS, at most HOSTILITY_MAX NPCs a step: never one of ours, a
+-- story NPC or a trader. Written on his own relation entry (nemesis_engine.force_set_goodwill with
+-- him first). Why not set_relation (round 191): its fixed -1000 read as neutral toward you (your
+-- standing with the Loners and your reputation lifted it over the -999 line), so he ignored you in
+-- the owner's play test; the hunt's own enemy line toward you skips him (own_player_relation).
+local function hostility_step(caster, id, now)
+    if now < (hostility_next_at[id] or 0) then return end
+    hostility_next_at[id] = now + HOSTILITY_STEP_MS
+    local actor = db.actor
+    local actor_id = actor and actor:id()
+    if actor then nemesis_engine.force_set_goodwill(caster, HIS_GOODWILL, actor) end   -- force_set_goodwill: nemesis_engine, his total toward you
+    local origin = caster:position()
+    local reach_sq = HOSTILITY_RANGE_M * HOSTILITY_RANGE_M
+    local done = 0
+    -- src: xlibs xcreature.script (xcreature.iterate_online, is_stalker, is_unscriptable, is_trader)
+    for npc_id, npc in xcreature.iterate_online() do
+        if done >= HOSTILITY_MAX then break end
+        -- is_stalker: xlibs xcreature, by class; member: nemesis_state, one of ours is left alone
+        if npc and npc_id ~= id and npc_id ~= actor_id and xcreature.is_stalker(npc) and not nemesis_state.member(npc_id) then
+            local spot = npc:position()
+            local dx, dz = spot.x - origin.x, spot.z - origin.z
+            -- is_unscriptable, is_trader: xlibs xcreature, a story NPC or a trader is left alone
+            if dx * dx + dz * dz <= reach_sq and xcreature.is_unscriptable(npc) ~= true and xcreature.is_trader(npc) ~= true then
+                nemesis_engine.force_set_goodwill(caster, HIS_GOODWILL, npc)   -- force_set_goodwill: nemesis_engine, his total toward one NPC
+                done = done + 1
+            end
+        end
+    end
+end
+
+-- His community by his health (see the head of Relations): DEATH_COMMUNITY when he is low, a Loner
+-- again once he is above HEALTH_BACK_TO_LONER; first set after a load, when it is not known.
+local function community_step(caster, id)
+    local health = caster.health or 1
+    if health <= LOW_HEALTH_DEATH_COMMUNITY then
+        give_community(caster, id, DEATH_COMMUNITY)
+    elseif health > HEALTH_BACK_TO_LONER or community_given[id] == nil then
+        give_community(caster, id, LIVING_COMMUNITY)
+    end
+end
+
+---------------------------------------------------------------------------
+-- Effects
+---------------------------------------------------------------------------
+-- How a bolt looks (only the game's own effects: Anomaly reads one particles.xr, so none of ours).
+local ARC_SEGMENT_M = 2.2          -- one spark every this far along the bolt (owner, round 168: "the effect is too much"; was 1.2)
+local ARC_SEGMENTS_MAX = 12        -- at most this many sparks a bolt (was 24)
+local ARC_SWAY_M = 0.25            -- each spark sits this far off the straight line, at most (a jagged bolt)
+local ARC_PARTICLES = "anomaly2\\effects\\electra2_trails"
+local HAND_PARTICLES = "anomaly2\\electra2_blast"            -- Electro's own discharge (zone_mine_electric.ltx)
+local HIT_BODY_PARTICLES = "crommcruac\\electrocute_human"   -- the psy storm's, on a struck body
+local HIT_GROUND_PARTICLES = "anomaly2\\electra_entrance_small"
+local PARTICLE_LIFE_MS = 700       -- a bolt's sparks are stopped after this
+local BOLT_SOUND = "anomaly\\electra_blast1"                 -- Electro's blowout
+local HIT_SOUND = "anomaly\\electra_hit"
+local LIGHT_COLOUR = { 0.8, 0.9, 1.0 }                       -- Electro's light colour (zone_mine_electric.ltx)
+local LIGHT_RANGE_M = 9
+local LIGHT_LIFE_MS = 160
+local LIGHT_FLICKER = "koster_01_electra"                    -- an electric flicker (a light animation)
+-- The wind-up (owner, 23 October: "a literal thunder from the sky to his hand"), and his coming
+-- and going: a bolt drawn from SKY_BOLT_HEIGHT_M above down to the spot (draw_sky_bolt), Electro's
+-- discharge where it lands, the psy storm's thunder, a big flash. Since round 193: the psy storm's
+-- own particle (crommcruac\\psi_storm_01) is a slow vortex whose strike comes about 20 s in
+-- (psi_storm_manager.script vortex: hit at 20 s), so stopped at 2.5 s it showed nothing but our flash.
+local SKY_STRIKE_SOUND = "anomaly\\psi_storm_01"
+local SKY_LIGHT_RANGE_M = 25
+local SKY_LIGHT_LIFE_MS = 350
+local SKY_BOLT_HEIGHT_M = 25       -- the sky bolt starts this far above the spot
+
+-- His aura (the owner's play test, 23 October: "electricity at his legs, partially in the ground").
+local AURA_PARTICLES = "anomaly2\\effects\\anomaly_electra_idle_sparks"   -- Electro's idle sparks
+local AURA_STEP_MS = 300           -- a new crackle every this long
+local AURA_LIFE_MS = 700           -- each crackle is stopped after this
+local AURA_RADIUS_M = 0.6          -- around his feet, at most this far out
+local AURA_LOW_M, AURA_HIGH_M = -0.15, 0.35   -- from a little under the ground to his shins
+
+-- The surge (owner, 23 October): as his hand goes up, a second crackle starts at his feet, where
+-- the aura is, and climbs to his chest over SURGE_RISE_MS, matching the hand; it crackles there
+-- while his hand stays up, and as his hand comes down it sinks back to his feet over the same
+-- time and is gone.
+local SURGE_RISE_MS = 2000         -- feet to chest, and chest to feet again
+local SURGE_STEP_MS = 80           -- a spark every this long while it climbs
+local SURGE_TOP_M = 1.3            -- chest height over his feet
+local SURGE_RADIUS_M = 0.35        -- close around his body
+
+-- The warning (owner, 23 October: "spawn the electricity 5s before he uses his electric ability as
+-- a warning sign"): before every cast he charges for CHARGE_MS, the sparks at his legs thicker,
+-- quicker and higher, with Electro's idle buzz; he can still move and fight. At its end he casts
+-- if he still sees a target in range; else the charge fades and he tries again later.
+local CHARGE_MS = 1500             -- 1.5 s against everyone, the owner's call in round 168 (was 5 s); then 1.5 s of wind-up
+local CHARGE_STEP_MS = 90          -- a spark every this long while he charges (the aura: AURA_STEP_MS)
+local CHARGE_HIGH_M = 0.9          -- the charge's sparks reach this high (the aura's: AURA_HIGH_M)
+local CHARGE_SOUND = "anomaly\\electra_idle1"                  -- Electro's own idle hum
+local CHARGE_SOUND_STEP_MS = 1600  -- the buzz again every this long while he charges
+
+-- How he travels (owner, 24 October 2026: "he uses lightning to move around"): he comes and, when
+-- an NPC kills him, leaves in TRAVEL_STRIKES strikes from the sky at random moments within
+-- TRAVEL_WINDOW_MS, in place of the teleport burst. Killed by you, his body stays (no strikes).
+local TRAVEL_STRIKES = 5           -- sky strikes when he comes or goes
+local TRAVEL_WINDOW_MS = 700       -- all of them within this time, at random moments
+local TRAVEL_SPREAD_M = 0.5        -- each this far from his spot, at most
+
+-- Plays particle effect name at position; it is stopped after life_ms.
+local function play_effect(name, position, life_ms)
+    local ok, err = pcall(function()
+        -- src: engine script_particles_script.cpp (particles_object, play_at_pos)
+        local effect = particles_object(name)
+        effect:play_at_pos(position)
+        live_effects[#live_effects + 1] = { object = effect, stop_at = time_global() + life_ms }
+    end)
+    -- Debug logs, once per effect name (round 192: the owner saw none of his electricity, and a
+    -- failure here was silent).
+    if not ok and not effect_failed[name] then
+        effect_failed[name] = true
+        debug_line("Nemesis FX: the effect %s could not be played (%s).", name, tostring(err))
+    end
+end
+
+-- A blue flash of light at position, flickering like Electro's, range_m wide (LIGHT_RANGE_M when
+-- not given), for life_ms (LIGHT_LIFE_MS when not given).
+local function flash_light(position, range_m, life_ms)
+    pcall(function()
+        -- src: MT engine script_light_script.cpp (script_light); used as in FDDA Redone's ea_light.script
+        local light = script_light()
+        light.type = 1                     -- a point light
+        light.range = range_m or LIGHT_RANGE_M
+        light.lanim = LIGHT_FLICKER
+        light.hud_mode = false
+        light.shadow = true
+        light.volumetric = false
+        light.color = fcolor():set(LIGHT_COLOUR[1], LIGHT_COLOUR[2], LIGHT_COLOUR[3], 1)
+        light:set_position(position)
+        light.enabled = true
+        light:update()
+        live_effects[#live_effects + 1] = { object = light, stop_at = time_global() + (life_ms or LIGHT_LIFE_MS), is_light = true }
+    end)
+end
+
+-- Plays sound file name at position at Lightning volume (General page: one slider for every
+-- lightning sound of the mod, the owner's call; round 166), through nemesis_sound (xlibs
+-- xsound); a file the game doesn't have is skipped.
+local function play_sound(name, position)
+    local path = nemesis_sound.pick("thunder_boss " .. name, { name })   -- pick: nemesis_sound, the file when the game has it
+    local volume = nemesis_sound.volume("lightning_volume", 60)   -- volume: nemesis_sound, a volume slider as 0..1
+    if path and volume > 0 then nemesis_sound.play_at(path, position, volume) end   -- play_at: nemesis_sound, a 3D sound at a spot
+end
+
+-- Stops the particles and lights whose time is up (every frame, from frame_job).
+local function stop_effects(now)
+    for index = #live_effects, 1, -1 do
+        local entry = live_effects[index]
+        if now >= entry.stop_at then
+            pcall(function()
+                if entry.is_light then
+                    entry.object.enabled = false
+                    entry.object:update()
+                else
+                    entry.object:stop()
+                end
+            end)
+            table.remove(live_effects, index)
+        end
+    end
+end
+
+-- Lays sparks along the line from start to finish, each a little off it (a jagged bolt). Returns
+-- false when the line is too short to draw.
+local function lay_sparks(start, finish)
+    local dx, dy, dz = finish.x - start.x, finish.y - start.y, finish.z - start.z
+    local length = math.sqrt(dx * dx + dy * dy + dz * dz)
+    if length < 0.5 then return false end
+    local segments = math.max(3, math.min(ARC_SEGMENTS_MAX, math.floor(length / ARC_SEGMENT_M)))
+    for step = 1, segments do
+        local along = step / segments
+        local sway = (step < segments) and ARC_SWAY_M or 0
+        local spark = vector():set(start.x + dx * along + (math.random() * 2 - 1) * sway,
+                                   start.y + dy * along + (math.random() * 2 - 1) * sway,
+                                   start.z + dz * along + (math.random() * 2 - 1) * sway)
+        play_effect(ARC_PARTICLES, spark, PARTICLE_LIFE_MS)
+    end
+    return true
+end
+
+-- Draws one arc from start to finish: the sparks along it, a flash and light at the start, the
+-- discharge sound.
+local function draw_arc(start, finish)
+    if not lay_sparks(start, finish) then return end
+    play_effect(HAND_PARTICLES, start, PARTICLE_LIFE_MS)
+    flash_light(start)
+    play_sound(BOLT_SOUND, start)
+end
+
+-- Draws a bolt from the sky down to spot: the sparks from SKY_BOLT_HEIGHT_M above, Electro's
+-- discharge and the big flash where it lands. Silent (the callers play the thunder once).
+local function draw_sky_bolt(spot)
+    lay_sparks(vector():set(spot.x, spot.y + SKY_BOLT_HEIGHT_M, spot.z), spot)
+    play_effect(HAND_PARTICLES, spot, PARTICLE_LIFE_MS)
+    flash_light(vector():set(spot.x, spot.y + 1, spot.z), SKY_LIGHT_RANGE_M, SKY_LIGHT_LIFE_MS)
+end
+
+-- His aura: Electro's sparks crackling up out of the ground around his feet, every AURA_STEP_MS.
+local function aura_step(caster, id, now)
+    if now < (aura_next_at[id] or 0) then return end
+    aura_next_at[id] = now + AURA_STEP_MS
+    local feet = caster:position()
+    local angle = math.random() * 2 * math.pi
+    local out = math.random() * AURA_RADIUS_M
+    local spot = vector():set(feet.x + math.cos(angle) * out, feet.y + AURA_LOW_M + math.random() * (AURA_HIGH_M - AURA_LOW_M),
+                              feet.z + math.sin(angle) * out)
+    play_effect(AURA_PARTICLES, spot, AURA_LIFE_MS)
+end
+
+-- One step of caster's charge (the warning before a cast): thicker, quicker, higher sparks at his
+-- legs and Electro's buzz. Returns true when the charge is over.
+local function charge_step(caster, charge, now)
+    if now >= charge.spark_at then
+        charge.spark_at = now + CHARGE_STEP_MS
+        local feet = caster:position()
+        local angle = math.random() * 2 * math.pi
+        local out = math.random() * AURA_RADIUS_M
+        play_effect(AURA_PARTICLES, vector():set(feet.x + math.cos(angle) * out, feet.y + AURA_LOW_M + math.random() * (CHARGE_HIGH_M - AURA_LOW_M),
+                                                 feet.z + math.sin(angle) * out), AURA_LIFE_MS)
+    end
+    if now >= charge.sound_at then
+        charge.sound_at = now + CHARGE_SOUND_STEP_MS
+        play_sound(CHARGE_SOUND, caster:position())
+    end
+    return now >= charge.ends_at
+end
+
+-- One spark of the surge around caster at share (0 = his feet, 1 = his chest) of SURGE_TOP_M.
+local function surge_spark(caster, share)
+    local feet = caster:position()
+    local angle = math.random() * 2 * math.pi
+    play_effect(AURA_PARTICLES, vector():set(feet.x + math.cos(angle) * SURGE_RADIUS_M, feet.y + SURGE_TOP_M * share,
+                                             feet.z + math.sin(angle) * SURGE_RADIUS_M), AURA_LIFE_MS)
+end
+
+-- Queues his travel strikes at spot (his feet): TRAVEL_STRIKES at random moments within
+-- TRAVEL_WINDOW_MS from now, sorted, each up to TRAVEL_SPREAD_M off; only the first is heard
+-- (one thunderclap, not three: the owner, round 192). Drawn by travel_strikes_step.
+local function queue_travel_strikes(spot)
+    local now = time_global()
+    local moments = {}
+    for strike = 1, TRAVEL_STRIKES do moments[strike] = now + math.random(0, TRAVEL_WINDOW_MS) end
+    table.sort(moments)
+    for strike, at in ipairs(moments) do
+        local x = spot.x + (math.random() * 2 - 1) * TRAVEL_SPREAD_M
+        local z = spot.z + (math.random() * 2 - 1) * TRAVEL_SPREAD_M
+        travel_strikes[#travel_strikes + 1] = { at = at, spot = vector():set(x, spot.y, z), loud = strike == 1 }
+    end
+    table.sort(travel_strikes, function(a, b) return a.at < b.at end)
+end
+
+---------------------------------------------------------------------------
+-- Targets
+---------------------------------------------------------------------------
+-- Where each target was (the aim of a volley at you: where you were AIM_DELAY_MS before).
+local AIM_DELAY_MS = 500           -- a volley aims at where the target was this long before it
+local HISTORY_STEP_MS = 100        -- where each target was is kept at this step
+local HISTORY_KEEP_MS = 1500       -- and for this long
+local CANDIDATES_MAX = 12          -- at most this many NPCs get the full checks per volley (the cheap search)
+
+-- Notes where object was now (every frame, kept every HISTORY_STEP_MS per target).
+local function remember_position(id, object, now)
+    local list = target_history[id]
+    if not list then
+        list = {}
+        target_history[id] = list
+    end
+    local last = list[#list]
+    if last and now - last.at < HISTORY_STEP_MS then return end
+    local position = object:position()
+    list[#list + 1] = { at = now, x = position.x, y = position.y, z = position.z }
+    while #list > 1 and now - list[1].at > HISTORY_KEEP_MS do table.remove(list, 1) end
+end
+
+-- Where target id was AIM_DELAY_MS before now (the nearest noted spot at or before it; his oldest
+-- one, or fallback, when none is that old).
+local function position_before(id, now, fallback)
+    local list = target_history[id]
+    if not list or #list == 0 then return fallback end
+    local wanted_at = now - AIM_DELAY_MS
+    local chosen = list[1]
+    for _, spot in ipairs(list) do
+        if spot.at <= wanted_at then chosen = spot else break end
+    end
+    return vector():set(chosen.x, chosen.y, chosen.z)
+end
+
+-- The target caster would cast at now, or nil: you when he sees you within Lightning range,
+-- else his best enemy when that is an NPC within Lightning range at NPCs, alive and seen, and
+-- never one of ours, a story NPC, your companion or a trader (xlibs xcreature.is_unscriptable,
+-- is_trader: his last zap kills, and no quest may break by it).
+local function pick_target(caster)
+    local range = lightning_range_m()
+    local actor = db.actor
+    local seen = false
+    -- src: engine script_game_object_script2.cpp (see)
+    if actor then pcall(function() seen = caster:see(actor) end) end
+    if seen and caster:position():distance_to(actor:position()) <= range then return actor end
+    local enemy = nil
+    -- src: engine script_game_object_script2.cpp (best_enemy)
+    pcall(function() enemy = caster:best_enemy() end)
+    -- member: nemesis_state, a member record (one of ours is never a target)
+    if not enemy or (actor and enemy:id() == actor:id()) or nemesis_state.member(enemy:id()) then return nil end
+    local protected = true
+    -- src: xlibs xcreature.script (xcreature.is_unscriptable, xcreature.is_trader)
+    pcall(function() protected = xcreature.is_unscriptable(enemy) == true or xcreature.is_trader(enemy) == true end)
+    if protected then return nil end
+    local usable = false
+    pcall(function() usable = enemy:alive() and caster:see(enemy) and caster:position():distance_to(enemy:position()) <= npc_range_m() end)
+    if usable then return enemy end
+    return nil
+end
+
+-- Whether npc may be struck by caster's lightning: an NPC or mutant, alive, his enemy or he npc's,
+-- seen, within Lightning range at NPCs, never one of ours, a story NPC, your companion or a trader
+-- (xlibs). Either side's enmity counts (round 189): his own goodwill toward an NPC could read
+-- neutral (hostility_step has made it firm since round 191), and their side holds HOSTILE_GOODWILL
+-- (hostile_to_all).
+local function strikable(caster, npc)
+    local ok = false
+    pcall(function()
+        if nemesis_state.member(npc:id()) then return end   -- member: nemesis_state, one of ours is never a target
+        -- src: xlibs xcreature.script (xcreature.is_unscriptable, xcreature.is_trader)
+        if xcreature.is_unscriptable(npc) == true or xcreature.is_trader(npc) == true then return end
+        -- src: engine script_game_object_script2.cpp (alive, relation, see)
+        local enemies = caster:relation(npc) == game_object.enemy or npc:relation(caster) == game_object.enemy
+        ok = npc:alive() and enemies and caster:see(npc)
+            and caster:position():distance_to(npc:position()) <= npc_range_m()
+    end)
+    return ok
+end
+
+-- The target of caster's volley number (1-3), or nil: volley 1 is yours when he sees you within
+-- Lightning range; the others go to an NPC enemy (strikable), the one nearest to you first (the
+-- owner's "cool effect"), else the one nearest to him. No NPC: you again; you out of reach: NPCs only.
+local function volley_target(caster, number)
+    local actor = db.actor
+    local you_in_reach = false
+    if actor then
+        pcall(function() you_in_reach = caster:see(actor) and caster:position():distance_to(actor:position()) <= lightning_range_m() end)
+    end
+    if number == 1 and you_in_reach then return actor end
+    local best, best_score = nil, nil
+    local actor_id = actor and actor:id()
+    local caster_id = caster:id()
+    local origin = caster:position()
+    local reach_sq = npc_range_m() * npc_range_m()
+    local looked_at = 0
+    -- Cheap first, since walking every online object with the full checks cost 200 ms a volley
+    -- in the owner's play test (round 169): only stalkers and mutants, only within reach (a squared
+    -- distance), the full checks (strikable) last, and at most CANDIDATES_MAX of them.
+    -- src: xlibs xcreature.script (xcreature.iterate_online)
+    for id, npc in xcreature.iterate_online() do
+        if npc and id ~= actor_id and id ~= caster_id and looked_at < CANDIDATES_MAX
+            and (xcreature.is_stalker(npc) or xcreature.is_mutant(npc)) then   -- is_stalker, is_mutant: xlibs xcreature, by class (cheap)
+            local spot = npc:position()
+            local dx, dz = spot.x - origin.x, spot.z - origin.z
+            if dx * dx + dz * dz <= reach_sq then
+                looked_at = looked_at + 1
+                if strikable(caster, npc) then
+                    local score = actor and spot:distance_to(actor:position()) or math.sqrt(dx * dx + dz * dz)
+                    if not best_score or score < best_score then best, best_score = npc, score end
+                end
+            end
+        end
+    end
+    if best then return best end
+    if you_in_reach then return actor end
+    return nil
+end
+
+---------------------------------------------------------------------------
+-- The cast
+---------------------------------------------------------------------------
+-- The cast (owner: volleys every 3 s, 2-5 bolts each, at the spot 0.5 s before, 20 s between
+-- casts; the second coder: 3 volleys a cast, the bolts 0.12 s apart).
+local CAST_VOLLEYS = 3             -- volleys in one cast
+local VOLLEY_INTERVAL_MS = 3000    -- from one volley to the next
+local FIRST_VOLLEY_DELAY_MS = 1500 -- from the hand going up (and the sky's strike into it) to the first volley (owner: 1.5 s)
+local HAND_RAISE_WAIT_MS = 1500    -- the wind-up starts anyway if his action hasn't taken him by then
+local BOLTS_MIN, BOLTS_MAX = 2, 5  -- bolts in a volley (internal: owner, no slider)
+local BOLT_GAP_MS = 120            -- between the bolts of a volley: one crackling burst
+local COOLDOWN_MS = 20000          -- from a cast's end to the next cast's earliest start
+local WIND_DOWN_MS = 600           -- the hand stays up this long after the last bolt
+
+-- Where a bolt goes and what it hits.
+local HAND_BONE = "bip01_r_hand"   -- the arc leaves from his right hand
+local AIM_HEIGHT_M = 1.2           -- a bolt aims at the chest, this high over the feet
+local BOLT_JITTER_M = 0.35         -- each bolt of a volley lands this far off the aim, at most
+local BOLT_HIT_RADIUS_M = 1.0      -- you are hit within this flat distance of where a bolt lands (owner, round 168; was 1.5)
+
+-- The NPC's end: a hit no armour stops (the owner: "no matter what").
+local KILL_HIT_POWER = 1000
+
+-- After a cast (owner, round 168: "a big, 2.5s very inaccurate burst ... should make people shit
+-- their pants"): half the time he opens up with one long burst, wildly off.
+local SUPPRESSION_CHANCE = 0.5
+local SUPPRESSION_MS = 2500
+local SUPPRESSION_BURST_SCALE = 8  -- his bursts this many times longer (xlibs' burst lever, latest exes)
+local SUPPRESSION_SPREAD = 4       -- his shots this many times wider (our shot-spread hook)
+
+-- His hand, where the arc leaves from (his chest when the bone can't be read).
+local function hand_position(caster)
+    local position = nil
+    -- src: engine script_game_object_script3.cpp (bone_position)
+    pcall(function() position = caster:bone_position(HAND_BONE) end)
+    if position then return position end
+    local feet = caster:position()
+    return vector():set(feet.x, feet.y + AIM_HEIGHT_M, feet.z)
+end
+
+-- Whether a wall stands between start and the player (xlibs' ray check; false when it can't tell).
+local function wall_between(start, player)
+    local is_blocked = false
+    pcall(function()
+        local feet = player:position()
+        -- src: xlibs xcombat.script (xcombat.is_line_blocked)
+        is_blocked = xcombat.is_line_blocked(vector():set(start.x, feet.y, start.z), feet,
+                                             { from_y = start.y - feet.y, to_y = AIM_HEIGHT_M }) == true
+    end)
+    return is_blocked
+end
+
+-- One bolt from caster at aim (feet height): drawn, and when the target is you and you stand
+-- within BOLT_HIT_RADIUS_M of where it lands with no wall between, it takes Lightning damage %
+-- of your current health (nemesis_engine.drain_player_health: through all protection).
+local function fire_bolt(caster, at_player, aim)
+    local start = hand_position(caster)
+    local finish = vector():set(aim.x + (math.random() * 2 - 1) * BOLT_JITTER_M, aim.y + AIM_HEIGHT_M,
+                                aim.z + (math.random() * 2 - 1) * BOLT_JITTER_M)
+    draw_arc(start, finish)
+    local actor = db.actor
+    if at_player and actor then
+        local feet = actor:position()
+        local flat = math.sqrt((feet.x - finish.x) ^ 2 + (feet.z - finish.z) ^ 2)
+        if flat <= BOLT_HIT_RADIUS_M and not wall_between(start, actor) then
+            local share = lightning_share()
+            nemesis_engine.drain_player_health(share)   -- drain_player_health: nemesis_engine, a share of your health, no protection
+            play_effect(HIT_BODY_PARTICLES, vector():set(feet.x, feet.y + AIM_HEIGHT_M, feet.z), PARTICLE_LIFE_MS)
+            play_sound(HIT_SOUND, feet)
+            debug_line("Nemesis: a bolt hits you (%s %% of your health).", string.format("%.0f", share * 100))
+            return
+        end
+    end
+    play_effect(at_player and HIT_GROUND_PARTICLES or HIT_BODY_PARTICLES, finish, PARTICLE_LIFE_MS)
+end
+
+-- The NPC target's end, on the last zap: a shock hit no armour stops, from the caster.
+local function kill_target(caster, target)
+    pcall(function()
+        if not target:alive() then return end
+        -- src: engine script_hit_script.cpp (hit)
+        local blow = hit()
+        blow.type = hit.shock
+        blow.power = KILL_HIT_POWER
+        blow.impulse = 0
+        blow.draftsman = caster
+        blow.direction = vector():set(0, -1, 0)
+        -- src: engine script_game_object_script2.cpp (hit)
+        target:hit(blow)
+    end)
+    debug_line("Nemesis: the last zap kills %s.", tostring(target:id()))
+end
+
+-- Starts a cast of caster at target: the volleys' times are set, the gate opens (his action
+-- takes him), the target's spots are kept from now.
+local function start_cast(caster, target, now)
+    local actor = db.actor
+    casts[caster:id()] = { target_id = target:id(), at_player = actor ~= nil and target:id() == actor:id(),
+                           next_volley_at = nil, raise_deadline = now + HAND_RAISE_WAIT_MS, hand_raised = false,
+                           volleys_done = 0, bolts_due = {}, ends_at = nil }
+    debug_line("Nemesis: %s casts at %s.", tostring(nemesis_state.name_of(caster:id())), actor and target:id() == actor:id() and "you" or tostring(target:id()))   -- name_of: nemesis_state, a member's name
+end
+
+-- His suppression burst: SUPPRESSION_MS of bursts SUPPRESSION_BURST_SCALE times longer (xlibs'
+-- burst lever: the latest exes; older ones leave his bursts as they are) and shots
+-- SUPPRESSION_SPREAD times wider (record.spread_mult, nemesis_damage's shot-spread hook).
+local function start_suppression(id, now)
+    -- src: engine level_script.cpp (level.object_by_id)
+    local caster = level.object_by_id(id)
+    local record = nemesis_state.member(id)
+    if not (caster and record) then return end
+    record.spread_mult = SUPPRESSION_SPREAD
+    -- src: xlibs xcombat.script (xcombat.set_fire_queue_scale)
+    pcall(function() xcombat.set_fire_queue_scale(caster, SUPPRESSION_BURST_SCALE, -1) end)
+    suppression_ends_at[id] = now + SUPPRESSION_MS
+    debug_line("Nemesis: %s opens up: a suppression burst.", tostring(nemesis_state.name_of(id)))   -- name_of: nemesis_state, a member's name
+end
+
+-- The suppression burst is over: his bursts and spread back to normal.
+local function end_suppression(id)
+    suppression_ends_at[id] = nil
+    local record = nemesis_state.member(id)
+    if record then record.spread_mult = nil end
+    local caster = level.object_by_id(id)
+    if caster then pcall(function() xcombat.set_fire_queue_scale(caster, 1, -1) end) end
+end
+
+-- Ends caster id's cast: the gate shuts (combat takes him back, his hand comes down), the
+-- cooldown starts, and the surge begins to sink.
+local function end_cast(id, now)
+    if casts[id] and casts[id].hand_raised then surge_falls[id] = { from = now, next_at = now } end
+    casts[id] = nil
+    next_cast_at[id] = now + COOLDOWN_MS
+    if math.random() < SUPPRESSION_CHANCE then start_suppression(id, now) end
+end
+
+-- His hand is up (his cast action took him; or HAND_RAISE_WAIT_MS passed): lightning strikes from
+-- the sky into his hand, and the first volley comes FIRST_VOLLEY_DELAY_MS later.
+local function on_hand_raised(caster, cast)
+    if cast.hand_raised then return end
+    cast.hand_raised = true
+    cast.raised_at = time_global()
+    cast.next_volley_at = cast.raised_at + FIRST_VOLLEY_DELAY_MS
+    local feet = caster:position()
+    draw_sky_bolt(hand_position(caster))
+    play_sound(SKY_STRIKE_SOUND, feet)
+end
+
+-- One step of caster's cast (every frame, from caster_step): a volley is queued when due (its aim:
+-- where the target was AIM_DELAY_MS before), its bolts fire BOLT_GAP_MS apart, and after the last
+-- volley the NPC target dies and the hand comes down.
+local function step_cast(caster, cast, now)
+    if not cast.hand_raised and now >= cast.raise_deadline then on_hand_raised(caster, cast) end
+    -- The surge: climbing from his feet to his chest over SURGE_RISE_MS, then held at his chest.
+    if cast.hand_raised and now >= (cast.surge_next_at or 0) then
+        cast.surge_next_at = now + SURGE_STEP_MS
+        surge_spark(caster, math.min(1, (now - cast.raised_at) / SURGE_RISE_MS))
+    end
+    -- While his hand is up he heals (the owner's play test: a way to keep him alive longer).
+    if cast.hand_raised then
+        local seconds = (now - (cast.healed_at or now)) / 1000
+        cast.healed_at = now
+        local gain = regen_per_second() * seconds
+        if gain > 0 and caster.health < 1 then
+            nemesis_engine.set_health(caster, math.min(1, caster.health + gain))   -- set_health: nemesis_engine, health on one of ours
+        end
+    end
+    if cast.next_volley_at and now >= cast.next_volley_at and cast.volleys_done < CAST_VOLLEYS then
+        -- Each volley its own target (owner, round 168): you at where you were AIM_DELAY_MS before;
+        -- an NPC where he stands, killed on the volley's last bolt.
+        local volley_at = volley_target(caster, cast.volleys_done + 1)
+        if not volley_at then
+            -- Nobody left to strike (the owner's play test, 24 October: his NPC target died on the
+            -- first volley and he stood rooted for the rest of the cast while you shot him): the
+            -- cast ends after the bolts already on their way, and combat takes him back.
+            debug_line("Nemesis: volley %s has no target: the cast ends early.", tostring(cast.volleys_done + 1))
+            cast.volleys_done = CAST_VOLLEYS - 1
+        end
+        if volley_at then
+            local actor = db.actor
+            local at_player = actor ~= nil and volley_at:id() == actor:id()
+            local aim = at_player and position_before(volley_at:id(), now, volley_at:position()) or volley_at:position()
+            local count = math.random(BOLTS_MIN, BOLTS_MAX)
+            for bolt = 1, count do
+                cast.bolts_due[#cast.bolts_due + 1] = { at = now + (bolt - 1) * BOLT_GAP_MS, aim = aim, at_player = at_player,
+                                                        kills = (not at_player and bolt == count) and volley_at:id() or nil }
+            end
+            debug_line("Nemesis: volley %s at %s.", tostring(cast.volleys_done + 1), at_player and "you" or tostring(volley_at:id()))
+        end
+        cast.volleys_done = cast.volleys_done + 1
+        cast.next_volley_at = cast.volleys_done < CAST_VOLLEYS and now + VOLLEY_INTERVAL_MS or nil
+    end
+    while cast.bolts_due[1] and now >= cast.bolts_due[1].at do
+        local bolt = table.remove(cast.bolts_due, 1)
+        fire_bolt(caster, bolt.at_player, bolt.aim)
+        if bolt.kills then
+            -- src: engine level_script.cpp (level.object_by_id)
+            local victim = level.object_by_id(bolt.kills)
+            if victim then kill_target(caster, victim) end
+        end
+    end
+    if cast.volleys_done >= CAST_VOLLEYS and #cast.bolts_due == 0 then
+        if not cast.ends_at then
+            cast.ends_at = now + WIND_DOWN_MS
+        elseif now >= cast.ends_at then
+            end_cast(caster:id(), now)
+        end
+    end
+end
+
+---------------------------------------------------------------------------
+-- His cast action (built like the chase's, nemesis_chase): a gate evaluator and an action on his
+-- manager; while the gate is open, the combat planners (xgraft's list) wait.
+---------------------------------------------------------------------------
+local CAST_ID = 188591             -- the cast's world property and action id (the chase's is 188590)
+
+-- The gate: open while his cast runs. Called by the engine's planner, where a Lua error is fatal,
+-- so it can never throw (round 169): any error reads as closed.
+class "nemesis_cast_gate" (property_evaluator)
+-- src: engine action_base_script.cpp (__init)
+function nemesis_cast_gate:__init(name) super(nil, name) end
+-- src: engine property_evaluator_script.cpp (evaluate)
+function nemesis_cast_gate:evaluate()
+    local ok, open = pcall(function() return self.object ~= nil and casts[self.object:id()] ~= nil end)
+    return ok and open == true
+end
+
+-- The action: he stands, puts his weapon away, faces his target and raises his hand
+-- (hand_up_0, Anomaly's own animation, played straight by the engine).
+class "nemesis_cast_action" (action_base)
+-- src: engine action_base_script.cpp (__init)
+function nemesis_cast_action:__init(name) super(nil, name) end
+-- src: engine action_base_script.cpp (initialize)
+function nemesis_cast_action:initialize()
+    action_base.initialize(self)   -- initialize: the engine's action_base, its own step first
+    local caster = self.object
+    pcall(function()
+        -- src: engine script_game_object_script2.cpp (clear_animations, set_movement_type, set_body_state, set_mental_state)
+        caster:clear_animations()
+        -- src: engine script_game_object_script2.cpp (set_desired_position, set_desired_direction): no path to walk
+        caster:set_desired_position()
+        caster:set_desired_direction()
+        caster:set_movement_type(move.stand)
+        caster:set_body_state(move.standing)
+        caster:set_mental_state(anim.danger)
+        -- src: engine script_game_object_script3.cpp (set_item): the weapon away, as state_mgr_weapon does
+        caster:set_item(object.idle, nil)
+    end)
+    -- The engine's planner calls this: an error here would be fatal, so it runs in a pcall (round 169).
+    pcall(function()
+        local cast = caster and casts[caster:id()]
+        if cast then
+            debug_line("Nemesis: his cast action takes him (weapon away, hand up).")
+            on_hand_raised(caster, cast)
+        end
+    end)
+end
+-- src: engine action_base_script.cpp (execute)
+function nemesis_cast_action:execute()
+    action_base.execute(self)   -- execute: the engine's action_base, its own step first
+    local caster = self.object
+    -- The engine's planner calls this: every step in a pcall (round 169).
+    pcall(function()
+        if not caster or not caster:alive() then return end
+        local cast = casts[caster:id()]
+        if not cast then return end
+        local target = level.object_by_id(cast.target_id)
+        -- src: engine script_game_object_script3.cpp (set_sight): facing his target, as state_mgr_direction does
+        if target then caster:set_sight(target, true, false, false) end
+        -- The weapon stays away (combat schemes may try to hand it back), every update.
+        caster:set_item(object.idle, nil)
+        -- No step while his arm is up (owner): standing, upright, no path, every update.
+        caster:set_movement_type(move.stand)
+        caster:set_body_state(move.standing)
+        caster:set_desired_position()
+        -- src: engine script_game_object_script2.cpp (animation_count, add_animation)
+        if caster:animation_count() == 0 then caster:add_animation("hand_up_0", true, false) end
+    end)
+end
+-- src: engine action_base_script.cpp (finalize)
+function nemesis_cast_action:finalize()
+    action_base.finalize(self)   -- finalize: the engine's action_base, its own step first
+    pcall(function() self.object:clear_animations() end)
+    debug_line("Nemesis: his cast action lets him go.")
+end
+
+-- Makes every planner of the chase's takeover list (combat, loot, help) and AlifeTactics'
+-- maneuvers (xgraft's takeover) wait on his cast, on his manager only (the lane rule), for each
+-- one not blocked yet. Run at the install and again at every cast: a combat scheme can bind to an
+-- NPC after the install (xgraft.script 128-133: "re-run by the consumer at each seize").
+local function apply_blocks(caster)
+    local id = caster:id()
+    local done = planners_held[id] or {}
+    planners_held[id] = done
+    pcall(function()
+        local manager = caster:motivation_action_manager()   -- src: engine script_game_object_script2.cpp (motivation_action_manager)
+        local list = {}
+        for _, planner_id in ipairs(nemesis_chase.takeover_planner_ids()) do list[#list + 1] = planner_id end   -- takeover_planner_ids: nemesis_chase, xgraft's list plus loot and help
+        -- src: xlibs xgraft.script (xgraft.TAKEOVER_ID): AlifeTactics' maneuvers, on our hunter
+        if xgraft and type(xgraft.TAKEOVER_ID) == "number" then list[#list + 1] = xgraft.TAKEOVER_ID end
+        for _, planner_id in ipairs(list) do
+            if not done[planner_id] then
+                -- src: engine action_planner_script.cpp (action, add_precondition)
+                local planner = manager:action(planner_id)
+                if planner then
+                    planner:add_precondition(world_property(CAST_ID, false))
+                    done[planner_id] = true
+                end
+            end
+        end
+    end)
+end
+
+-- Puts the cast gate and action on caster's manager, once (the blocks: apply_blocks). Our hunter
+-- only (the lane rule). Returns true when he has it.
+local function install_cast(caster)
+    local id = caster:id()
+    if cast_installed[id] then return true end
+    local ok, err = pcall(function()
+        -- src: engine script_game_object_script2.cpp (motivation_action_manager)
+        local manager = caster:motivation_action_manager()
+        local gate = nemesis_cast_gate("eva_nemesis_cast")
+        local action = nemesis_cast_action("act_nemesis_cast")
+        -- src: engine action_base_script.cpp (add_precondition, add_effect)
+        action:add_precondition(world_property(stalker_ids.property_alive, true))
+        action:add_precondition(world_property(CAST_ID, true))
+        action:add_effect(world_property(CAST_ID, false))
+        -- src: engine action_planner_script.cpp (add_evaluator, add_action)
+        manager:add_evaluator(CAST_ID, gate)
+        manager:add_action(CAST_ID, action)
+        planner_refs[id] = { gate, action }
+    end)
+    if not ok then
+        debug_line("!Nemesis ERROR: the cast action could not be installed (%s).", tostring(err))
+        return false
+    end
+    cast_installed[id] = true
+    apply_blocks(caster)
+    return true
+end
+
+---------------------------------------------------------------------------
+-- The frame job
+---------------------------------------------------------------------------
+-- His travel strikes due by now: a bolt from the sky each, the thunder with the first.
+local function travel_strikes_step(now)
+    while travel_strikes[1] and now >= travel_strikes[1].at do
+        local strike = table.remove(travel_strikes, 1)
+        draw_sky_bolt(strike.spot)
+        if strike.loud then play_sound(SKY_STRIKE_SOUND, strike.spot) end
+    end
+end
+
+-- The surge sinking after his hand came down: from his chest to his feet over SURGE_RISE_MS, then gone.
+local function surge_fall_step(caster, id, now)
+    local fall = surge_falls[id]
+    if not fall then return end
+    local share = 1 - (now - fall.from) / SURGE_RISE_MS
+    if share <= 0 then
+        surge_falls[id] = nil
+    elseif now >= fall.next_at then
+        fall.next_at = now + SURGE_STEP_MS
+        surge_spark(caster, share)
+    end
+end
+
+-- His next cast, once he is ready (the cooldown over, not breaking off, his action installed): a
+-- target in sight (and he out of a smart cover) starts the charge; at the charge's end he casts if
+-- he still has a target, else the charge fades.
+local function ready_step(caster, id, record, now)
+    if now < (next_cast_at[id] or 0) or record.retreat_at or not install_cast(caster) then return end
+    local in_cover = false
+    -- src: engine script_game_object_script2.cpp (in_smart_cover)
+    pcall(function() in_cover = caster:in_smart_cover() end)
+    local target = not in_cover and pick_target(caster) or nil
+    local charge = charges[id]
+    if not charge then
+        -- A target in sight: the warning first.
+        if target then
+            charges[id] = { ends_at = now + CHARGE_MS, spark_at = now, sound_at = now }
+            debug_line("Nemesis: %s charges (the warning, %s s).", tostring(nemesis_state.name_of(id)), tostring(CHARGE_MS / 1000))   -- name_of: nemesis_state, a member's name
+        end
+    elseif charge_step(caster, charge, now) then
+        charges[id] = nil
+        if target then
+            apply_blocks(caster)       -- any combat scheme bound since the last cast waits too
+            start_cast(caster, target, now)
+        else
+            debug_line("Nemesis: the charge fades: no target in sight.")
+        end
+    end
+end
+
+-- One frame of a living caster: his aura, his relations, the end of his suppression burst, the
+-- sinking surge, then his running cast (his target's spots kept) or his next one.
+local function caster_step(caster, id, record, now)
+    aura_step(caster, id, now)
+    hostility_step(caster, id, now)
+    community_step(caster, id)
+    if suppression_ends_at[id] and now >= suppression_ends_at[id] then end_suppression(id) end
+    surge_fall_step(caster, id, now)
+    local cast = casts[id]
+    if cast then
+        local target = level.object_by_id(cast.target_id)   -- src: engine level_script.cpp (level.object_by_id)
+        if target then remember_position(cast.target_id, target, now) end
+        step_cast(caster, cast, now)
+    else
+        ready_step(caster, id, record, now)
+    end
+end
+
+-- The frame job: the effects whose time is up, his travel strikes, your spots, then each caster;
+-- one who is gone or dead loses his cast and charge.
+local function frame_job(now)
+    stop_effects(now)
+    travel_strikes_step(now)
+    if not enabled() then return end
+    local actor = db.actor
+    if actor then remember_position(actor:id(), actor, now) end
+    for id in pairs(casters) do
+        local caster = level.object_by_id(id)
+        local record = nemesis_state.member(id)   -- member: nemesis_state, his member record
+        if caster and record and caster:alive() then
+            caster_step(caster, id, record, now)
+        else
+            casts[id] = nil
+            charges[id] = nil
+        end
+    end
+end
+
+---------------------------------------------------------------------------
+-- Coming and going
+---------------------------------------------------------------------------
+local THUNDER_SECTION = "nemesis_thunder_boss"    -- his NPC section
+local THUNDER_SQUAD = "nemesis_thunder_squad"     -- his squad section
+
+-- The storm he comes out of (since round 166): a weather with lightning (its thunderbolt period
+-- above 0: in GAMMA's Atmospherics only the storm weathers have one), never right after an emission.
+local STORM_QUIET_AFTER_SURGE_MS = 300000   -- 300 real seconds after an emission or psy storm ends (owner)
+local SECONDS_PER_DAY = 86400
+
+-- His look (owner: "the right model for a Loner"): a sealed, anomaly-proof Loner suit, each
+-- checked on disk; never a story character's model.
+local LONER_LOOKS = { "actors\\stalker_neutral\\stalker_neutral_exoseva", "actors\\stalker_neutral\\stalker_exo_proto",
+                      "actors\\stalker_neutral\\stalker_neutral_4" }
+
+-- His default name in the game's language (Danylo Raskat; the Russian in st_nemesis_thunder_boss.xml).
+local function default_name() return nemesis_lines.text(NAME_TEXT) end   -- text: nemesis_lines, a string table's text
+-- His name: Thunder Boss name (his page's text box), else his default, with its spaces put back.
+-- spaced_name: nemesis_utils, spaces before capitals; get_string: nemesis_mcm, a menu text box
+local function boss_name() return nemesis_utils.spaced_name(nemesis_mcm.get_string("thunder_name", default_name())) end
+
+-- Member id becomes the running hunt's boss, as the Thunder Boss (spawn_lone_boss's make_boss):
+-- the boss's rules (he fights to the death, his first shots miss, his stash, one boss a day), no
+-- sneak, and his lightning (a caster).
+local function make_thunder_boss(id)
+    hunt_state.boss_id = id
+    hunt_state.boss_hunt = true
+    hunt_state.last_boss_day = math.floor(nemesis_engine.game_seconds() / SECONDS_PER_DAY)   -- game_seconds: nemesis_engine, in-game seconds
+    hunt_state.boss_sneak = nil
+    hunt_state.sneak_started, hunt_state.sneak_said, hunt_state.sneak_wait = nil, nil, nil
+    hunt_state.boss_shots, hunt_state.boss_hit_frames, hunt_state.boss_hit_frame = 0, 0, nil
+    hunt_state.boss_look = nil
+    for _, look in ipairs(LONER_LOOKS) do
+        if nemesis_engine.mesh_exists(look) then   -- mesh_exists: nemesis_engine, a mesh on disk
+            hunt_state.boss_look = look            -- nemesis_boss puts it on the hunt's boss
+            break
+        end
+    end
+    casters[id] = true
+    community_given[id] = nil
+    hostile_to_all(id)
+    debug_line("Nemesis: '%s' is the boss of this hunt: the Thunder Boss.", tostring(nemesis_state.name_of(id)))   -- name_of: nemesis_state, a member's name
+end
+
+-- Whether a thunderstorm is on: the current weather's lightning period above 0 (the engine's
+-- weather values; level_script.cpp 1379-1395).
+local function storm_on()
+    local period = 0
+    -- src: MT engine level_script.cpp (weather.get_value_numric)
+    pcall(function() period = weather.get_value_numric("thunderbolt_period") or 0 end)
+    return period > 0
+end
+
+-- He comes now (spawn_lone_boss), alone, as the hunt's boss, in lightning (his travel strikes).
+-- Returns came, failed: came when he is in the world; neither when there is no spot yet (try again);
+-- failed when he could not come.
+local function arrive(why)
+    local faction = nemesis_utils.faction_for_player()   -- faction_for_player: nemesis_utils, the hunt's faction for you
+    -- His own Loner squad (round 186); the hunt's squad if the game lacks it (DLTX missing).
+    local section = THUNDER_SQUAD
+    if not (nemesis_engine.section_exists(THUNDER_SECTION) and nemesis_engine.section_exists(THUNDER_SQUAD)) then   -- section_exists: nemesis_engine, a section in system.ltx
+        debug_line("!Nemesis ERROR: the Thunder Boss's own sections are missing; he comes in the hunt's squad.")
+        section = nemesis_utils.resolve_squad_section(faction)   -- resolve_squad_section: nemesis_utils, the hunt's squad section
+    end
+    -- spawn_lone_boss: nemesis_spawn, a boss who hunts alone, placed like any hunt
+    local ok, position = pcall(nemesis_spawn.spawn_lone_boss, faction, nil,
+        { section = section, name = boss_name(), make_boss = make_thunder_boss, label = "Thunder Boss" })
+    if not ok then
+        debug_line("!Nemesis ERROR: the Thunder Boss could not come (%s).", tostring(position))
+        return false, true
+    end
+    if not position then return false, false end
+    last_visit_seconds = nemesis_engine.game_seconds()   -- game_seconds: nemesis_engine, in-game seconds
+    queue_travel_strikes(position)         -- he comes in lightning, not the teleport burst
+    debug_line("Nemesis: the Thunder Boss comes (%s).", why)
+    return true, false
+end
+
+-- A slow job: a forced Thunder Boss comes as soon as no hunt runs and no boss is alive; else, out
+-- of a storm, one roll of Thunder Boss chance per storm once nothing stands in his way (see the
+-- file's head).
+local function arrival_tick()
+    local now_ms = time_global()
+    -- surge_on: nemesis_compat, an emission or psy storm on (xlibs xlevel.is_surge)
+    if nemesis_compat.surge_on() then last_surge_ms = now_ms end
+    if not enabled() then return end
+    if hunt_state.phase ~= "idle" or hunt_state.follow then return end
+    -- ask: nemesis_events, a module's answer or nil
+    if nemesis_events.ask("boss_exists") then return end
+    if force_pending then
+        local came, failed = arrive("Force the next hunt")
+        if came or failed then force_pending = false end
+        return
+    end
+    if not storm_on() then
+        storm_rolled = false               -- the next storm gets its own roll
+        return
+    end
+    if storm_rolled then return end
+    if last_surge_ms and now_ms - last_surge_ms < STORM_QUIET_AFTER_SURGE_MS then return end
+    if (hunt_state.spawned_count or 0) == 0 then return end
+    if nemesis_mcm.get_bool("prepare_uninstall", false) then return end
+    local now = nemesis_engine.game_seconds()
+    if last_visit_seconds and now >= last_visit_seconds and now - last_visit_seconds < gap_days() * SECONDS_PER_DAY then return end
+    storm_rolled = true
+    local roll = math.random() * 100
+    debug_line("Nemesis: a thunderstorm: the Thunder Boss's roll %s against %s %%.", string.format("%.1f", roll), tostring(storm_chance()))
+    if roll < storm_chance() then
+        local came, failed = arrive("out of the storm")
+        if not came and not failed then storm_rolled = false end   -- no spot yet: the same storm tries again
+    end
+end
+
+-- A hunt member died (member_died): when a Thunder Boss's body teleports out (an NPC's kill; yours
+-- within the assist time keeps his body, the core's rule), he leaves in lightning.
+-- His body keeps DEATH_COMMUNITY (round 189, see Relations).
+local function on_member_died(id, record, by_you, teleports)
+    if not casters[id] or not teleports then return end
+    local feet = nil
+    -- src: engine level_script.cpp (level.object_by_id), script_game_object_script2.cpp (position)
+    pcall(function() feet = level.object_by_id(id):position() end)
+    if not feet then return end
+    queue_travel_strikes(feet)
+    debug_line("Nemesis: %s leaves in lightning (killed by an NPC).", tostring(record and record.name))
+end
+
+---------------------------------------------------------------------------
+-- Save and load
+---------------------------------------------------------------------------
+-- The saving listener: the casters of the running hunt and a pending force, under SAVE_KEY.
+local function on_saving(save_data)
+    if type(save_data) ~= "table" then return end
+    local ids = {}
+    for id in pairs(casters) do ids[#ids + 1] = tostring(id) end
+    save_data[SAVE_KEY] = { v = SAVE_VERSION, casters = table.concat(ids, ";"), force = force_pending or nil,
+                            storm_rolled = storm_rolled or nil, last_visit = last_visit_seconds }
+end
+
+-- The loaded listener: the casters back (a save without the key has none).
+local function on_loaded(save_data)
+    casters, force_pending, storm_rolled, last_visit_seconds = {}, false, false, nil
+    local saved = type(save_data) == "table" and save_data[SAVE_KEY] or nil
+    if type(saved) ~= "table" then return end
+    for id in string.gmatch(type(saved.casters) == "string" and saved.casters or "", "%d+") do casters[tonumber(id)] = true end
+    force_pending = saved.force == true
+    storm_rolled = saved.storm_rolled == true
+    last_visit_seconds = tonumber(saved.last_visit)
+end
+
+-- The first update after a load or of a new game: the runtime starts again (a load rebuilds every
+-- NPC's manager, so the actions are installed again).
+local function on_runtime_reset(loaded)
+    if not loaded then casters, force_pending, storm_rolled, last_visit_seconds = {}, false, false, nil end
+    last_surge_ms = nil
+    casts, charges, next_cast_at, suppression_ends_at = {}, {}, {}, {}
+    cast_installed, planners_held, planner_refs = {}, {}, {}
+    target_history, aura_next_at, surge_falls, travel_strikes = {}, {}, {}, {}
+    community_given, hostility_next_at = {}, {}
+    -- His hostility again after a load (the engine keeps it, this is a guarantee), and DFRC's skip.
+    for id in pairs(casters) do hostile_to_all(id) end
+    nemesis_compat.hook_dfrc_skip(THUNDER_SECTION)   -- hook_dfrc_skip: nemesis_compat, DFRC leaves deaths with him alone
+end
+
+---------------------------------------------------------------------------
+-- The module
+---------------------------------------------------------------------------
+-- Each answer returns nil for "not mine". The askers are named with each.
+local MODULE_NAME = "The Thunder Boss"
+
+-- flat_damage_cut (nemesis_damage): his own cut, ahead of every other reduction, only while his
+-- hand is up (owner: rooted and channelling, he is powered by electricity); the rest of the time
+-- the boss's own rules (Boss damage reduction, the cap).
+local function answer_flat_damage_cut(id)
+    local cast = id ~= nil and casts[id]
+    if cast and cast.hand_raised and casters[id] and enabled() then return caster_cut() end
+    return nil
+end
+
+-- keeps_npc_hits (asked by nemesis_damage since round 190): a hit of his on an NPC, or an NPC's on him, that
+-- another mod cancels is put back; never one on a story NPC, your companion or a trader (xlibs
+-- xcreature.is_unscriptable, is_trader), as his lightning spares them.
+local function answer_keeps_npc_hits(victim_id, shooter_id)
+    if not enabled() then return nil end
+    local other = (casters[shooter_id] and victim_id) or (casters[victim_id] and shooter_id) or nil
+    if not other then return nil end
+    local npc = level.object_by_id(other)   -- src: engine level_script.cpp (level.object_by_id)
+    local spared = true
+    -- src: xlibs xcreature.script (xcreature.is_unscriptable, xcreature.is_trader)
+    pcall(function() spared = xcreature.is_unscriptable(npc) == true or xcreature.is_trader(npc) == true end)
+    if spared then return nil end
+    return true
+end
+
+-- own_player_relation (asked by nemesis_spawn since round 191): his relation toward you is his own
+-- (hostility_step), so the hunt's enemy line does not write -1000 over it every tick.
+local function answer_own_player_relation(id)
+    if id ~= nil and casters[id] and enabled() then return true end
+    return nil
+end
+
+-- casting (nemesis_chase): the chase's gate stays shut while his cast runs.
+local function answer_casting(id)
+    if id ~= nil and casts[id] then return true end
+    return nil
+end
+
+-- force (nemesis_guard): Force the next hunt: Thunder Boss (he comes alone, once no hunt runs).
+local function answer_force(kind)
+    if kind ~= "thunder_boss" then return nil end
+    force_pending = true
+    debug_line("Nemesis: Force the next hunt: the Thunder Boss comes as soon as no hunt runs.")
+    return true
+end
+
+-- boss_npc_cut (nemesis_damage): his reduction against NPCs and mutants, at all times, as the
+-- emission boss's (nemesis_damage.hit_mult). The owner asked for it in round 168: he died to NPCs too easily.
+local function answer_boss_npc_cut(id)
+    if id ~= nil and casters[id] and enabled() then return npc_cut() end
+    return nil
+end
+
+-- boss_update (nemesis_boss, asked at order 150, ahead of its own 200): his own per-tick boss
+-- rules, so none of the regular boss's lines (they speak of being unseen) and no sneak: he knows
+-- where you are, and wears his Loner look (put back if anything swapped it, as nemesis_boss does).
+local function answer_boss_update(caster, record)
+    if not (record and casters[record.id]) then return nil end
+    nemesis_combat.set_focus(record.id, true)   -- set_focus: nemesis_combat, he knows where you are
+    local look = hunt_state.boss_look
+    if look then
+        local current = nemesis_fx.get_visual(caster)   -- get_visual: nemesis_fx, his model's name
+        if current ~= look then nemesis_fx.set_visual(caster, look) end   -- set_visual: nemesis_fx, a model swap on a living stalker
+    end
+    return true
+end
+
+-- boss_no_cloak (nemesis_fx): he is never cloaked (owner's play test: "this boss should not be invisible").
+local function answer_boss_no_cloak()
+    if hunt_state.boss_id ~= nil and casters[hunt_state.boss_id] then return true end
+    return nil
+end
+
+-- is_boss_name (nemesis_boss): his name is a boss's name (never two bosses).
+local function answer_is_boss_name(candidate)
+    if candidate ~= nil and candidate == boss_name() then return true end
+    return nil
+end
+
+-- Whether follow (a hunt that followed you to a new map) brings him: its first member, the boss, has his name.
+local function is_his_follow(follow)
+    local first = follow and follow.members and follow.members[1]
+    return first ~= nil and first.boss == true and first.name == boss_name()
+end
+
+-- follow_boss (nemesis_spawn, order 140, before the boss module's 200, which would make him a
+-- regular boss): a followed hunt brings him back as himself.
+local function answer_follow_boss(id, follow)
+    if not is_his_follow(follow) then return nil end
+    make_thunder_boss(id)
+    return true
+end
+
+-- squad_section (nemesis_spawn, order 140): a followed hunt of his comes in his own squad.
+local function answer_squad_section(faction, follow)
+    if is_his_follow(follow) and nemesis_engine.section_exists(THUNDER_SQUAD) then return THUNDER_SQUAD end   -- section_exists: nemesis_engine, a section in system.ltx
+    return nil
+end
+
+-- own_exit (nemesis_core): his body's going has its own effect, the lightning (on_member_died).
+local function answer_own_exit(id) return casters[id] and true or nil end
+
+-- The hunt is over: no casters, no casts.
+local function on_hunt_ended() casters, casts = {}, {} end
+
+-- boss_hit_may_kill (nemesis_damage): his community is DEATH_COMMUNITY before the hit lands.
+local function on_boss_hit_may_kill(id)
+    if not casters[id] then return end
+    local caster = level.object_by_id(id)   -- src: engine level_script.cpp (level.object_by_id)
+    if caster then give_community(caster, id, DEATH_COMMUNITY) end
+end
+
+-- The module (the module pattern since round 115): its answers, its listeners, its jobs. Nothing
+-- calls it by name.
+function on_game_start()
+    -- answer: nemesis_events, a module's answer to a question
+    nemesis_events.answer("flat_damage_cut", MODULE_NAME, answer_flat_damage_cut)
+    nemesis_events.answer("keeps_npc_hits", MODULE_NAME, answer_keeps_npc_hits)
+    nemesis_events.answer("own_player_relation", MODULE_NAME, answer_own_player_relation)
+    nemesis_events.answer("casting", MODULE_NAME, answer_casting)
+    nemesis_events.answer("force", MODULE_NAME, answer_force)
+    nemesis_events.answer("boss_npc_cut", MODULE_NAME, answer_boss_npc_cut)
+    nemesis_events.answer("boss_update", MODULE_NAME, answer_boss_update, 150)
+    nemesis_events.answer("boss_no_cloak", MODULE_NAME, answer_boss_no_cloak)
+    nemesis_events.answer("is_boss_name", MODULE_NAME, answer_is_boss_name)
+    nemesis_events.answer("follow_boss", MODULE_NAME, answer_follow_boss, 140)
+    nemesis_events.answer("squad_section", MODULE_NAME, answer_squad_section, 140)
+    nemesis_events.answer("own_exit", MODULE_NAME, answer_own_exit)
+    -- on: nemesis_events, a listener to an event
+    nemesis_events.on("hunt_ended", MODULE_NAME, on_hunt_ended)
+    nemesis_events.on("member_died", MODULE_NAME, on_member_died)
+    nemesis_events.on("boss_hit_may_kill", MODULE_NAME, on_boss_hit_may_kill)
+    nemesis_events.on("runtime_reset", MODULE_NAME, on_runtime_reset)
+    nemesis_events.on("saving", MODULE_NAME, on_saving)
+    nemesis_events.on("loaded", MODULE_NAME, on_loaded)
+    -- His cast action sets his body and movement by hand, so Anomaly's state manager must treat it
+    -- as a combat action, or it takes him back (state_mgr.script 10-11, as xrs_facer does, 29-31).
+    -- src: anomaly state_mgr.script (combat_action_ids)
+    pcall(function() state_mgr.combat_action_ids[CAST_ID] = true end)
+    -- add_job: nemesis_core, a job on the core's frame, tick or slow list
+    nemesis_core.add_job("frame", "the Thunder Boss's lightning", function(now) frame_job(now) end, nil, true)
+    nemesis_core.add_job("slow", "the Thunder Boss's arrival", arrival_tick, 64, true)
+    debug_line("Nemesis: The Thunder Boss is in (12 answers, 6 listeners, 1 frame job, 1 slow job).")
+end
+
+---------------------------------------------------------------------------
+-- Settings: this script declares the Thunder Boss's page (round 165; more comes with his design)
+---------------------------------------------------------------------------
+-- nemesis_mcm puts the menu together from the scripts that own its pages and saves every value
+-- under "nemesis/thunder_boss/<id>". Labels and tooltips from ui_mcm_nemesis_thunder_boss.xml. In no
+-- difficulty preset yet (a test page).
+function mcm_page()
+    return { id = "thunder_boss", sh = true, text = "ui_mcm_nemesis_page_thunder_boss", gr = {
+        { id = "title", type = "slide", link = "ui_options_slider_player", text = "ui_mcm_nemesis_title", size = {512, 50}, spacing = 20 },
+        { id = "head_thunder", type = "title", text = "ui_mcm_nemesis_head_thunder", align = "l", clr = nemesis_mcm.HEAD_CLR },
+        { id = "thunder_enabled", type = "check", val = 1, def = true, hint = "nemesis_thunder_enabled" },
+        { id = "thunder_name", type = "input", val = 0, def = default_name(), hint = "nemesis_thunder_name" },
+        { id = "thunder_chance", type = "track", val = 2, def = 15, min = 0, max = 100, step = 5, prec = 0, hint = "nemesis_thunder_chance" },
+        { id = "thunder_gap_days", type = "track", val = 2, def = 5, min = 0, max = 14, step = 1, prec = 0, hint = "nemesis_thunder_gap_days" },
+        { id = "thunder_dr", type = "track", val = 2, def = 90, min = 50, max = 95, step = 5, prec = 0, hint = "nemesis_thunder_dr" },
+        { id = "thunder_damage", type = "track", val = 2, def = 7, min = 1, max = 20, step = 1, prec = 0, hint = "nemesis_thunder_damage" },
+        { id = "thunder_regen", type = "track", val = 2, def = 4, min = 0, max = 10, step = 1, prec = 0, hint = "nemesis_thunder_regen" },
+        { id = "thunder_range", type = "track", val = 2, def = 30, min = 10, max = 60, step = 5, prec = 0, hint = "nemesis_thunder_range" },
+        { id = "thunder_npc_range", type = "track", val = 2, def = 45, min = 10, max = 80, step = 5, prec = 0, hint = "nemesis_thunder_npc_range" },
+        { id = "thunder_npc_dr", type = "track", val = 2, def = 60, min = 0, max = 95, step = 5, prec = 0, hint = "nemesis_thunder_npc_dr" },
+    } }
+end
+
+-- No share of the presets yet (a test page).
+function mcm_presets() return { easy = {}, medium = {}, hard = {} } end
+
+-- Force the next hunt's choice for this module.
+function mcm_force_next() return { "thunder_boss", "ui_mcm_nemesis_force_next_thunder_boss" } end

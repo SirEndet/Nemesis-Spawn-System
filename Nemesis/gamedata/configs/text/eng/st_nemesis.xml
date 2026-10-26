@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="windows-1251"?>
 <string_table>
-    <!-- Nemesis Wave Spawn System: what the hunters say and the names they carry (round 134) -->
+    <!-- Nemesis Spawn System: what the hunters say and the names they carry (round 134) -->
     <string id="st_nemesis_mono_warning_1"><text>You feel watched.</text></string>
     <string id="st_nemesis_mono_warning_2"><text>Static on every channel. Something is coming.</text></string>
     <string id="st_nemesis_mono_warning_3"><text>Your PDA picks up a broken Monolith prayer. It is getting closer.</text></string>
@@ -194,6 +194,65 @@
     <string id="st_nemesis_msg_backup_loaded"><text>Your custom settings are loaded from the automatic backup.</text></string>
     <string id="st_nemesis_msg_backup_none"><text>There is no automatic backup yet.</text></string>
     <string id="st_nemesis_msg_escalation_reset"><text>Escalation reset. The next hunt starts at cycle 1.</text></string>
-    <string id="st_nemesis_msg_old_exes"><text>Your modded exes are older than 15 September 2026. With GAMMA ballistics, your shots can kill named hunters instead of making them break off. Update the modded exes to fix it.</text></string>
+    <string id="st_nemesis_msg_old_exes"><text>Your modded exes (build %s) are older than 15 September 2026. With GAMMA ballistics, your shots can kill named hunters instead of making them break off. Update the modded exes to fix it.</text></string>
+    <string id="st_nemesis_msg_exes_scripts_missing"><text>Your modded exes (build %s) are new enough, but their own script files are not loaded: another mod overrides configs/mod_script_dxml.ltx or scripts/_g_patches.script, or the exes' gamedata folder is not installed. With GAMMA ballistics, your shots can kill named hunters instead of making them break off. Reinstall the modded exes with their gamedata, or move the overriding mod above them.</text></string>
+
+    <string id="st_nemesis_army_warning_1"><text>Army radio on your frequency. They are reading out your last position.</text></string>
+    <string id="st_nemesis_army_warning_2"><text>Your PDA catches a military net. The word 'cultist' comes up, then your name.</text></string>
+    <string id="st_nemesis_army_warning_3"><text>Helicopter blades in the distance, then nothing. A patrol is on foot now.</text></string>
+    <string id="st_nemesis_army_warning_4"><text>Intercepted: 'Target is %faction%. Engage on sight.'</text></string>
+    <string id="st_nemesis_army_warning_5"><text>The Zone has marked you, %name%. So has the Army.</text></string>
+    <string id="st_nemesis_army_taunt_t1_1"><text>Contact: one of %faction%, alone. Squad, move up.</text></string>
+    <string id="st_nemesis_army_taunt_t1_2"><text>Orders are simple. Find the cultist, end the cultist.</text></string>
+    <string id="st_nemesis_army_taunt_t1_3"><text>Your Monolith can't hear you out here.</text></string>
+    <string id="st_nemesis_army_taunt_t2_1"><text>You slipped away last time, %name%. The colonel wasn't happy.</text></string>
+    <string id="st_nemesis_army_taunt_t2_2"><text>Second sweep. We brought more men.</text></string>
+    <string id="st_nemesis_army_taunt_t3_1"><text>%name%. Your face is pinned to every board at the checkpoint.</text></string>
+    <string id="st_nemesis_army_taunt_t3_2"><text>This stopped being just orders a while ago.</text></string>
+    <string id="st_nemesis_army_taunt_t4_1"><text>%name%. Top of the list. Nobody goes home until you're down.</text></string>
+    <string id="st_nemesis_army_taunt_t4_2"><text>This ends with you in the back of a truck.</text></string>
+    <string id="st_nemesis_army_retreat_1"><text>Pulling back. Mark the grid, we'll return.</text></string>
+    <string id="st_nemesis_army_retreat_2"><text>Medevac! This isn't finished.</text></string>
+    <string id="st_nemesis_army_retreat_3"><text>Fall back and regroup. We'll be back for you, %name%.</text></string>
+    <string id="st_nemesis_army_time_up_1"><text>We're recalled to base. Count yourself lucky.</text></string>
+    <string id="st_nemesis_army_time_up_2"><text>Command pulls us out. Next time, %name%.</text></string>
+    <string id="st_nemesis_army_time_up_3"><text>Recall order. Your name stays on the list.</text></string>
+    <string id="st_nemesis_army_boss_1"><text>Command signed your death warrant, %name%. I'm delivering it.</text></string>
+    <string id="st_nemesis_army_boss_2"><text>I've cleared whole nests of %faction%. You're just one more.</text></string>
+    <string id="st_nemesis_army_boss_3"><text>The chaplain had nothing for you. Neither do I.</text></string>
+    <string id="st_nemesis_army_boss_4"><text>So, you're %faction%. The institute wants you in a bag.</text></string>
+    <string id="st_nemesis_army_boss_5"><text>Rules of engagement are suspended for you.</text></string>
+    <string id="st_nemesis_army_boss_6"><text>The rest of %faction% is next. You go first.</text></string>
+    <string id="st_nemesis_army_boss_7"><text>Stand still. A soldier's courtesy: it will be quick.</text></string>
+    <string id="st_nemesis_army_boss_8"><text>I don't need a second shot, %name%.</text></string>
+    <string id="st_nemesis_army_boss_warning_1"><text>Army channel: 'Colonel %boss% has taken command of the hunt.' The signal is getting stronger.</text></string>
+    <string id="st_nemesis_army_boss_warning_2"><text>Your PDA freezes. A military override has your coordinates.</text></string>
+    <string id="st_nemesis_army_boss_warning_3"><text>Every army frequency goes quiet at once.</text></string>
+    <string id="st_nemesis_army_boss_stash_1"><text>Colonel %boss% is down. His cache coordinates went out on the army net.</text></string>
+    <string id="st_nemesis_army_boss_stash_2"><text>Army channel: '%boss% KIA.' Then a set of coordinates: his cache.</text></string>
+    <string id="st_nemesis_army_boss_escape_1"><text>Recalled to base. This isn't over.</text></string>
+    <string id="st_nemesis_army_boss_escape_2"><text>Command orders me out. Enjoy the quiet while it lasts.</text></string>
+    <string id="st_nemesis_army_boss_escape_3"><text>I'm pulled out. Next time there is no recall.</text></string>
+    <string id="st_nemesis_army_dread_1"><text>Night vision has you. Keep walking.</text></string>
+    <string id="st_nemesis_army_dread_2"><text>I can count your steps from here.</text></string>
+    <string id="st_nemesis_army_dread_3"><text>You won't see me. Recon never gets seen.</text></string>
+    <string id="st_nemesis_army_dread_4"><text>Closer than you think, %name%.</text></string>
+    <string id="st_nemesis_army_dread_5"><text>Looking over your shoulder yet, %name%?</text></string>
+    <string id="st_nemesis_army_sneak_1"><text>%name%. Don't move. I'm right behind you.</text></string>
+    <string id="st_nemesis_army_rush_1"><text>Run, %name%. Soldiers run longer.</text></string>
+    <string id="st_nemesis_army_close_1"><text>That's close enough, %name%. Lights out.</text></string>
+    <string id="st_nemesis_army_follow_1"><text>A new map won't hide you, %name%.</text></string>
+    <string id="st_nemesis_army_follow_2"><text>Target moved. Pursuit continues.</text></string>
+    <string id="st_nemesis_army_follow_3"><text>You moved, %name%. So did the Army.</text></string>
+    <string id="st_nemesis_army_reload_1"><text>Reloading, %name%?</text></string>
+    <string id="st_nemesis_army_known_spot_1"><text>Same position as before, %name%? Careless.</text></string>
+    <string id="st_nemesis_army_known_spot_2"><text>We have this place on the map from last time, %name%.</text></string>
+    <string id="st_nemesis_rank_army_1"><text>Corporal</text></string>
+    <string id="st_nemesis_rank_army_2"><text>Sergeant</text></string>
+    <string id="st_nemesis_rank_army_3"><text>Lieutenant</text></string>
+    <string id="st_nemesis_rank_army_4"><text>Captain</text></string>
+    <string id="st_nemesis_rank_army_5"><text>Major</text></string>
+    <string id="st_nemesis_rank_army_6"><text>Colonel</text></string>
+    <string id="st_nemesis_boss_name_army"><text>Taras Hrytsenko</text></string>
 
 </string_table>
