@@ -1,0 +1,151 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="description" content="Nemesis Spawn System 1.0.3 — The Thunder Boss">
+<title>The Thunder Boss · NSS Field Manual</title>
+<link rel="icon" href="assets/logo.png" type="image/png">
+<link rel="stylesheet" href="assets/manual.css">
+<script src="assets/search-data.js" defer></script>
+<script src="assets/manual.js" defer></script>
+</head>
+<body>
+<a class="skip" href="#content">Skip to content</a>
+<header class="mast">
+  <button id="menu-btn" class="btn" aria-controls="rail" aria-expanded="false">Menu</button>
+  <a class="mark" href="index.html">
+    <img class="mark-logo" src="assets/logo.png" alt="Nemesis Spawn System logo" width="60" height="60">
+    <span class="mark-text"><strong>NSS</strong><small>FIELD MANUAL 1.0.3</small></span>
+  </a>
+  <div class="mast-end">
+    <span class="stamp">SURVIVAL REFERENCE</span>
+    <button id="theme-btn" class="btn">Light</button>
+  </div>
+</header>
+<div id="backdrop" class="backdrop" hidden></div>
+<div class="frame">
+  <aside id="rail" class="rail">
+    <div class="search">
+      <label for="q">Search</label>
+      <div class="search-row">
+        <input id="q" type="search" placeholder="hunts, bosses, settings…" autocomplete="off">
+        <button id="clear" type="button" aria-label="Clear search" hidden>×</button>
+      </div>
+      <p class="hint">Ctrl / ⌘ K</p>
+    </div>
+    <div id="results" role="region" aria-label="Search results" hidden></div>
+    <nav id="nav" aria-label="Field Manual sections">
+<details class="grp"><summary>Start here</summary><ul><li><a href="index.html">Nemesis Spawn System — Field Manual</a></li><li><a href="Getting-Started.html">Getting started</a></li><li><a href="Installation-and-Updating.html">Installation and updating</a></li><li><a href="Uninstalling.html">Uninstalling</a></li><li><a href="Whats-New-in-1.0.3.html">What is new in 1.0.3</a></li><li><a href="Changelog.html">Changelog</a></li></ul></details>
+<details class="grp"><summary>Hunts and hunters</summary><ul><li><a href="Hunts.html">Hunts</a></li><li><a href="Hunters-and-Squads.html">Hunters and squads</a></li><li><a href="Faction-Variants.html">Faction variants</a></li><li><a href="Chasing-and-Combat.html">Chasing and combat</a></li><li><a href="Retreats.html">Retreats</a></li><li><a href="Escalation-and-Protection.html">Escalation and protection</a></li><li><a href="Cloaking.html">Cloaking</a></li><li><a href="Sieges.html">Sieges</a></li><li><a href="Remembered-Ground.html">Remembered ground</a></li><li><a href="Map-Following.html">Map following</a></li></ul></details>
+<details class="grp" open><summary>Boss encounters</summary><ul><li><a href="Bosses.html">Bosses</a></li><li><a href="The-Hunter-Boss.html">The Hunter Boss</a></li><li><a href="The-Emission-Boss.html">The Emission Boss</a></li><li><a href="Ghosts.html">Ghosts</a></li><li><a href="The-Emission-Horde.html">The emission horde</a></li><li><a href="The-Thunder-Boss.html" aria-current="page">The Thunder Boss</a></li><li><a href="Legends.html">Legends</a></li></ul></details>
+<details class="grp"><summary>Progression and pressure</summary><ul><li><a href="The-Returning.html">The Returning</a></li><li><a href="The-Hunts-Eye.html">The Hunt&#x27;s Eye</a></li><li><a href="Signs-Before-the-Hunt.html">Signs before the hunt</a></li><li><a href="The-Mark.html">The Mark</a></li><li><a href="Targeted-Ground.html">Targeted Ground</a></li></ul></details>
+<details class="grp"><summary>Rewards and atmosphere</summary><ul><li><a href="Loot-and-Rewards.html">Loot and rewards</a></li><li><a href="Reserve-Your-Kills.html">Reserve your kills</a></li><li><a href="Atmosphere.html">Sound and screen effects</a></li><li><a href="Psy-Hum.html">Psy hum</a></li><li><a href="Boss-Heartbeat.html">Boss heartbeat</a></li><li><a href="PDA-Messages.html">PDA messages</a></li></ul></details>
+<details class="grp"><summary>Configuration</summary><ul><li><a href="Settings.html">Settings</a></li><li><a href="Difficulty-and-Presets.html">Difficulty and presets</a></li><li><a href="Settings-General.html">General settings</a></li><li><a href="Settings-Hunts.html">Hunts settings</a></li><li><a href="Settings-Combat.html">Combat settings</a></li><li><a href="Settings-Boss.html">Boss settings</a></li><li><a href="Settings-Emission-Boss.html">Emission Boss settings</a></li><li><a href="Settings-The-Returning.html">The Returning settings</a></li><li><a href="Settings-The-Hunts-Eye.html">The Hunt&#x27;s Eye settings</a></li><li><a href="Settings-Thunder-Boss.html">Thunder Boss settings</a></li><li><a href="Settings-Debug-and-Tools.html">Debug &amp; tools settings</a></li></ul></details>
+<details class="grp"><summary>Help and reference</summary><ul><li><a href="Compatibility.html">Compatibility</a></li><li><a href="Troubleshooting.html">Troubleshooting</a></li><li><a href="FAQ.html">Frequently asked questions</a></li><li><a href="Credits.html">Credits</a></li></ul></details>
+    </nav>
+  </aside>
+  <main id="content" class="sheet">
+    <div class="crumb"><a href="index.html">Manual</a> · <span>The Thunder Boss</span></div>
+    <h1>The Thunder Boss</h1>
+    <div class="body">
+<p><strong>Danylo Raskat</strong> is a rare storm visitor who arrives alone in lightning: a Loner against the world. Every faction fights him, Loners included, and he fights everyone near him, you too; killing him, or anyone he kills, costs no standing with any faction. He wears an Exo-SEVA Loner suit with electric sparks around his legs, and has no cloaked sneak approach. <strong>While his hand is raised, he regenerates 4% of his maximum health every second by default.</strong> Attack between casts to avoid fighting through both his healing and casting protection.</p>
+<div class="field-brief" role="note" aria-label="Encounter essentials"><strong>Encounter essentials</strong><ul><li>Keep moving: player-directed bolts aim at your recent position.</li><li>Attack between casts; a raised hand means healing and casting protection.</li><li>Healing restores maximum-health percentage points, while bolt damage removes a share of your current health.</li></ul></div>
+<h2 id="natural-visits">Natural visits</h2>
+<div aria-label="Reference table" class="table-scroll" role="region" tabindex="0"><table>
+<thead>
+<tr>
+<th>Condition</th>
+<th>Default</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Chance per eligible thunderstorm</td>
+<td>15%</td>
+</tr>
+<tr>
+<td>Minimum gap</td>
+<td>5 in-game days</td>
+</tr>
+<tr>
+<td>First encounter prerequisite</td>
+<td>At least one hunt has happened.</td>
+</tr>
+<tr>
+<td>Competing encounters</td>
+<td>No other active hunt or boss.</td>
+</tr>
+<tr>
+<td>Emission/psy-storm exclusion</td>
+<td>During the event and for 5 real minutes afterward.</td>
+</tr>
+</tbody>
+</table></div>
+<p>His natural arrival is tied to a real thunderstorm. Rain alone is not a guarantee. <strong>Chance 0</strong> stops natural visits; his enable switch controls the encounter.</p>
+<h2 id="read-the-cast">Read the cast</h2>
+<p>His sparks intensify and a buzz gives about <strong>1.5 seconds</strong> of warning before the raised-hand sequence. He puts away his weapon and raises a hand. The first volley follows about <strong>1.5 seconds</strong> after the hand is raised.</p>
+<p>A full cast has <strong>three volleys</strong>, normally <strong>three seconds apart</strong>, with <strong>two to five bolts per volley</strong>. After the cast ends, at least <strong>20 seconds</strong> pass before the next cast can begin. A missing valid target can end a cast early rather than leaving him casting at nothing.</p>
+<p>Player-directed bolts aim at where you were about <strong>half a second earlier</strong>. A bolt reaching within about <strong>one metre</strong> of its landing point can hurt you. Keep moving instead of trying to out-tank the whole sequence.</p>
+<h2 id="health-regeneration-and-casting-protection">Health regeneration and casting protection</h2>
+<p>Thunder heals only while his hand is raised during a cast. The default rate is <strong>4% of maximum health per real second</strong>, rather than 4% of his remaining health. The initial warning charge before his hand goes up does not give him this healing.</p>
+<p>For example, if he starts at 40% health and spends five seconds with his hand raised, he can recover 20 percentage points and reach 60%, provided he takes no damage during that time. Healing cannot take him above full health.</p>
+<p>While his hand is raised, his default <strong>90% casting damage reduction</strong> replaces the ordinary reductions and their cap. The regeneration and casting protection end when the cast ends; he does not keep this regeneration during ordinary gun combat. This makes the gaps between casts the main opportunity to hurt him.</p>
+<p><a href="Settings-Thunder-Boss.html">Regeneration while casting (%/s)</a> controls the healing rate. Its range is 0–10% of maximum health per second; <strong>0 disables this healing</strong>. The default is 4, and difficulty presets do not change it.</p>
+<h2 id="targets-and-damage">Targets and damage</h2>
+<div aria-label="Reference table" class="table-scroll" role="region" tabindex="0"><table>
+<thead>
+<tr>
+<th>Setting</th>
+<th>Default</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Lightning range at the player</td>
+<td>30 m</td>
+</tr>
+<tr>
+<td>Lightning range at enemy NPCs/mutants</td>
+<td>45 m</td>
+</tr>
+<tr>
+<td>Player health lost per reaching bolt</td>
+<td>7% of current health</td>
+</tr>
+<tr>
+<td>Casting damage reduction</td>
+<td>90%</td>
+</tr>
+<tr>
+<td>Regeneration while hand is raised</td>
+<td>4% of full health per second</td>
+</tr>
+<tr>
+<td>NPC/mutant damage reduction</td>
+<td>60% at all times</td>
+</tr>
+</tbody>
+</table></div>
+<p>A wall between Thunder and the player can block a bolt's damage when the cover check detects the obstruction. Reaching the landing point alone is not enough to damage the player through that wall. <strong>Armour alone does not block the health drain.</strong></p>
+<p>Lightning bypasses ordinary armour protection. NPC volleys can kill their target on the final bolt. Story/protected NPCs, companions, traders and Nemesis hunters are excluded from his lightning targets.</p>
+<p>The first volley can target you when he sees you within range. Later volleys favour suitable nearby NPC enemies; if none exists, they can target you again. This is not a guarantee of one NPC death on every volley.</p>
+<p>His casting reduction replaces the ordinary reductions and their cap while active. Attack between casts, when he is not receiving that casting protection and regeneration.</p>
+<h2 id="suppression-after-casting">Suppression after casting</h2>
+<p>When a cast ends, Thunder has a <strong>50% chance</strong> to enter a <strong>2.5-second suppression burst</strong>. His weapon bursts become longer where the supported engine feature is available, while his shot spread becomes much wider. It is intentionally inaccurate suppressive fire, not a guaranteed precision attack.</p>
+<p>He can return to gun combat while his lightning cooldown runs. The next cast cannot begin until at least <strong>20 seconds after the previous cast ended</strong>, and it still needs an eligible visible target. If the target is gone when his warning charge finishes, that charge can fade without becoming a cast.</p>
+<h2 id="appearance-death-and-travel">Appearance, death and travel</h2>
+<p>His arrival uses <strong>five sky strikes at random moments within 0.7 seconds</strong>. An uncredited NPC kill uses the same lightning departure around his position instead of leaving a body. A player-credited kill leaves his body without that departure sequence. <a href="Loot-and-Rewards.html">Loot credit</a> includes the short player-assist window.</p>
+<p>His settings are independent of <a href="Difficulty-and-Presets.html">difficulty presets</a>. Lightning volume is on <a href="Settings-General.html">General settings</a>; his combat controls are on <a href="Settings-Thunder-Boss.html">Thunder Boss settings</a>.</p>
+    </div>
+    <nav class="turns" aria-label="Previous and next pages"><a class="turn prev" href="The-Emission-Horde.html"><small>Previous</small>The emission horde</a><a class="turn next" href="Legends.html"><small>Next</small>Legends</a></nav>
+    <footer class="sheet-foot">
+      Nemesis Spawn System · Field Manual 1.0.3 · <a href="index.html">Home</a> · <a href="Settings.html">Settings</a> · <a href="Troubleshooting.html">Help</a>
+    </footer>
+  </main>
+  <aside class="toc" aria-label="On this page">
+    <p class="toc-title">On this page</p><a href="#natural-visits">Natural visits</a><a href="#read-the-cast">Read the cast</a><a href="#health-regeneration-and-casting-protection">Health regeneration and casting protection</a><a href="#targets-and-damage">Targets and damage</a><a href="#suppression-after-casting">Suppression after casting</a><a href="#appearance-death-and-travel">Appearance, death and travel</a>
+  </aside>
+</div>
+</body>
+</html>

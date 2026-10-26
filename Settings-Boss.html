@@ -1,0 +1,132 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="description" content="Nemesis Spawn System 1.0.3 — Boss settings">
+<title>Boss settings · NSS Field Manual</title>
+<link rel="icon" href="assets/logo.png" type="image/png">
+<link rel="stylesheet" href="assets/manual.css">
+<script src="assets/search-data.js" defer></script>
+<script src="assets/manual.js" defer></script>
+</head>
+<body>
+<a class="skip" href="#content">Skip to content</a>
+<header class="mast">
+  <button id="menu-btn" class="btn" aria-controls="rail" aria-expanded="false">Menu</button>
+  <a class="mark" href="index.html">
+    <img class="mark-logo" src="assets/logo.png" alt="Nemesis Spawn System logo" width="60" height="60">
+    <span class="mark-text"><strong>NSS</strong><small>FIELD MANUAL 1.0.3</small></span>
+  </a>
+  <div class="mast-end">
+    <span class="stamp">SURVIVAL REFERENCE</span>
+    <button id="theme-btn" class="btn">Light</button>
+  </div>
+</header>
+<div id="backdrop" class="backdrop" hidden></div>
+<div class="frame">
+  <aside id="rail" class="rail">
+    <div class="search">
+      <label for="q">Search</label>
+      <div class="search-row">
+        <input id="q" type="search" placeholder="hunts, bosses, settings…" autocomplete="off">
+        <button id="clear" type="button" aria-label="Clear search" hidden>×</button>
+      </div>
+      <p class="hint">Ctrl / ⌘ K</p>
+    </div>
+    <div id="results" role="region" aria-label="Search results" hidden></div>
+    <nav id="nav" aria-label="Field Manual sections">
+<details class="grp"><summary>Start here</summary><ul><li><a href="index.html">Nemesis Spawn System — Field Manual</a></li><li><a href="Getting-Started.html">Getting started</a></li><li><a href="Installation-and-Updating.html">Installation and updating</a></li><li><a href="Uninstalling.html">Uninstalling</a></li><li><a href="Whats-New-in-1.0.3.html">What is new in 1.0.3</a></li><li><a href="Changelog.html">Changelog</a></li></ul></details>
+<details class="grp"><summary>Hunts and hunters</summary><ul><li><a href="Hunts.html">Hunts</a></li><li><a href="Hunters-and-Squads.html">Hunters and squads</a></li><li><a href="Faction-Variants.html">Faction variants</a></li><li><a href="Chasing-and-Combat.html">Chasing and combat</a></li><li><a href="Retreats.html">Retreats</a></li><li><a href="Escalation-and-Protection.html">Escalation and protection</a></li><li><a href="Cloaking.html">Cloaking</a></li><li><a href="Sieges.html">Sieges</a></li><li><a href="Remembered-Ground.html">Remembered ground</a></li><li><a href="Map-Following.html">Map following</a></li></ul></details>
+<details class="grp"><summary>Boss encounters</summary><ul><li><a href="Bosses.html">Bosses</a></li><li><a href="The-Hunter-Boss.html">The Hunter Boss</a></li><li><a href="The-Emission-Boss.html">The Emission Boss</a></li><li><a href="Ghosts.html">Ghosts</a></li><li><a href="The-Emission-Horde.html">The emission horde</a></li><li><a href="The-Thunder-Boss.html">The Thunder Boss</a></li><li><a href="Legends.html">Legends</a></li></ul></details>
+<details class="grp"><summary>Progression and pressure</summary><ul><li><a href="The-Returning.html">The Returning</a></li><li><a href="The-Hunts-Eye.html">The Hunt&#x27;s Eye</a></li><li><a href="Signs-Before-the-Hunt.html">Signs before the hunt</a></li><li><a href="The-Mark.html">The Mark</a></li><li><a href="Targeted-Ground.html">Targeted Ground</a></li></ul></details>
+<details class="grp"><summary>Rewards and atmosphere</summary><ul><li><a href="Loot-and-Rewards.html">Loot and rewards</a></li><li><a href="Reserve-Your-Kills.html">Reserve your kills</a></li><li><a href="Atmosphere.html">Sound and screen effects</a></li><li><a href="Psy-Hum.html">Psy hum</a></li><li><a href="Boss-Heartbeat.html">Boss heartbeat</a></li><li><a href="PDA-Messages.html">PDA messages</a></li></ul></details>
+<details class="grp" open><summary>Configuration</summary><ul><li><a href="Settings.html">Settings</a></li><li><a href="Difficulty-and-Presets.html">Difficulty and presets</a></li><li><a href="Settings-General.html">General settings</a></li><li><a href="Settings-Hunts.html">Hunts settings</a></li><li><a href="Settings-Combat.html">Combat settings</a></li><li><a href="Settings-Boss.html" aria-current="page">Boss settings</a></li><li><a href="Settings-Emission-Boss.html">Emission Boss settings</a></li><li><a href="Settings-The-Returning.html">The Returning settings</a></li><li><a href="Settings-The-Hunts-Eye.html">The Hunt&#x27;s Eye settings</a></li><li><a href="Settings-Thunder-Boss.html">Thunder Boss settings</a></li><li><a href="Settings-Debug-and-Tools.html">Debug &amp; tools settings</a></li></ul></details>
+<details class="grp"><summary>Help and reference</summary><ul><li><a href="Compatibility.html">Compatibility</a></li><li><a href="Troubleshooting.html">Troubleshooting</a></li><li><a href="FAQ.html">Frequently asked questions</a></li><li><a href="Credits.html">Credits</a></li></ul></details>
+    </nav>
+  </aside>
+  <main id="content" class="sheet">
+    <div class="crumb"><a href="index.html">Manual</a> · <span>Boss settings</span></div>
+    <h1>Boss settings</h1>
+    <div class="body">
+<p>The normal <a href="The-Hunter-Boss.html">Hunter Boss</a> uses these identity, chance and escort controls. Some shared rules, including guaranteed misses and stash rewards, also apply to other bosses. Escort zero allows a solo normal boss; chance zero disables natural normal-boss selection. See <a href="Loot-and-Rewards.html">Loot and rewards</a>.</p>
+<h2 id="options">Options</h2>
+<p>Current defaults are for version 1.0.3. Existing saved values can differ.</p>
+<div aria-label="Reference table" class="table-scroll" role="region" tabindex="0"><table>
+<thead>
+<tr>
+<th>Setting</th>
+<th>Default</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Boss name</td>
+<td>Bogdan Kravets</td>
+<td>The Monolith boss's name.</td>
+</tr>
+<tr>
+<td>UNISG boss name</td>
+<td>Lyutomyr Kat</td>
+<td>The UNISG boss's name (when you play Zombified or Sin, or Monolith with UNISG picked).</td>
+</tr>
+<tr>
+<td>Military boss name</td>
+<td>Taras Hrytsenko</td>
+<td>The Military boss's name (when the Military hunt you as a Monolith player).</td>
+</tr>
+<tr>
+<td>Boss chance (%)</td>
+<td>4</td>
+<td>Chance that a hunt brings the boss. It grows the longer he stays away, and the 30th hunt without him brings him for sure. 0 = no boss.</td>
+</tr>
+<tr>
+<td>Boss days after grace</td>
+<td>7</td>
+<td>Days after the grace period before a boss can appear.</td>
+</tr>
+<tr>
+<td>Boss escort size</td>
+<td>3</td>
+<td>Named hunters who come with the boss. 0 = he comes alone.</td>
+</tr>
+<tr>
+<td>Boss presence distortion (%)</td>
+<td>40</td>
+<td>A gentle screen wave when he is near (from 60 m). 0 = off.</td>
+</tr>
+<tr>
+<td>Boss damage reduction (%)</td>
+<td>30</td>
+<td>How much less damage the boss takes.</td>
+</tr>
+<tr>
+<td>Boss damage against NPCs (%)</td>
+<td>200</td>
+<td>How hard the boss hits other stalkers and mutants.</td>
+</tr>
+<tr>
+<td>Boss guaranteed misses</td>
+<td>2</td>
+<td>Shared boss setting for the initial guaranteed misses against the player. See <a href="Bosses.html">Boss encounters</a> for its use by each encounter. 0 = none.</td>
+</tr>
+<tr>
+<td>Boss stash reward</td>
+<td>On</td>
+<td>A player-credited boss kill can mark a rare yellow stash. Kill/assist credit and rewards deferred when no suitable box is available are explained in <a href="Loot-and-Rewards.html#rare-boss-stash">Loot and rewards</a>.</td>
+</tr>
+</tbody>
+</table></div>
+    </div>
+    <nav class="turns" aria-label="Previous and next pages"><a class="turn prev" href="Settings-Combat.html"><small>Previous</small>Combat settings</a><a class="turn next" href="Settings-Emission-Boss.html"><small>Next</small>Emission Boss settings</a></nav>
+    <footer class="sheet-foot">
+      Nemesis Spawn System · Field Manual 1.0.3 · <a href="index.html">Home</a> · <a href="Settings.html">Settings</a> · <a href="Troubleshooting.html">Help</a>
+    </footer>
+  </main>
+  <aside class="toc" aria-label="On this page">
+    <p class="toc-title">On this page</p><a href="#options">Options</a>
+  </aside>
+</div>
+</body>
+</html>

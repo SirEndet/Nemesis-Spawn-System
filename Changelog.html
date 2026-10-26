@@ -1,0 +1,564 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="description" content="Nemesis Spawn System public changelog — version history through 1.0.3">
+<title>Changelog · NSS Field Manual</title>
+<link rel="icon" href="assets/logo.png" type="image/png">
+<link rel="stylesheet" href="assets/manual.css">
+<script src="assets/search-data.js" defer></script>
+<script src="assets/manual.js" defer></script>
+</head>
+<body>
+<a class="skip" href="#content">Skip to content</a>
+<header class="mast">
+  <button id="menu-btn" class="btn" aria-controls="rail" aria-expanded="false">Menu</button>
+  <a class="mark" href="index.html">
+    <img class="mark-logo" src="assets/logo.png" alt="Nemesis Spawn System logo" width="60" height="60">
+    <span class="mark-text"><strong>NSS</strong><small>FIELD MANUAL 1.0.3</small></span>
+  </a>
+  <div class="mast-end">
+    <span class="stamp">SURVIVAL REFERENCE</span>
+    <button id="theme-btn" class="btn">Light</button>
+  </div>
+</header>
+<div id="backdrop" class="backdrop" hidden></div>
+<div class="frame">
+  <aside id="rail" class="rail">
+    <div class="search">
+      <label for="q">Search</label>
+      <div class="search-row">
+        <input id="q" type="search" placeholder="hunts, bosses, settings…" autocomplete="off">
+        <button id="clear" type="button" aria-label="Clear search" hidden>×</button>
+      </div>
+      <p class="hint">Ctrl / ⌘ K</p>
+    </div>
+    <div id="results" role="region" aria-label="Search results" hidden></div>
+    <nav id="nav" aria-label="Field Manual sections">
+<details class="grp" open><summary>Start here</summary><ul><li><a href="index.html">Nemesis Spawn System — Field Manual</a></li><li><a href="Getting-Started.html">Getting started</a></li><li><a href="Installation-and-Updating.html">Installation and updating</a></li><li><a href="Uninstalling.html">Uninstalling</a></li><li><a href="Whats-New-in-1.0.3.html">What is new in 1.0.3</a></li><li><a href="Changelog.html" aria-current="page">Changelog</a></li></ul></details>
+<details class="grp"><summary>Hunts and hunters</summary><ul><li><a href="Hunts.html">Hunts</a></li><li><a href="Hunters-and-Squads.html">Hunters and squads</a></li><li><a href="Faction-Variants.html">Faction variants</a></li><li><a href="Chasing-and-Combat.html">Chasing and combat</a></li><li><a href="Retreats.html">Retreats</a></li><li><a href="Escalation-and-Protection.html">Escalation and protection</a></li><li><a href="Cloaking.html">Cloaking</a></li><li><a href="Sieges.html">Sieges</a></li><li><a href="Remembered-Ground.html">Remembered ground</a></li><li><a href="Map-Following.html">Map following</a></li></ul></details>
+<details class="grp"><summary>Boss encounters</summary><ul><li><a href="Bosses.html">Bosses</a></li><li><a href="The-Hunter-Boss.html">The Hunter Boss</a></li><li><a href="The-Emission-Boss.html">The Emission Boss</a></li><li><a href="Ghosts.html">Ghosts</a></li><li><a href="The-Emission-Horde.html">The emission horde</a></li><li><a href="The-Thunder-Boss.html">The Thunder Boss</a></li><li><a href="Legends.html">Legends</a></li></ul></details>
+<details class="grp"><summary>Progression and pressure</summary><ul><li><a href="The-Returning.html">The Returning</a></li><li><a href="The-Hunts-Eye.html">The Hunt&#x27;s Eye</a></li><li><a href="Signs-Before-the-Hunt.html">Signs before the hunt</a></li><li><a href="The-Mark.html">The Mark</a></li><li><a href="Targeted-Ground.html">Targeted Ground</a></li></ul></details>
+<details class="grp"><summary>Rewards and atmosphere</summary><ul><li><a href="Loot-and-Rewards.html">Loot and rewards</a></li><li><a href="Reserve-Your-Kills.html">Reserve your kills</a></li><li><a href="Atmosphere.html">Sound and screen effects</a></li><li><a href="Psy-Hum.html">Psy hum</a></li><li><a href="Boss-Heartbeat.html">Boss heartbeat</a></li><li><a href="PDA-Messages.html">PDA messages</a></li></ul></details>
+<details class="grp"><summary>Configuration</summary><ul><li><a href="Settings.html">Settings</a></li><li><a href="Difficulty-and-Presets.html">Difficulty and presets</a></li><li><a href="Settings-General.html">General settings</a></li><li><a href="Settings-Hunts.html">Hunts settings</a></li><li><a href="Settings-Combat.html">Combat settings</a></li><li><a href="Settings-Boss.html">Boss settings</a></li><li><a href="Settings-Emission-Boss.html">Emission Boss settings</a></li><li><a href="Settings-The-Returning.html">The Returning settings</a></li><li><a href="Settings-The-Hunts-Eye.html">The Hunt&#x27;s Eye settings</a></li><li><a href="Settings-Thunder-Boss.html">Thunder Boss settings</a></li><li><a href="Settings-Debug-and-Tools.html">Debug &amp; tools settings</a></li></ul></details>
+<details class="grp"><summary>Help and reference</summary><ul><li><a href="Compatibility.html">Compatibility</a></li><li><a href="Troubleshooting.html">Troubleshooting</a></li><li><a href="FAQ.html">Frequently asked questions</a></li><li><a href="Credits.html">Credits</a></li></ul></details>
+    </nav>
+  </aside>
+  <main id="content" class="sheet">
+    <div class="crumb"><a href="index.html">Manual</a> · <span>Changelog</span></div>
+    <h1>Changelog</h1>
+    <div class="body">
+<p>Public changes to <strong>Nemesis Spawn System</strong>, from the first release candidate through <strong>1.0.3</strong>.</p>
+<p>Version <strong>1.0.3</strong> is the current version covered by this manual. Older entries describe the behavior and defaults at that time; later changes take precedence. For current values, see <a href="Settings.html">Settings</a>.</p>
+<p>For a shorter overview of the current update, see <a href="Whats-New-in-1.0.3.html">What is new in 1.0.3</a>.</p>
+<h2 id="v1-0-3">v1.0.3</h2>
+<h3 id="added-thunder-boss">Added — Thunder Boss</h3>
+<ul>
+<li><strong><a href="The-Thunder-Boss.html">Danylo Raskat</a></strong> — A new lone boss, a Loner in an Exo-SEVA suit, with his own name, settings page and on/off switch.</li>
+<li><strong>Against everyone</strong> — Every faction fights him, Loners included, and he fights everyone near him, you too. He comes in his own Loner squad whatever faction hunts you.</li>
+<li><strong>No standing changes</strong> — Killing him, or anyone he kills, costs no goodwill or reputation with any faction, including with the Dynamic Faction Relations Customizer.</li>
+<li><strong>Lightning travel</strong> — Five bolts from the sky within 0.7 seconds, with one thunderclap, mark his arrival and his departure after an unassisted NPC kill.</li>
+<li><strong>Map following</strong> — If you change maps during his hunt, he follows you as himself.</li>
+<li><strong>Storm visits</strong> — One 15% roll per eligible thunderstorm, after the first hunt, with five in-game days between visits.</li>
+<li><strong>Storm exclusions</strong> — No natural visit during another hunt, an emission or psy storm, or for five real minutes after either event ends.</li>
+<li><strong>Visible warning</strong> — Sparks build around his legs with an electric buzz for 1.5 seconds before he stops and raises his hand.</li>
+<li><strong>Three volleys</strong> — The first follows the raised-hand sky strike by 1.5 seconds; three volleys fire three seconds apart, with two to five bolts each.</li>
+<li><strong>Keep moving</strong> — Player-directed bolts aim half a second behind your movement and take 7% of current health only when they reach you within one metre, with no wall between.</li>
+<li><strong>NPC targets</strong> — Later volleys prefer eligible enemy stalkers or mutants nearest you; the final bolt can kill the NPC target. With no suitable NPC, a volley can target you again.</li>
+<li><strong>Protected targets</strong> — Story NPCs, companions, traders and Nemesis hunters are excluded from his NPC lightning targets. NPC-directed bolts do not damage the player.</li>
+<li><strong>Casting protection</strong> — While his hand is raised, 90% damage reduction replaces the other reductions and their cap; he regenerates 4% of full health per second.</li>
+<li><strong>NPC resistance</strong> — Stalkers and mutants deal 60% less damage to him at all times; player shots do not receive that additional reduction.</li>
+<li><strong>Between casts</strong> — Twenty-second cooldown, with a 50% chance of a 2.5-second inaccurate suppression burst after a cast.</li>
+<li><strong>Distinct behavior</strong> — No cloak, sneaking approach or regular boss&#x27;s invisible-hunter dialogue; his electrical aura stays visible.</li>
+<li><strong>Loot</strong> — Your kill or credited assist keeps his body and gear; an unassisted NPC kill sends him away in lightning.</li>
+<li><strong>Thunder controls</strong> — Chance, visit interval, name, ranges, damage, casting reduction, regeneration and NPC reduction are adjustable. His settings remain outside difficulty presets.</li>
+<li><strong>Force Thunder Boss</strong> — Added to Force the next hunt; waits until no hunt or boss is active, without needing a thunderstorm.</li>
+</ul>
+<h3 id="added-the-returning">Added — The Returning</h3>
+<ul>
+<li><strong><a href="The-Returning.html">Remembered hunters</a></strong> — A named hunter forced to retreat by your hits can return by name, with the map of your earlier encounter remembered.</li>
+<li><strong>Persistent roster</strong> — Up to 60 returning hunters are kept per faction, with older entries making room for new ones.</li>
+<li><strong>Stronger returns</strong> — A later hunt has a 35% chance to use a returning leader, one title and game rank higher, with faction-specific dialogue.</li>
+<li><strong>Modpack rank bands</strong> — Uses the game&#x27;s own rank thresholds rather than hardcoded rank points.</li>
+<li><strong>Rank effects</strong> — AlifeTactics reads the hunter&#x27;s game rank by default; without it, or when Nemesis is selected, accuracy, vision and burst-length sliders apply per rank.</li>
+<li><strong><a href="Legends.html">Legends</a></strong> — Hunters reaching the final rank leave ordinary hunts and wait to return alone as bosses, with guaranteed misses, a fight to the death and a stash reward.</li>
+<li><strong>Legend rolls</strong> — Each waiting Legend rolls a 2% chance every two in-game hours, outside active hunts, warnings and boss encounters; the new default boss lockout is 12 hours.</li>
+<li><strong>Retired names</strong> — A killed named hunter&#x27;s name is retired.</li>
+<li><strong>Saved dialogue</strong> — A returning hunter&#x27;s last line is remembered across saves to avoid immediate repeats.</li>
+<li><strong>Returning controls</strong> — Own page and switch, return chance, rank-effect provider and sliders, Legend chance, roll interval and boss lockout; difficulty presets include its balance sliders.</li>
+<li><strong>Debug choices</strong> — Force a returning hunter, a Legend, or the Legends&#x27; roll. When no Legend waits, the two Legend choices bring a temporary Testing Legend whose death retires no real name.</li>
+<li><strong>Returning diagnostics</strong> — Debug logs list kept hunters, waiting Legends and retired names on load.</li>
+</ul>
+<h3 id="added-the-hunt-s-eye">Added — The Hunt&#x27;s Eye</h3>
+<ul>
+<li><strong><a href="Signs-Before-the-Hunt.html">Intercepted chatter</a></strong> — A PDA line warns of a hunt one in-game hour ahead; the hunt waits for that lead time. Twelve lines per faction, in English and Russian.</li>
+<li><strong><a href="The-Mark.html">The Mark</a></strong> — A meter from 0 to 100 grows from credited kills and retreats: boss +20, named hunter +10, regular squad member +2, forced retreat +8.</li>
+<li><strong>Your actions count</strong> — Your kill or assist grows the Mark; NPC-only kills do not.</li>
+<li><strong>Shorter peace</strong> — A full Mark shortens the time between hunts by up to 30%; it does not increase squad size or damage protection.</li>
+<li><strong>Easing the Mark</strong> — It fades over 48 game hours; sleep removes 50% and an anti-psy item removes 35% of the current value by default.</li>
+<li><strong><a href="Targeted-Ground.html">Targeted Ground</a></strong> — Each map gains targeting from hunts, forced retreats and time spent there; a fully targeted map brings hunts up to 25% sooner and expands recognition of remembered spots.</li>
+<li><strong>Targeting defaults</strong> — Hunt +15, forced retreat +10, and +10 per 12 hours stayed; other maps cool three times as fast.</li>
+<li><strong>Leaving and protection</strong> — Changing maps drops targeting by 20 on every map; an anti-psy item drops the current map&#x27;s targeting by 30.</li>
+<li><strong>Combined limit</strong> — The Mark and Targeted Ground together never shorten the hunt interval by more than half.</li>
+<li><strong>PDA feedback</strong> — Messages announce the Mark taking hold, strengthening and fading, and maps becoming targeted or cooling down.</li>
+<li><strong>Pressure controls</strong> — Own page and on/off switch; lead time, gains, fade, relief, targeting and timing effects have individual controls. Disabling it preserves the saved meters.</li>
+</ul>
+<h3 id="added-military-hunts">Added — Military hunts</h3>
+<ul>
+<li><strong><a href="Faction-Variants.html">Monolith opponents</a></strong> — Monolith players are hunted by the Military by default, with UNISG available as a menu choice; Zombified and Sin players keep UNISG.</li>
+<li><strong>Military boss</strong> — Taras Hrytsenko, with an officer&#x27;s appearance and a rename box.</li>
+<li><strong>Military identity</strong> — Own squad sections, Corporal-to-Colonel titles and English/Russian radio lines.</li>
+<li><strong>Emission faction</strong> — The emission boss follows the Monolith player&#x27;s Military/UNISG choice too.</li>
+</ul>
+<h3 id="changed-hunts">Changed — Hunts</h3>
+<ul>
+<li><strong><a href="Hunts.html">Smarter spawn spots</a></strong> — Before a hunt spawns, the possible spots in the spawn range are checked for stalkers and mutants within 60 m. An empty spot is chosen, or the one with the fewest NPCs, so hunts no longer start in someone&#x27;s camp. It covers every hunt, the bosses, Legends, the Thunder Boss and a hunt following you to another map. The check runs during the arrival warning; a hunt without one comes a few seconds later.</li>
+</ul>
+<h3 id="changed-menu-and-compatibility">Changed — Menu and compatibility</h3>
+<ul>
+<li><strong><a href="Difficulty-and-Presets.html">Immediate difficulty</a></strong> — A preset applies as soon as it is selected, without Apply; Cancel no longer undoes that selection.</li>
+<li><strong><a href="Difficulty-and-Presets.html">Safe automatic backup</a></strong> — The backup is made only when you leave Custom for a preset, with your pending, unapplied values. Switching between presets never overwrites it.</li>
+<li><strong>New name in game</strong> — The menu, its pages, the load line and the restart message say Nemesis Spawn System. Settings and saves carry over unchanged.</li>
+<li><strong><a href="Uninstalling.html">New settings file</a></strong> — <code>gamedata/configs/nss_player.ltx</code> replaces <code>nwss_player.ltx</code>. Your backup and death record carry over on the first load; the old file is removed from the next start.</li>
+<li><strong>G.A.M.M.A. No NPC Friendly Fire</strong> — Its cancelled hits between friendly or neutral factions no longer stop fights with the Thunder Boss. Every other NPC fight is unchanged.</li>
+<li><strong>Nine menu pages</strong> — Added The Returning, The Hunt&#x27;s Eye and Thunder Boss to the existing General, Hunts, Combat, Boss, Emission boss and Debug &amp; tools pages.</li>
+<li><strong>Wearable Devices PDA</strong> — Nemesis messages also reach its Messages page, with a separate General-page switch.</li>
+<li><strong>Compatibility group</strong> — Wearable Devices screen effects and PDA-message controls are grouped together without changing their saved paths.</li>
+<li><strong><a href="Psy-Hum.html">Directional hum</a></strong> — Switched to a mono Yantar psy-voice file so GAMMA&#x27;s audio replacement no longer turns the hunter&#x27;s hum into a sound inside your head.</li>
+<li><strong>Shared Lightning volume</strong> — One General-page control covers emission-boss lightning and the Thunder Boss&#x27;s thunder and bolts.</li>
+<li><strong>Player guides</strong> — English and Russian guides now cover the new features, all nine pages, current settings and both bug-report logs.</li>
+<li><strong>Exe-script installation</strong> — Guides explain the modded exes&#x27; <code>db/mods/00_modded_exes_gamedata.db0</code> archive and older loose-file overrides.</li>
+</ul>
+<h3 id="changed-default-settings">Changed — Default settings</h3>
+<ul>
+<li><strong>Medium profile</strong> — Rebalanced the Medium preset; existing saved settings are retained.</li>
+<li><strong>Debug defaults</strong> — Difficulty starts at Medium; Debug mode and Debug logs start off.</li>
+<li><strong>Grace period</strong> — 18 → 8 in-game days.</li>
+<li><strong>Time between hunts</strong> — 36 → 24 in-game hours.</li>
+<li><strong>Hunt time limit</strong> — 5 → 6 in-game hours.</li>
+<li><strong>Named extras</strong> — 15% → 25% chance per extra member.</li>
+<li><strong>Squad weights</strong> — Sizes one to five change from 50/25/14/10/6 to 50/40/25/20/10.</li>
+<li><strong>Retreat health</strong> — 30% → 25%.</li>
+<li><strong>Accuracy boost</strong> — 10% → 20%.</li>
+<li><strong>Armour class bonus</strong> — 0 → 0.05.</li>
+<li><strong>BR mitigation bonus</strong> — 0% → 10%.</li>
+<li><strong>Boss escort</strong> — Four → three named hunters.</li>
+<li><strong>Emission horde</strong> — Four → six members.</li>
+<li><strong>Legend lockout</strong> — 36 → 12 in-game hours after a boss&#x27;s hunt.</li>
+<li><strong>Anti-psy relief</strong> — 100% → 35% removal of the current Mark.</li>
+<li><strong>Thunder regeneration</strong> — 3% → 4% of full health per second while casting.</li>
+<li><strong>Teleport volume</strong> — 40 → 50.</li>
+<li><strong>Heartbeat volume</strong> — 30 → 60.</li>
+<li><strong>Lightning volume</strong> — 80 → 60.</li>
+<li><strong>Silence length</strong> — 0.75 → 1 second.</li>
+<li><strong>Preset alignment</strong> — Easy and Hard are recalculated around the new Medium using the existing step, rounding and range rules; English and Russian default descriptions match.</li>
+</ul>
+<h3 id="changed-logs">Changed — Logs</h3>
+<ul>
+<li><strong>Separate Nemesis log</strong> — <code>appdata/logs/nemesis.log</code> holds the version, errors and, when enabled, diagnostics; it is shared across sessions and rotates past 5 MB.</li>
+<li><strong>Game-log output</strong> — Keeps the version line, important errors and exe-compatibility notices; routine diagnostics use Nemesis&#x27;s own file.</li>
+<li><strong>Error visibility</strong> — Ordinary errors still reach <code>nemesis.log</code> with Debug logs off; routine diagnostic lines require Debug logs.</li>
+<li><strong>Bug reports</strong> — Request both <code>nemesis.log</code> and <code>xray_&lt;name&gt;.log</code>.</li>
+<li><strong>Truthful exe warning</strong> — Distinguishes genuinely old exes from a new enough exe whose matching scripts are missing or overridden, and includes the build date.</li>
+<li><strong>Cleanup notices</strong> — Normal squad-cleanup notices no longer appear as errors or include a traceback.</li>
+<li><strong>Silent-hunter diagnosis</strong> — Recovery diagnostics appear only with Debug logs; the recovery itself remains active in normal play.</li>
+</ul>
+<h2 id="v1-0-2-1-boss-death-hotfix">v1.0.2.1 — Boss-death hotfix</h2>
+<h3 id="fixed-2">Fixed</h3>
+<ul>
+<li><strong>Boss death crash</strong> — Fixed a rare crash when a boss died while pursuit was still evaluating him.</li>
+<li><strong>Chase error containment</strong> — A caught pursuit error is logged and can yield control to normal combat AI.</li>
+</ul>
+<h2 id="v1-0-2-2026-10-22">v1.0.2 — 2026-10-22</h2>
+<h3 id="added">Added</h3>
+<ul>
+<li><strong>Arrival call</strong> — The Monolith&#x27;s call plays from the arriving squad leader&#x27;s position, giving the direction of the hunt.</li>
+<li><strong>Arrival screen effect</strong> — A short psy swell accompanies each hunt and a squad following you to another map.</li>
+<li><strong>Escalating arrival</strong> — Each hunt cycle increases the call and swell, with separate growth and cap controls; applied once per squad.</li>
+<li><strong>Variable heartbeat</strong> — A single beat is paced from 85 bpm at 80 m to the selected top rate nearby, with gradual changes rather than abrupt jumps.</li>
+<li><strong>Silence before warning</strong> — Effects and music fade down, pause briefly, then return beneath the radio static; separate switch and duration control.</li>
+<li><strong>Boss strike jolt</strong> — Optional, off-by-default screen jolt when the regular boss finishes his sneak and attacks; removed in 1.0.3.</li>
+<li><strong>Commented source download</strong> — Added an installable <code>-dev.zip</code> alongside the lighter player package, plus a source README, lane register, error guide and MIT license.</li>
+</ul>
+<h3 id="changed">Changed</h3>
+<ul>
+<li><strong>Emission arrival clock</strong> — Waits for the event&#x27;s fading phase: 200 seconds into an emission, 228 seconds into a psi storm, or five seconds after the event ends.</li>
+<li><strong>Saved event timing</strong> — The event kind and elapsed time survive a save/load; uninstall preparation clears them.</li>
+<li><strong>Horde before boss</strong> — The horde arrives 20 seconds before the emission boss, from outside the ghost ring on his side.</li>
+<li><strong>Horde flanking</strong> — A configurable share of zombies arrives from the opposite door when the shelter has multiple doors.</li>
+<li><strong>Horde self-defense</strong> — Nearby visible enemies count as combat targets despite GAMMA&#x27;s emission combat limits, without changing other NPCs&#x27; rules.</li>
+<li><strong>Boss retaliation</strong> — Removed the five-second player-only target window after your hit; after his approach, the boss can answer whoever shoots him.</li>
+<li><strong>Boss warning</strong> — Radio static alone; removed the extra 2D psy voices that continued into the hunt.</li>
+<li><strong>Volume restoration</strong> — Silence uses temporary runtime factors, restores them on exit and yields when another script changes them; saved volume settings are untouched.</li>
+<li><strong>Development version labels</strong> — Development rounds identify their version separately from release builds.</li>
+</ul>
+<h3 id="fixed-3">Fixed</h3>
+<ul>
+<li><strong>Double GAMMA damage</strong> — With AlifeTactics, NPC hits no longer apply GAMMA&#x27;s player-hit processing twice; Nemesis protection preserves the existing damage handling.</li>
+<li><strong>3DSS and bullet filtering</strong> — Silencer wear and the existing one-bullet filter continue to work rather than being bypassed for other NPCs.</li>
+<li><strong>Strong shots on named hunters</strong> — Heavy shots correctly trigger named-hunter retreat instead of bypassing their lethal-hit protection.</li>
+<li><strong>Artefacts Reinvention perks</strong> — Hit/death effects are held only around protected Nemesis hits and applied once when appropriate; surviving hunters do not trigger death perks.</li>
+<li><strong>Obrien contact</strong> — Your shots count as contact and reveal cloaked hunters with Obrien GAMMA Overhaul installed.</li>
+<li><strong>Knife and grenade reduction</strong> — Your non-ballistic hits on regular squadmates receive their damage reduction.</li>
+<li><strong>Regular armour bonus</strong> — Applies even when that regular&#x27;s other damage reduction is zero.</li>
+<li><strong>First-hunt pause</strong> — Squad assets are warmed on another map shortly after loading, moving their loading work away from the first fight.</li>
+<li><strong>Horde placement</strong> — No longer starts inside the shelter, appears twice in one emission, or spawns on the player&#x27;s position when the boss cannot land.</li>
+<li><strong>Load-state leakage</strong> — Clears old fight memory, chase slots, siege state and boss focus when loading another save in the same session.</li>
+<li><strong>PDA sender crash</strong> — A message without a sender uses a safe fallback.</li>
+<li><strong>Ukrainian names</strong> — Restores spaces in boss names consistently with English and Russian.</li>
+<li><strong>Arrival effect cleanup</strong> — The arrival swell fades and releases correctly, including when queues end or a save is loaded.</li>
+<li><strong>Arrival retry window</strong> — Waiting for the emission clock no longer consumes the boss&#x27;s time to find a landing spot.</li>
+</ul>
+<h2 id="v1-0-1-2026-10-21">v1.0.1 — 2026-10-21</h2>
+<h3 id="added-2">Added</h3>
+<ul>
+<li><strong>Russian localization</strong> — Menu, tooltips, PDA dialogue, system messages, hunter names, ranks and default boss names.</li>
+<li><strong>Russian player guide</strong> — Added <code>Nemesis_README_ru.md</code> to the player package.</li>
+<li><strong>Startup version</strong> — Every game start writes the mod version to the game log, even with debug logging off.</li>
+</ul>
+<h3 id="changed-2">Changed</h3>
+<ul>
+<li><strong>Typed names retained</strong> — Localized default names do not replace a name already entered by the player.</li>
+<li><strong>Language fallback</strong> — English remains the fallback for other game languages or missing translated strings.</li>
+<li><strong>Translation provenance</strong> — The initial Russian translation was prepared with Claude; wording corrections are welcomed.</li>
+</ul>
+<h2 id="v1-0-0-2026-10-21">v1.0.0 — 2026-10-21</h2>
+<h3 id="changed-3">Changed</h3>
+<ul>
+<li><strong>First full release</strong> — Promoted the completed RC13 haunting and preceding candidate improvements into 1.0.0.</li>
+<li><strong>xlibs requirement corrected</strong> — The mod&#x27;s verified minimum is 1.9.0, rather than the earlier 1.9.1 requirement.</li>
+<li><strong>Release documentation</strong> — Prepared the player guide, compatibility notes and release descriptions for the first full release.</li>
+</ul>
+<h2 id="rc13-local-haunting-candidate">RC13 — Local haunting candidate</h2>
+<h3 id="changed-4">Changed</h3>
+<ul>
+<li><strong>Large shelters</strong> — High-roof halls and buildings with distant walls now qualify as emission shelters.</li>
+<li><strong><a href="Ghosts.html">Ghost ring</a></strong> — Twelve ghosts encircle the sheltered position, 55 m out or 25 m beyond a large building&#x27;s walls.</li>
+<li><strong>Open ring positions</strong> — Ghost positions inside solid ground move to nearby open positions, avoiding gaps.</li>
+<li><strong>Door barriers</strong> — Two or three ghosts stand across each detected door, up to six doors, and push the player back inside.</li>
+<li><strong>Door detection</strong> — Multiple raycasts find low doorways through large or cluttered interiors; high roofs and windows do not count as exits.</li>
+<li><strong>Push pacing</strong> — Ghost pushes cost the configured psy-health share at most once every 1.5 seconds, with psy effects and phantoms.</li>
+<li><strong>Short-lived phantoms</strong> — Reach the player within a second and burst instead of drifting indefinitely.</li>
+<li><strong>Persistent haunting</strong> — Ring and door guards remain until the boss&#x27;s hunt ends; the boss walks through them.</li>
+<li><strong>Horde approach</strong> — Starts outside the ring and approaches through the door nearest the boss.</li>
+<li><strong>Sound warm-up</strong> — Hunt sounds are loaded after a save load without being played, reducing the first-warning loading work.</li>
+</ul>
+<h3 id="removed-2">Removed</h3>
+<ul>
+<li><strong>Closing ghost formation</strong> — Replaced drifting door ghosts, the outdoor-only shove and a doorway making way for the boss with the ring and fixed barriers.</li>
+</ul>
+<h3 id="fixed-4">Fixed</h3>
+<ul>
+<li><strong>Extra-chance documentation</strong> — Corrected the stated emission-boss extra chance from 4% to the actual 6%.</li>
+</ul>
+<h2 id="rc12-local-1-0-0-candidate">RC12 — Local 1.0.0 candidate</h2>
+<h3 id="added-3">Added</h3>
+<ul>
+<li><strong>Automatic custom backup</strong> — Saves custom values before a difficulty replaces them; Load settings from Automatic Backup restores them.</li>
+<li><strong>Important errors</strong> — Selected save/install errors always reach the log in yellow, rate-limited per message.</li>
+</ul>
+<h3 id="changed-5">Changed</h3>
+<ul>
+<li><strong>Real shelter required</strong> — Ghosts wait for an emission-safe shelter and a short stay inside, rather than any roof.</li>
+<li><strong>Inward pushes</strong> — Ghost shoves move toward the room&#x27;s middle or are skipped.</li>
+<li><strong>Immediate boss reveal</strong> — Your damaging hit reveals a cloaked boss before the damage lands, preserving earned bodies and assists.</li>
+<li><strong>Escort after early death</strong> — A boss killed during arrival no longer prevents his remaining escort from arriving.</li>
+<li><strong>Optional Emission Boss</strong> — The Emission Boss encounter is included in the same download and can be enabled or disabled independently.</li>
+<li><strong>Settings pages</strong> — Features have their own settings pages while existing saved setting paths and values are retained.</li>
+<li><strong>Reservation compatibility</strong> — Uses the public xlibs body-reservation support when available while preserving existing compatibility.</li>
+<li><strong>Shared sound handling</strong> — Sound effects start at the requested volume through xlibs playback.</li>
+</ul>
+<h3 id="fixed-5">Fixed</h3>
+<ul>
+<li><strong>Repeated death halving</strong> — The saved death consequence is applied once instead of being applied repeatedly.</li>
+<li><strong>One bullet, one hit</strong> — Duplicate impact handling no longer applies a bullet twice, while separate bullets in one frame still count.</li>
+<li><strong>Debug overhead</strong> — Routine logging avoids formatting and other work while disabled.</li>
+</ul>
+<h2 id="rc11-fair-fights">RC11 — Fair fights</h2>
+<h3 id="changed-6">Changed</h3>
+<ul>
+<li><strong>One damage formula</strong> — Armour, type-specific reduction and escalation combine under Max damage reduction for every hunter.</li>
+<li><strong>Fixed retreat health</strong> — Escalation no longer lowers the retreat threshold or increases armour class every cycle.</li>
+<li><strong>Separate reduction sliders</strong> — Added regular, named, boss and emission-boss reductions, escalation step/cap and flat armour/mitigation bonuses.</li>
+<li><strong>Removed old multipliers</strong> — Replaced the older toughness, armour-growth and BR-cap settings with the new damage controls.</li>
+<li><strong>Boss guaranteed misses</strong> — Added a 0–4 control, default two instead of the fixed three, for either boss&#x27;s first shots at the player.</li>
+<li><strong>Follow limit control</strong> — Added Maps they follow you, default two; zero disables map-following.</li>
+<li><strong>Complete difficulty presets</strong> — Presets now include the balance sliders for normal hunts, map-following, bosses and the emission boss.</li>
+<li><strong>New Medium timing</strong> — Eighteen grace days, 36 hours between hunts, five-hour hunts and an 80–140 m spawn ring.</li>
+<li><strong>New Medium combat</strong> — 15% named extras, 100 m fight range, 30% retreat health, 10% accuracy boost and a 70% reduction cap.</li>
+<li><strong>New Medium boss values</strong> — 4% boss chance, 40% distortion, 6% emission extra chance and hunter attack pull 600.</li>
+<li><strong>Loot options enabled</strong> — Reserve your kills and Boss stash reward became on by default; Lightning strike volume initially defaulted off.</li>
+<li><strong>Two-second assists</strong> — A regular or boss killed by an NPC shortly after your hit counts as your kill, preserving loot and boss rewards.</li>
+<li><strong>Time-limit retreat</strong> — Named hunters, bosses included, flee and teleport when time expires; remaining regulars leave afterwards.</li>
+<li><strong>Directional psy hum</strong> — Moved the hum onto the nearest named hunter as a 3D sound, audible to 100 m.</li>
+<li><strong>Ghost push rate</strong> — Multiple ghosts cannot take psy health more often than once every 0.8 seconds at this stage.</li>
+<li><strong>Closing door ghosts</strong> — Ghosts approach doors from outside; small shelters avoid pushes, and the boss&#x27;s door makes way for him.</li>
+<li><strong>Longer haunting</strong> — Ghosts remain until the hunt ends or the player changes maps instead of disappearing when the boss dies.</li>
+<li><strong>Fairer contact</strong> — An unseen hostile must be within 15 m to hold a fight; farther away, the boss needs actual sight rather than an automatic player reveal.</li>
+<li><strong>Staggered background work</strong> — Spread slower jobs between updates to reduce recurring stutters.</li>
+<li><strong>Tagged diagnostics</strong> — Log lines identify their subsystem and elapsed time; optional performance lines identify expensive updates.</li>
+<li><strong>Custom name handling</strong> — Limits entered names to 48 characters and restores lost spaces without splitting names such as McAllister.</li>
+<li><strong>Last-known search</strong> — Retained as on by default, on its existing saved setting id.</li>
+<li><strong>Sniper positioning removed</strong> — Removed a firing-position behavior that combat routinely interrupted; snipers use the normal squad movement.</li>
+</ul>
+<h3 id="fixed-6">Fixed</h3>
+<ul>
+<li><strong>Dead-boss crash</strong> — Never restores health, invulnerability or retreat state to a dead hunter, preventing the freeze/crash after shots on a boss&#x27;s body.</li>
+<li><strong>Duplicate emission boss</strong> — Repeated force selections no longer queue a second emission boss in the same event.</li>
+<li><strong>Wounded hunters</strong> — Named hunters are kept out of the downed crawl that prevented their retreat run.</li>
+<li><strong>Double NPC reduction</strong> — NPC and mutant hits no longer receive a second reduction on named hunters and bosses.</li>
+<li><strong>Lethal regular hit</strong> — Regular damage reduction also protects against the hit that would kill him.</li>
+<li><strong>Very strong boss hit</strong> — Damage larger than full health is no longer truncated before applying the boss&#x27;s reduction.</li>
+<li><strong>Duplicate arrival sound</strong> — A missing effect no longer falls back to playing the emission&#x27;s sound a second time.</li>
+<li><strong>Nil sneak target</strong> — Ending a sneak without an NPC id is handled safely.</li>
+</ul>
+<h2 id="rc10-hunters-that-keep-hunting">RC10 — Hunters that keep hunting</h2>
+<h3 id="changed-7">Changed</h3>
+<ul>
+<li><strong>NPC fight limit</strong> — After ten seconds without another hit from an NPC or mutant, the hunter returns to pursuing the player.</li>
+<li><strong>Scheduled handovers</strong> — Combat is rechecked after four seconds, 15 seconds, then every 30 seconds, reducing chase/combat oscillation.</li>
+<li><strong>No enemy, resume chase</strong> — Hunters immediately resume pursuit when their selected enemy disappears.</li>
+<li><strong>Sniper sight rule</strong> — A sniper takes a firing position only with sight of the player; out of sight, he keeps moving.</li>
+<li><strong>Six menu pages</strong> — General, Hunts, Combat, Boss, Emission boss and Debug &amp; tools, with grouped options.</li>
+<li><strong>Automatic Obrien support</strong> — Removed the manual armour toggle and its reminder in favor of detection.</li>
+<li><strong>Unified force control</strong> — Replaced separate force checkboxes with Force the next hunt, which acts once and resets to None.</li>
+<li><strong>Sound controls together</strong> — Moved lightning volume to General with the other sounds.</li>
+<li><strong>Stall diagnostics</strong> — With Debug logs, stationary hunters report what controls them and their current target.</li>
+</ul>
+<h3 id="removed-3">Removed</h3>
+<ul>
+<li><strong>PDA test checkbox</strong> — Removed the standalone test-message control.</li>
+</ul>
+<h3 id="fixed-7">Fixed</h3>
+<ul>
+<li><strong>Percent formatting</strong> — Corrected three emission diagnostic lines that displayed doubled percent signs.</li>
+</ul>
+<h2 id="rc9-hotfix-emission-corrections">RC9 + hotfix — Emission corrections</h2>
+<h3 id="fixed-8">Fixed</h3>
+<ul>
+<li><strong>Plain Anomaly psy damage</strong> — Ghost shoves take the configured 4% of the psy bar instead of emptying it in one hit; GAMMA&#x27;s existing behavior is retained.</li>
+<li><strong>Emission immunity scope</strong> — Dedicated boss sections prevent other Sin or UNISG NPCs from inheriting his emission immunity.</li>
+<li><strong>Northern horde composition</strong> — Late maps receive two tougher snorks rather than one weak and one tough snork.</li>
+<li><strong>Pending-arrival saves</strong> — Saves retain the shelter wait, ghosts, doors, arrival time, horde state and emission roll.</li>
+<li><strong>Complete uninstall</strong> — Uninstall preparation clears the pending arrival, its saved state, custom squads and remaining phantoms.</li>
+</ul>
+<h2 id="rc9-emission-boss">RC9 — Emission boss</h2>
+<h3 id="added-4">Added</h3>
+<ul>
+<li><strong>Ilarion Hrech</strong> — A Sin emission boss, or UNISG for Monolith, Zombified and Sin players; replaces a hunt during an emission and can rarely arrive between hunts.</li>
+<li><strong>Haunted shelter</strong> — Door ghosts, inward shoves, phantoms and psy-health loss trap the player while the boss approaches.</li>
+<li><strong>Lightning arrival</strong> — Arrives through the emission, with strong NPC resistance and a fight to the death.</li>
+<li><strong>Emission horde</strong> — Zombies, with snorks on northern maps, originally follow 15 seconds after his arrival.</li>
+<li><strong>Emission controls</strong> — Enable, chance, extra chance, name, NPC resistance, horde size, ghost damage, lightning volume and a force-arrival control.</li>
+<li><strong>UNISG boss identity</strong> — Lyutomyr Kat gets his own rename box and faction-aware lines.</li>
+<li><strong>Reload taunt</strong> — Either boss reacts once per hunt when the player reloads nearby.</li>
+<li><strong>Wearable Devices effects</strong> — Device screens flicker on hunt arrivals; boss arrivals add a two-second blackout, with binocular zoom respected.</li>
+<li><strong>Wearable diagnostics</strong> — Optional logs report detection and effect stages without work when disabled.</li>
+</ul>
+<h3 id="changed-8">Changed</h3>
+<ul>
+<li><strong><a href="Loot-and-Rewards.html">Rare boss stash</a></strong> — Rewards use GAMMA&#x27;s rare yellow stash tier without consuming the player&#x27;s own progression.</li>
+<li><strong>Staggered spawning</strong> — Squad members and hordes arrive one per update interval instead of loading an entire group in one frame.</li>
+<li><strong>Offline timeout</strong> — Increased from 90 seconds to five minutes so distant hunters can close in.</li>
+<li><strong>Random screen flicker</strong> — Irregular short gaps replace a fixed three-flash sequence; normal hunts finish with screens on.</li>
+</ul>
+<h3 id="fixed-9">Fixed</h3>
+<ul>
+<li><strong>Boss name spacing</strong> — Names entered without spaces are normalized for display.</li>
+<li><strong>Obrien warning</strong> — Added a PDA notice when the manual armour option is off despite the overhaul being installed.</li>
+</ul>
+<h2 id="rc8-following-and-retaliation">RC8 — Following and retaliation</h2>
+<h3 id="added-5">Added</h3>
+<ul>
+<li><strong>NPC retaliation</strong> — The boss fights surrounding stalkers and mutants after his stealth approach, with adjustable damage against them.</li>
+<li><strong>Player priority window</strong> — Your damaging hit temporarily makes the boss prioritize you; this window was removed in 1.0.2.</li>
+<li><strong>Entrance-side following</strong> — Pursuers prefer the side of the map entrance, fast-travel arrival or guide drop-off used by the player.</li>
+<li><strong>Latest-exe features</strong> — Optional target bias, attacker redirection and retreat movement hold for supported exes.</li>
+<li><strong>Attack pull sliders</strong> — Separate hunter and boss response strengths; zero leaves target choice to normal AI.</li>
+</ul>
+<h3 id="changed-9">Changed</h3>
+<ul>
+<li><strong>Regulars persist</strong> — Surviving ordinary squadmates keep hunting after all named hunters leave, and can follow to another map.</li>
+<li><strong>Hit protection compatibility</strong> — Applies protection after other hit modifiers where supported, keeping final damage within the configured Nemesis protection rules.</li>
+<li><strong>Lower repeated work</strong> — Reduced repeated armour, relation and distance calculations during hits and updates.</li>
+</ul>
+<h3 id="fixed-10">Fixed</h3>
+<ul>
+<li><strong>Smart-cover hits</strong> — Named hunters in fixed cover no longer bypass the lethal-hit protection.</li>
+<li><strong>Following health</strong> — Hunters arrive as hurt as they left rather than returning at full health.</li>
+<li><strong>Dead followers</strong> — Killed regulars no longer revive during a map transition.</li>
+<li><strong>Regular-only saves</strong> — Restores hunts with no named hunters left instead of abandoning the squad and allowing a second hunt.</li>
+<li><strong>Environmental attackers</strong> — Anomaly, fire and explosion hits no longer trigger invalid stalker checks during pursuit.</li>
+<li><strong>Empty spawn squads</strong> — Failed spawns queue empty squads for cleanup.</li>
+<li><strong>Openable stash boxes</strong> — Boss rewards exclude inaccessible or invalid stash containers.</li>
+<li><strong>Saved cloak state</strong> — Player-struck bosses keep their reveal state after loading; surviving masked hunters regain their appearance.</li>
+<li><strong>Formatted debug values</strong> — Percent and floating-point values display as numbers rather than raw format strings.</li>
+</ul>
+<h2 id="rc7-named-hunters-escape">RC7 — Named hunters escape</h2>
+<h3 id="added-6">Added</h3>
+<ul>
+<li><strong>Boss presence distortion</strong> — Screen wave grows as the boss approaches, including while cloaked, with an independent strength slider.</li>
+<li><strong><a href="Reserve-Your-Kills.html">Reserve your kills</a></strong> — Protects earned bodies; AlifePlus&#x27;s own reservation option takes precedence when installed.</li>
+<li><strong>Regular toughness</strong> — Added a flat reduction for ordinary squadmates, independent of escalation.</li>
+<li><strong>Zombified and Sin support</strong> — Uses UNISG opponents for those player factions.</li>
+</ul>
+<h3 id="changed-10">Changed</h3>
+<ul>
+<li><strong>Flee before teleporting</strong> — A hurt named hunter seeks cover away from the player, or a clear escape lane, before disappearing.</li>
+<li><strong>Named bodies vanish</strong> — Named hunters never leave loot bodies; regulars and the boss retain the player-kill loot rule.</li>
+<li><strong>Equal protection</strong> — NPC and mutant hits receive the same mitigation and cap as player hits.</li>
+<li><strong>Psy hum renamed</strong> — Replaced the whisper setting with Psy hum volume and revised its distance/volume behavior.</li>
+<li><strong>Fifteen-second debug warning</strong> — Debug hunts arrive a fixed 15 seconds after the warning.</li>
+<li><strong>Single active hunt</strong> — No new hunt or warning while a squad is still hunting or following between maps.</li>
+</ul>
+<h3 id="fixed-11">Fixed</h3>
+<ul>
+<li><strong>False retreat cover</strong> — A hunter&#x27;s current position no longer counts as a successful escape run; selected cover must be farther from the player.</li>
+<li><strong>Knockdown at retreat</strong> — Restores engine health in the requesting hit so the hunter can flee instead of dropping wounded first.</li>
+<li><strong>NPC lethal hits</strong> — Strengthened the pre-hit floor and reduction so NPC shots do not skip retreat protection at later cycles.</li>
+<li><strong>Late death notification</strong> — Correctly removes NPC-killed bodies even when the update notices death before the callback.</li>
+<li><strong>Visible death frame</strong> — Masks bodies scheduled to vanish before the killing hit where appropriate.</li>
+<li><strong>Missing psy sound</strong> — Uses an existing sound file and checks sound availability before playback.</li>
+<li><strong>Cloak scan warnings</strong> — Filters unsuitable objects during cloak checks, avoiding repeated engine error messages.</li>
+</ul>
+<h2 id="rc6-ballistics-hotfix">RC6 — Ballistics hotfix</h2>
+<h3 id="fixed-12">Fixed</h3>
+<ul>
+<li><strong>NPCs could not kill each other</strong> — Stopped a player-bullet duplicate filter from cancelling repeat NPC-on-NPC hits.</li>
+<li><strong>Double player hits</strong> — Removed duplicate GAMMA ballistics application on named hunters by wrapping the registered handler correctly.</li>
+</ul>
+<h2 id="rc5-boss-fights-to-the-death">RC5 — Boss fights to the death</h2>
+<h3 id="added-7">Added</h3>
+<ul>
+<li><strong>Boss stash reward</strong> — Optional stash marked after the player&#x27;s boss kill; initially an ordinary stash and off by default.</li>
+<li><strong>Clear menu groups</strong> — General, Gameplay, Combat, Boss and Debug, with timing, squad, behavior, damage, armour and reward groups.</li>
+</ul>
+<h3 id="changed-11">Changed</h3>
+<ul>
+<li><strong>Mortal boss</strong> — Removed the boss&#x27;s retreat floor; he fights until killed and leaves earned loot.</li>
+<li><strong>Player-kill bodies</strong> — Bodies earned by the player remain, while kills by others follow the teleport-removal rule.</li>
+<li><strong>Player breaks siege</strong> — Shooting a hunter from inside makes the squad storm in immediately.</li>
+<li><strong>Boss moves indoors</strong> — After his approach, the boss enters rather than taking a siege waiting position.</li>
+<li><strong>Shorter escort siege</strong> — In a boss hunt the escort waits 20 seconds outside instead of 90.</li>
+<li><strong>Cloaked neutrality</strong> — Extended the boss&#x27;s ignore/ignored rule to other cloaked hunters; damaging hits reveal them.</li>
+<li><strong>Attacker response</strong> — Hunters recognize an NPC shooting at them, including recent hits and available under-fire memory.</li>
+<li><strong>Regular boss response</strong> — Once his approach ends, visible contact can bring him into combat instead of leaving him running at the player.</li>
+</ul>
+<h3 id="fixed-13">Fixed</h3>
+<ul>
+<li><strong>Resetting siege timer</strong> — Brief indoor/outdoor fluctuations no longer restart the full wait; ten seconds outside is required.</li>
+<li><strong>Boss that never fired</strong> — Removed siege interference and corrected combat handover after his approach.</li>
+<li><strong>Ignored player siege shots</strong> — Your hit ends the wait even before the hunter&#x27;s normal combat AI has selected an enemy.</li>
+</ul>
+<h2 id="rc4-escalation-and-map-pursuit">RC4 — Escalation and map pursuit</h2>
+<h3 id="added-8">Added</h3>
+<ul>
+<li><strong>Boss chance ramp</strong> — One roll per hunt, +2 percentage points every four hunts without him, guaranteed by the 30th eligible hunt.</li>
+<li><strong>Max damage reduction</strong> — New cap on the combined protection, initially 80%.</li>
+<li><strong>Area scaling</strong> — Smaller squads in rookie areas and more named extras in late areas, with an option to disable scaling.</li>
+<li><strong>Underground exclusion</strong> — Hunts do not start in underground levels.</li>
+<li><strong>Remembered positions</strong> — Keeps up to five player locations per map for seven game days; returning there improves pursuit and flanking.</li>
+<li><strong>Indoor siege</strong> — Hunters wait around the building for 90 seconds before storming in; the boss follows his own approach.</li>
+<li><strong><a href="Map-Following.html">Two-map following</a></strong> — Survivors follow across level changes, shortcuts, fast travel and guides; a further crossing can shake them off.</li>
+</ul>
+<h3 id="changed-12">Changed</h3>
+<ul>
+<li><strong>Escalation outcomes</strong> — Beating a normal hunt adds a cycle; outlasting it removes one; beating the boss or being killed by a hunter halves the cycle.</li>
+<li><strong>No daily decay</strong> — Removed passive escalation decay and its setting.</li>
+<li><strong>Movement detection</strong> — Reads movement flags directly, avoiding false running from teleporting or changing levels.</li>
+<li><strong>Following state</strong> — Carries names, faction, boss identity and health between maps; the hunt&#x27;s time limit continues while they follow.</li>
+</ul>
+<h2 id="rc3-stealth-boss-and-safer-control">RC3 — Stealth boss and safer control</h2>
+<h3 id="added-9">Added</h3>
+<ul>
+<li><strong><a href="Uninstalling.html">Prepare for uninstall</a></strong> — Ends hunts, drops pending warnings and removes Nemesis squads before the player saves and uninstalls.</li>
+<li><strong>Boss escort control</strong> — Adjustable named escort, independent of normal squad weights.</li>
+<li><strong>Boss extra armour</strong> — Separate boss-only armour-class bonus, later replaced by RC11&#x27;s unified controls.</li>
+<li><strong>Boss arrival tell</strong> — The boss and escort arrive in teleport bursts with positional sound.</li>
+<li><strong>Debug boss marker</strong> — Optional boss map marker for debug encounters.</li>
+</ul>
+<h3 id="changed-13">Changed</h3>
+<ul>
+<li><strong>Movement-aware sneak</strong> — The boss circles behind a stationary player and pursues a running one, then homes in without repeatedly circling outward.</li>
+<li><strong>Telegraphed attack</strong> — Different close, behind and running triggers announce the attack before firing.</li>
+<li><strong>Cloaked boss neutrality</strong> — Other NPCs ignore him while he approaches; the player&#x27;s damaging shot reveals him.</li>
+<li><strong>Guaranteed player misses</strong> — The boss&#x27;s initial miss allowance counts only shots at the player, not shots at NPCs.</li>
+<li><strong>Hostile bases</strong> — Enemy-controlled bases no longer prevent a hunt; friendly and neutral bases still do.</li>
+<li><strong>Safe uninstall guide</strong> — Documents why saves made with an active hunt require cleanup before removing the mod.</li>
+</ul>
+<h3 id="removed-4">Removed</h3>
+<ul>
+<li><strong>Last-seen map markers</strong> — Retiring hunters no longer place a temporary red marker on nearby smart terrains.</li>
+</ul>
+<h3 id="fixed-14">Fixed</h3>
+<ul>
+<li><strong>Rotating-player approach</strong> — Looking around no longer sends a homing boss back to the outer circling ring.</li>
+</ul>
+<h2 id="rc2-difficulty-and-contact">RC2 — Difficulty and contact</h2>
+<h3 id="added-10">Added</h3>
+<ul>
+<li><strong>Difficulty presets</strong> — Easy, Medium, Hard and Custom, with the initial group of balance sliders.</li>
+<li><strong>Accuracy boost</strong> — Named hunters gain the selected accuracy bonus, regulars half and the boss an additional bonus.</li>
+<li><strong>Separate warnings</strong> — Independent arrival-audio and PDA switches; radio on and PDA off by default.</li>
+</ul>
+<h3 id="changed-14">Changed</h3>
+<ul>
+<li><strong>Immediate preview</strong> — Selecting a preset updates its sliders before Apply; Apply saves it and Cancel drops the preview at this stage.</li>
+<li><strong>Six-hour limit</strong> — Changed the default hunt duration from four to six hours to match Medium.</li>
+<li><strong>Boss delay</strong> — Default days after grace increased from three to seven and joined the presets.</li>
+<li><strong>Contact before combat</strong> — A hunter seeing or being hit by the player stops and faces them while normal combat acquires its enemy, instead of sprinting straight into them.</li>
+<li><strong>Combat linger</strong> — Keeps combat briefly after contact, then resumes pursuit when the fight has ended.</li>
+<li><strong>Shared cleanup</strong> — Improved end-of-hunt cleanup and teleport sequencing. Missing required dependencies disable hunts with a clear log message.</li>
+</ul>
+<h3 id="fixed-15">Fixed</h3>
+<ul>
+<li><strong>Main-menu difficulty</strong> — Preset selections made before loading now reach the apply handler.</li>
+<li><strong>First preset selection</strong> — A deliberate first pick is applied rather than incorrectly becoming Custom.</li>
+<li><strong>First-open preview</strong> — Retrieves MCM&#x27;s active window correctly so the preview works on its first opening.</li>
+<li><strong>Cover reservation leak</strong> — Frees reserved cover on deaths, vanished objects and other exit paths.</li>
+</ul>
+<h2 id="rc1-first-public-candidate">RC1 — First public candidate</h2>
+<h3 id="added-11">Added</h3>
+<ul>
+<li><strong>Recurring hunts</strong> — Named Monolith hunters and optional ordinary squadmates spawn out of sight and pursue the player.</li>
+<li><strong>Arrival warning</strong> — PDA message and radio static precede the hunt; named hunters use cycle-dependent taunts and later address the player by name.</li>
+<li><strong>Persistent names and ranks</strong> — Names appear on the NPC itself, with faction titles distinguishing named hunters from ordinary squadmates.</li>
+<li><strong>Escalating threat</strong> — Beaten hunts strengthen later ones, with armour-based protection and configurable retreat thresholds.</li>
+<li><strong>Retreat and teleport</strong> — Wounded named hunters flee toward cover, disappear in a burst and are removed; ordinary squadmates can be killed.</li>
+<li><strong>Grace and timing controls</strong> — New-game grace period, hunt interval, hunt time limit, spawn ring, squad weights and named-extra chance.</li>
+<li><strong>Safe start conditions</strong> — Bases, dialogue and sleep delay hunt starts; already announced hunts remain committed after entering a base.</li>
+<li><strong>Memory and tactics</strong> — Last-known-position pursuit, alternating flanks, retreat cover and cooperation with AlifeTactics takeovers.</li>
+<li><strong>Experimental hunter cloak</strong> — Named hunters become invisible while stalking from range, revealing on combat, proximity or hits.</li>
+<li><strong>Bogdan Kravets</strong> — A rare tougher boss with a distinct appearance, cloak, approach, warning lines and renameable identity; his behavior was expanded in later candidates.</li>
+<li><strong>Faction-aware opponents</strong> — UNISG hunts Monolith players, with its own appearance and dialogue.</li>
+<li><strong>Psy ambience</strong> — Proximity voices, teleport sound, PDA icon and optional HD portrait.</li>
+<li><strong>Debug controls</strong> — Accelerated hunts, detailed logs and manual escalation reset.</li>
+<li><strong>Save/load support</strong> — Preserves hunt progress, member state, names and pending teleports; completed hunts clean up their empty squads.</li>
+<li><strong>Compatibility foundations</strong> — Dedicated Nemesis files, reliable pursuit, safe squad cleanup and protection from GAMMA&#x27;s southern Monolith cleanup.</li>
+</ul>
+<h3 id="fixed-before-the-first-candidate">Fixed before the first candidate</h3>
+<ul>
+<li><strong>Squad spawn validity</strong> — Hunt members no longer use unsuitable spawn sections that the engine removes.</li>
+<li><strong>Online/offline chase</strong> — Reinstalls the chase after online objects are recreated instead of leaving hunters without pursuit.</li>
+<li><strong>Self-defense</strong> — Allows hunters to fight nearby threats rather than running helplessly through them.</li>
+<li><strong>Health assignment</strong> — Fixed damaging hits accidentally healing a hunter.</li>
+<li><strong>Looting while chasing</strong> — Blocks loot/help planners during pursuit and avoids smart-terrain jobs taking over the hunters.</li>
+<li><strong>Multiple deaths</strong> — Completes all same-frame deaths before ending a hunt.</li>
+<li><strong>Lower update cost</strong> — Caches settings and reads the selected enemy instead of repeatedly scanning all nearby objects.</li>
+<li><strong>Recycled NPC ids</strong> — Unrelated NPCs no longer inherit Nemesis armour or hunter state when the game reuses an NPC ID.</li>
+<li><strong>Teleport persistence</strong> — Finishes pending removals after loading rather than leaving invisible survivors behind.</li>
+<li><strong>Dead-model crash</strong> — Avoids changing a corpse&#x27;s visual while its physics are being built.</li>
+</ul>
+    </div>
+    <nav class="turns" aria-label="Related pages"><a class="turn prev" href="Whats-New-in-1.0.3.html"><small>Overview</small>What is new in 1.0.3</a><a class="turn next" href="Contents.html"><small>Browse</small>Complete contents</a></nav>
+    <footer class="sheet-foot">
+      Nemesis Spawn System · Field Manual 1.0.3 · <a href="index.html">Home</a> · <a href="Settings.html">Settings</a> · <a href="Troubleshooting.html">Help</a>
+    </footer>
+  </main>
+  <aside class="toc" aria-label="On this page">
+    <p class="toc-title">Versions</p><a href="#v1-0-3">v1.0.3</a><a href="#v1-0-2-1-boss-death-hotfix">v1.0.2.1 — Boss-death hotfix</a><a href="#v1-0-2-2026-10-22">v1.0.2 — 2026-10-22</a><a href="#v1-0-1-2026-10-21">v1.0.1 — 2026-10-21</a><a href="#v1-0-0-2026-10-21">v1.0.0 — 2026-10-21</a><a href="#rc13-local-haunting-candidate">RC13 — Local haunting candidate</a><a href="#rc12-local-1-0-0-candidate">RC12 — Local 1.0.0 candidate</a><a href="#rc11-fair-fights">RC11 — Fair fights</a><a href="#rc10-hunters-that-keep-hunting">RC10 — Hunters that keep hunting</a><a href="#rc9-hotfix-emission-corrections">RC9 + hotfix — Emission corrections</a><a href="#rc9-emission-boss">RC9 — Emission boss</a><a href="#rc8-following-and-retaliation">RC8 — Following and retaliation</a><a href="#rc7-named-hunters-escape">RC7 — Named hunters escape</a><a href="#rc6-ballistics-hotfix">RC6 — Ballistics hotfix</a><a href="#rc5-boss-fights-to-the-death">RC5 — Boss fights to the death</a><a href="#rc4-escalation-and-map-pursuit">RC4 — Escalation and map pursuit</a><a href="#rc3-stealth-boss-and-safer-control">RC3 — Stealth boss and safer control</a><a href="#rc2-difficulty-and-contact">RC2 — Difficulty and contact</a><a href="#rc1-first-public-candidate">RC1 — First public candidate</a>
+  </aside>
+</div>
+</body>
+</html>
