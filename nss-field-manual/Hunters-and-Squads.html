@@ -1,0 +1,125 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="description" content="Nemesis Spawn System 1.0.3 — Hunters and squads">
+<title>Hunters and squads · NSS Field Manual</title>
+<link rel="icon" href="assets/logo.png" type="image/png">
+<link rel="stylesheet" href="assets/manual.css">
+<script src="assets/search-data.js" defer></script>
+<script src="assets/manual.js" defer></script>
+</head>
+<body>
+<a class="skip" href="#content">Skip to content</a>
+<header class="mast">
+  <button id="menu-btn" class="btn" aria-controls="rail" aria-expanded="false">Menu</button>
+  <a class="mark" href="index.html">
+    <img class="mark-logo" src="assets/logo.png" alt="Nemesis Spawn System logo" width="60" height="60">
+    <span class="mark-text"><strong>NSS</strong><small>FIELD MANUAL 1.0.3</small></span>
+  </a>
+  <div class="mast-end">
+    <span class="stamp">SURVIVAL REFERENCE</span>
+    <button id="theme-btn" class="btn">Light</button>
+  </div>
+</header>
+<div id="backdrop" class="backdrop" hidden></div>
+<div class="frame">
+  <aside id="rail" class="rail">
+    <div class="search">
+      <label for="q">Search</label>
+      <div class="search-row">
+        <input id="q" type="search" placeholder="hunts, bosses, settings…" autocomplete="off">
+        <button id="clear" type="button" aria-label="Clear search" hidden>×</button>
+      </div>
+      <p class="hint">Ctrl / ⌘ K</p>
+    </div>
+    <div id="results" role="region" aria-label="Search results" hidden></div>
+    <nav id="nav" aria-label="Field Manual sections">
+<details class="grp"><summary>Start here</summary><ul><li><a href="index.html">Nemesis Spawn System — Field Manual</a></li><li><a href="Getting-Started.html">Getting started</a></li><li><a href="Installation-and-Updating.html">Installation and updating</a></li><li><a href="Uninstalling.html">Uninstalling</a></li><li><a href="Whats-New-in-1.0.3.html">What is new in 1.0.3</a></li><li><a href="Changelog.html">Changelog</a></li></ul></details>
+<details class="grp" open><summary>Hunts and hunters</summary><ul><li><a href="Hunts.html">Hunts</a></li><li><a href="Hunters-and-Squads.html" aria-current="page">Hunters and squads</a></li><li><a href="Faction-Variants.html">Faction variants</a></li><li><a href="Chasing-and-Combat.html">Chasing and combat</a></li><li><a href="Retreats.html">Retreats</a></li><li><a href="Escalation-and-Protection.html">Escalation and protection</a></li><li><a href="Cloaking.html">Cloaking</a></li><li><a href="Sieges.html">Sieges</a></li><li><a href="Remembered-Ground.html">Remembered ground</a></li><li><a href="Map-Following.html">Map following</a></li></ul></details>
+<details class="grp"><summary>Boss encounters</summary><ul><li><a href="Bosses.html">Bosses</a></li><li><a href="The-Hunter-Boss.html">The Hunter Boss</a></li><li><a href="The-Emission-Boss.html">The Emission Boss</a></li><li><a href="Ghosts.html">Ghosts</a></li><li><a href="The-Emission-Horde.html">The emission horde</a></li><li><a href="The-Thunder-Boss.html">The Thunder Boss</a></li><li><a href="Legends.html">Legends</a></li></ul></details>
+<details class="grp"><summary>Progression and pressure</summary><ul><li><a href="The-Returning.html">The Returning</a></li><li><a href="The-Hunts-Eye.html">The Hunt&#x27;s Eye</a></li><li><a href="Signs-Before-the-Hunt.html">Signs before the hunt</a></li><li><a href="The-Mark.html">The Mark</a></li><li><a href="Targeted-Ground.html">Targeted Ground</a></li></ul></details>
+<details class="grp"><summary>Rewards and atmosphere</summary><ul><li><a href="Loot-and-Rewards.html">Loot and rewards</a></li><li><a href="Reserve-Your-Kills.html">Reserve your kills</a></li><li><a href="Atmosphere.html">Sound and screen effects</a></li><li><a href="Psy-Hum.html">Psy hum</a></li><li><a href="Boss-Heartbeat.html">Boss heartbeat</a></li><li><a href="PDA-Messages.html">PDA messages</a></li></ul></details>
+<details class="grp"><summary>Configuration</summary><ul><li><a href="Settings.html">Settings</a></li><li><a href="Difficulty-and-Presets.html">Difficulty and presets</a></li><li><a href="Settings-General.html">General settings</a></li><li><a href="Settings-Hunts.html">Hunts settings</a></li><li><a href="Settings-Combat.html">Combat settings</a></li><li><a href="Settings-Boss.html">Boss settings</a></li><li><a href="Settings-Emission-Boss.html">Emission Boss settings</a></li><li><a href="Settings-The-Returning.html">The Returning settings</a></li><li><a href="Settings-The-Hunts-Eye.html">The Hunt&#x27;s Eye settings</a></li><li><a href="Settings-Thunder-Boss.html">Thunder Boss settings</a></li><li><a href="Settings-Debug-and-Tools.html">Debug &amp; tools settings</a></li></ul></details>
+<details class="grp"><summary>Help and reference</summary><ul><li><a href="Compatibility.html">Compatibility</a></li><li><a href="Troubleshooting.html">Troubleshooting</a></li><li><a href="FAQ.html">Frequently asked questions</a></li><li><a href="Credits.html">Credits</a></li></ul></details>
+    </nav>
+  </aside>
+  <main id="content" class="sheet">
+    <div class="crumb"><a href="index.html">Manual</a> · <span>Hunters and squads</span></div>
+    <h1>Hunters and squads</h1>
+    <div class="body">
+<h2 id="named-hunters-and-regulars">Named hunters and regulars</h2>
+<div aria-label="Reference table" class="table-scroll" role="region" tabindex="0"><table>
+<thead>
+<tr>
+<th>Type</th>
+<th>Behaviour</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Named hunter</td>
+<td>Has a title and name; protected from ordinary lethal damage and retreats when sufficiently hurt. Can progress through <a href="The-Returning.html">The Returning</a>.</td>
+</tr>
+<tr>
+<td>Regular squadmate</td>
+<td>A killable stalker. Can continue the hunt after named members leave. Does not gain the named hunters' escalation protection.</td>
+</tr>
+<tr>
+<td>Boss</td>
+<td>A separate, killable encounter leader with boss-specific behaviour. See <a href="Bosses.html">Bosses</a>.</td>
+</tr>
+</tbody>
+</table></div>
+<p>A normal squad has <strong>one to five</strong> stalkers. Its first member is named. Each extra has a <strong>25%</strong> base chance to be named, with regional adjustments when enabled.</p>
+<h2 id="squad-size-weights">Squad-size weights</h2>
+<div aria-label="Reference table" class="table-scroll" role="region" tabindex="0"><table>
+<thead>
+<tr>
+<th>Squad size</th>
+<th>Default weight</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td>50</td>
+</tr>
+<tr>
+<td>2</td>
+<td>40</td>
+</tr>
+<tr>
+<td>3</td>
+<td>25</td>
+</tr>
+<tr>
+<td>4</td>
+<td>20</td>
+</tr>
+<tr>
+<td>5</td>
+<td>10</td>
+</tr>
+</tbody>
+</table></div>
+<p>These are relative weights, not percentages, and do not need to total 100. Boss escorts use their own size setting.</p>
+<h2 id="area-scaling">Area scaling</h2>
+<p>With <strong>Scale hunts by area</strong> enabled, low-danger areas cap normal squads: tier 0 areas such as Cordon and Swamps allow at most two members, and tier 1 areas such as Garbage allow at most three. Higher-danger areas increase the chance of named extras: +10 percentage points at tier 4, +20 at tier 5. Unknown maps use the neutral middle tier. Boss hunts are excluded from this scaling.</p>
+<h2 id="titles-and-identity">Titles and identity</h2>
+<p>Titles follow the <a href="Faction-Variants.html">hunter faction</a>. With The Returning enabled, a fresh named hunter starts at the game's <strong>Experienced</strong> rank, then climbs through Professional, Veteran, Expert and Master before entering the Legend stage.</p>
+<p>Titles describe the returning hunter's progression; they are distinct from escalation, which belongs to the hunt cycle. A regular stalker with a personal name is still not necessarily a named Nemesis hunter.</p>
+<p>Related: <a href="Retreats.html">Retreats</a> · <a href="The-Returning.html">The Returning</a> · <a href="Loot-and-Rewards.html">Loot and rewards</a> · <a href="Settings-Hunts.html">Hunts settings</a>.</p>
+    </div>
+    <nav class="turns" aria-label="Previous and next pages"><a class="turn prev" href="Hunts.html"><small>Previous</small>Hunts</a><a class="turn next" href="Faction-Variants.html"><small>Next</small>Faction variants</a></nav>
+    <footer class="sheet-foot">
+      Nemesis Spawn System · Field Manual 1.0.3 · <a href="index.html">Home</a> · <a href="Settings.html">Settings</a> · <a href="Troubleshooting.html">Help</a>
+    </footer>
+  </main>
+  <aside class="toc" aria-label="On this page">
+    <p class="toc-title">On this page</p><a href="#named-hunters-and-regulars">Named hunters and regulars</a><a href="#squad-size-weights">Squad-size weights</a><a href="#area-scaling">Area scaling</a><a href="#titles-and-identity">Titles and identity</a>
+  </aside>
+</div>
+</body>
+</html>

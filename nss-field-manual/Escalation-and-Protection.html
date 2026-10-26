@@ -1,0 +1,140 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="description" content="Nemesis Spawn System 1.0.3 — Escalation and protection">
+<title>Escalation and protection · NSS Field Manual</title>
+<link rel="icon" href="assets/logo.png" type="image/png">
+<link rel="stylesheet" href="assets/manual.css">
+<script src="assets/search-data.js" defer></script>
+<script src="assets/manual.js" defer></script>
+</head>
+<body>
+<a class="skip" href="#content">Skip to content</a>
+<header class="mast">
+  <button id="menu-btn" class="btn" aria-controls="rail" aria-expanded="false">Menu</button>
+  <a class="mark" href="index.html">
+    <img class="mark-logo" src="assets/logo.png" alt="Nemesis Spawn System logo" width="60" height="60">
+    <span class="mark-text"><strong>NSS</strong><small>FIELD MANUAL 1.0.3</small></span>
+  </a>
+  <div class="mast-end">
+    <span class="stamp">SURVIVAL REFERENCE</span>
+    <button id="theme-btn" class="btn">Light</button>
+  </div>
+</header>
+<div id="backdrop" class="backdrop" hidden></div>
+<div class="frame">
+  <aside id="rail" class="rail">
+    <div class="search">
+      <label for="q">Search</label>
+      <div class="search-row">
+        <input id="q" type="search" placeholder="hunts, bosses, settings…" autocomplete="off">
+        <button id="clear" type="button" aria-label="Clear search" hidden>×</button>
+      </div>
+      <p class="hint">Ctrl / ⌘ K</p>
+    </div>
+    <div id="results" role="region" aria-label="Search results" hidden></div>
+    <nav id="nav" aria-label="Field Manual sections">
+<details class="grp"><summary>Start here</summary><ul><li><a href="index.html">Nemesis Spawn System — Field Manual</a></li><li><a href="Getting-Started.html">Getting started</a></li><li><a href="Installation-and-Updating.html">Installation and updating</a></li><li><a href="Uninstalling.html">Uninstalling</a></li><li><a href="Whats-New-in-1.0.3.html">What is new in 1.0.3</a></li><li><a href="Changelog.html">Changelog</a></li></ul></details>
+<details class="grp" open><summary>Hunts and hunters</summary><ul><li><a href="Hunts.html">Hunts</a></li><li><a href="Hunters-and-Squads.html">Hunters and squads</a></li><li><a href="Faction-Variants.html">Faction variants</a></li><li><a href="Chasing-and-Combat.html">Chasing and combat</a></li><li><a href="Retreats.html">Retreats</a></li><li><a href="Escalation-and-Protection.html" aria-current="page">Escalation and protection</a></li><li><a href="Cloaking.html">Cloaking</a></li><li><a href="Sieges.html">Sieges</a></li><li><a href="Remembered-Ground.html">Remembered ground</a></li><li><a href="Map-Following.html">Map following</a></li></ul></details>
+<details class="grp"><summary>Boss encounters</summary><ul><li><a href="Bosses.html">Bosses</a></li><li><a href="The-Hunter-Boss.html">The Hunter Boss</a></li><li><a href="The-Emission-Boss.html">The Emission Boss</a></li><li><a href="Ghosts.html">Ghosts</a></li><li><a href="The-Emission-Horde.html">The emission horde</a></li><li><a href="The-Thunder-Boss.html">The Thunder Boss</a></li><li><a href="Legends.html">Legends</a></li></ul></details>
+<details class="grp"><summary>Progression and pressure</summary><ul><li><a href="The-Returning.html">The Returning</a></li><li><a href="The-Hunts-Eye.html">The Hunt&#x27;s Eye</a></li><li><a href="Signs-Before-the-Hunt.html">Signs before the hunt</a></li><li><a href="The-Mark.html">The Mark</a></li><li><a href="Targeted-Ground.html">Targeted Ground</a></li></ul></details>
+<details class="grp"><summary>Rewards and atmosphere</summary><ul><li><a href="Loot-and-Rewards.html">Loot and rewards</a></li><li><a href="Reserve-Your-Kills.html">Reserve your kills</a></li><li><a href="Atmosphere.html">Sound and screen effects</a></li><li><a href="Psy-Hum.html">Psy hum</a></li><li><a href="Boss-Heartbeat.html">Boss heartbeat</a></li><li><a href="PDA-Messages.html">PDA messages</a></li></ul></details>
+<details class="grp"><summary>Configuration</summary><ul><li><a href="Settings.html">Settings</a></li><li><a href="Difficulty-and-Presets.html">Difficulty and presets</a></li><li><a href="Settings-General.html">General settings</a></li><li><a href="Settings-Hunts.html">Hunts settings</a></li><li><a href="Settings-Combat.html">Combat settings</a></li><li><a href="Settings-Boss.html">Boss settings</a></li><li><a href="Settings-Emission-Boss.html">Emission Boss settings</a></li><li><a href="Settings-The-Returning.html">The Returning settings</a></li><li><a href="Settings-The-Hunts-Eye.html">The Hunt&#x27;s Eye settings</a></li><li><a href="Settings-Thunder-Boss.html">Thunder Boss settings</a></li><li><a href="Settings-Debug-and-Tools.html">Debug &amp; tools settings</a></li></ul></details>
+<details class="grp"><summary>Help and reference</summary><ul><li><a href="Compatibility.html">Compatibility</a></li><li><a href="Troubleshooting.html">Troubleshooting</a></li><li><a href="FAQ.html">Frequently asked questions</a></li><li><a href="Credits.html">Credits</a></li></ul></details>
+    </nav>
+  </aside>
+  <main id="content" class="sheet">
+    <div class="crumb"><a href="index.html">Manual</a> · <span>Escalation and protection</span></div>
+    <h1>Escalation and protection</h1>
+    <div class="body">
+<p>Escalation is the persistent hunt cycle. It is separate from <a href="The-Returning.html">Returning ranks</a>, <a href="The-Mark.html">The Mark</a> and <a href="Targeted-Ground.html">Targeted Ground</a>.</p>
+<h2 id="how-the-cycle-changes">How the cycle changes</h2>
+<div aria-label="Reference table" class="table-scroll" role="region" tabindex="0"><table>
+<thead>
+<tr>
+<th>Outcome</th>
+<th>Cycle change</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Ordinary hunt beaten</td>
+<td>+1, regardless of whether you or other NPCs finished its members.</td>
+</tr>
+<tr>
+<td>Boss hunt beaten</td>
+<td>Halved, rounded down, never below 1.</td>
+</tr>
+<tr>
+<td>Hunt escaped through its time limit</td>
+<td>−1, never below 1.</td>
+</tr>
+<tr>
+<td>Hunt escaped by exceeding map-follow allowance</td>
+<td>−1, never below 1.</td>
+</tr>
+<tr>
+<td>Killed by a hunter, with death halving enabled</td>
+<td>Halved, never below 1. The death consequence can survive reloading an older save.</td>
+</tr>
+</tbody>
+</table></div>
+<p>Killing the boss while his escorts are still fighting does not immediately finish the whole hunt. The encounter remains a boss hunt when its final outcome is decided.</p>
+<p>Escalation does not fade simply because time passes.</p>
+<h2 id="damage-protection">Damage protection</h2>
+<p>The ordinary protection calculation combines armour mitigation, the member type's damage reduction and escalation. Named hunters and bosses can receive <strong>2% escalation protection per cycle after the first</strong>, capped at <strong>20%</strong> by default. Regular squadmates do not receive this escalation protection.</p>
+<div aria-label="Reference table" class="table-scroll" role="region" tabindex="0"><table>
+<thead>
+<tr>
+<th>Setting</th>
+<th>Medium default</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Regular stalker damage reduction</td>
+<td>0%</td>
+</tr>
+<tr>
+<td>Named hunter damage reduction</td>
+<td>25%</td>
+</tr>
+<tr>
+<td>Hunter Boss damage reduction</td>
+<td>30%</td>
+</tr>
+<tr>
+<td>Emission Boss damage reduction</td>
+<td>30%</td>
+</tr>
+<tr>
+<td>Maximum ordinary damage reduction</td>
+<td>70%</td>
+</tr>
+<tr>
+<td>Hunter armour class bonus</td>
+<td>0.05</td>
+</tr>
+<tr>
+<td>Hunter BR mitigation bonus</td>
+<td>10%</td>
+</tr>
+</tbody>
+</table></div>
+<p>Armour class and percentage mitigation are different. In GAMMA, the relevant ballistics protection can depend on the player's equipment; named hunters and bosses copy protection where supported, while regulars keep their own armour. Do not add the listed percentages as if they were all one flat reduction.</p>
+<p><strong>Thunder is an exception:</strong> his <strong>90% casting reduction replaces the ordinary reductions and their cap</strong> while casting. He also has a separate NPC damage reduction setting. See <a href="The-Thunder-Boss.html">The Thunder Boss</a>.</p>
+<p>Settings: <a href="Settings-Combat.html">Combat</a> · <a href="Settings-Boss.html">Boss</a> · <a href="Settings-Emission-Boss.html">Emission Boss</a> · <a href="Settings-Thunder-Boss.html">Thunder Boss</a>.</p>
+    </div>
+    <nav class="turns" aria-label="Previous and next pages"><a class="turn prev" href="Retreats.html"><small>Previous</small>Retreats</a><a class="turn next" href="Cloaking.html"><small>Next</small>Cloaking</a></nav>
+    <footer class="sheet-foot">
+      Nemesis Spawn System · Field Manual 1.0.3 · <a href="index.html">Home</a> · <a href="Settings.html">Settings</a> · <a href="Troubleshooting.html">Help</a>
+    </footer>
+  </main>
+  <aside class="toc" aria-label="On this page">
+    <p class="toc-title">On this page</p><a href="#how-the-cycle-changes">How the cycle changes</a><a href="#damage-protection">Damage protection</a>
+  </aside>
+</div>
+</body>
+</html>
