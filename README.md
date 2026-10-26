@@ -4,7 +4,7 @@ A recurring Monolith hunter for S.T.A.L.K.E.R. Anomaly / G.A.M.M.A.
 
 Every so often, a hunter comes for you. He spawns out of sight, sprints after you and is very hard to kill. Hurt him badly enough and he teleports away in a Monolith burst. He always comes back, and each time he is stronger.
 
-**Version 1.0.2** · [Download the latest release](https://github.com/SirEndet/Nemesis-Wave-Spawn-System/releases/latest) · [Player guide and every setting](Nemesis/Nemesis_README.md) · [Руководство на русском](Nemesis/Nemesis_README_ru.md)
+**Version 1.0.2** · [Download the latest release](https://github.com/SirEndet/Nemesis-Wave-Spawn-System/releases/latest) · [Player guide and every setting](Nemesis/Nemesis_README.md) · [Руководство на русском](Nemesis/Nemesis_README_ru.md) · [NSS Wikipedia](https://sirendet.github.io/Nemesis-Wave-Spawn-System/)
 
 ## Highlights
 
