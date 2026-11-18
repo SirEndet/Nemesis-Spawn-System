@@ -265,7 +265,7 @@ The **Difficulty** setting at the top of the General page picks Easy, Medium (th
 
 - **G.A.M.M.A.** (or Anomaly 1.5.3 with MCM).
 - **The latest modded exes** by **themrdemonized** ([GitHub](https://github.com/themrdemonized/xray-monolith)). GAMMA's installer keeps them up to date. You need at least the build of 15 September 2026. On an older one, with GAMMA's ballistics, your shots can kill named hunters instead of making them break off, and the mod tells you so once on your PDA. The exes' scripts must also load: they are supplied in `db/mods/00_modded_exes_gamedata.db0`. Older loose copies or conflicting mod files can override them; a new enough exe alone does not guarantee that those scripts are active.
-- **xlibs 1.9.0 or newer** by **Damian Sirbu** ([GitHub](https://github.com/damiansirbu-stalker/xlibs) · [ModDB](https://www.moddb.com/mods/stalker-anomaly/addons/xlibs-1001)). GAMMA already includes it as **482- Xlib - damian_sirbu**, switched off: tick it in Mod Organizer.
+- **xlibs 1.10.0 or newer** by **Damian Sirbu** ([GitHub](https://github.com/damiansirbu-stalker/xlibs) · [ModDB](https://www.moddb.com/mods/stalker-anomaly/addons/xlibs-1001)). GAMMA already includes it as **482- Xlib - damian_sirbu**, switched off: tick it in Mod Organizer.
 
 Works alongside AlifePlus, AlifeTactics, Wearable Devices, the Wearable Devices PDA mod and Obrien GAMMA Overhaul, but does not need them.
 

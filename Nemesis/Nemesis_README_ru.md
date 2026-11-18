@@ -269,7 +269,7 @@
 
 - **G.A.M.M.A.** (или Anomaly 1.5.3 с MCM).
 - **Новейшие модифицированные exe** от **themrdemonized** ([GitHub](https://github.com/themrdemonized/xray-monolith)). Установщик GAMMA обновляет их сам. Нужна сборка от 15 сентября 2026 года или новее. На более старой, с баллистикой GAMMA, ваши выстрелы могут убивать именных охотников, а не заставлять их отступить, и мод один раз сообщит об этом на КПК.
-- **xlibs 1.9.0 или новее** от **Damian Sirbu** ([GitHub](https://github.com/damiansirbu-stalker/xlibs) · [ModDB](https://www.moddb.com/mods/stalker-anomaly/addons/xlibs-1001)). В GAMMA он уже есть как **482- Xlib - damian_sirbu**, но выключен: отметьте его в Mod Organizer.
+- **xlibs 1.10.0 или новее** от **Damian Sirbu** ([GitHub](https://github.com/damiansirbu-stalker/xlibs) · [ModDB](https://www.moddb.com/mods/stalker-anomaly/addons/xlibs-1001)). В GAMMA он уже есть как **482- Xlib - damian_sirbu**, но выключен: отметьте его в Mod Organizer.
 
 Работает вместе с AlifePlus, AlifeTactics, Wearable Devices, модом Wearable Devices PDA и Obrien GAMMA Overhaul, но не требует их.
 

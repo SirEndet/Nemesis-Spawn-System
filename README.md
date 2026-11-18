@@ -30,7 +30,7 @@ Every release also has **`NemesisSpawnSystem_<version>-dev.zip`**: the same code
 
 - **[G.A.M.M.A.](https://github.com/Grokitach/Stalker_GAMMA)**, or S.T.A.L.K.E.R. Anomaly 1.5.3 with MCM.
 - **[Modded exes](https://github.com/themrdemonized/xray-monolith) from 15 September 2026 or newer** by themrdemonized. GAMMA's installer keeps them up to date.
-- **[xlibs](https://github.com/damiansirbu-stalker/xlibs) 1.9.0 or newer** by Damian Sirbu. GAMMA already includes it as **482- Xlib - damian_sirbu**, switched off: just tick it in Mod Organizer. Otherwise get it from [GitHub](https://github.com/damiansirbu-stalker/xlibs) or [ModDB](https://www.moddb.com/mods/stalker-anomaly/addons/xlibs-1001).
+- **[xlibs](https://github.com/damiansirbu-stalker/xlibs) 1.10.0 or newer** by Damian Sirbu. GAMMA already includes it as **482- Xlib - damian_sirbu**, switched off: just tick it in Mod Organizer. Otherwise get it from [GitHub](https://github.com/damiansirbu-stalker/xlibs) or [ModDB](https://www.moddb.com/mods/stalker-anomaly/addons/xlibs-1001).
 
 ## Install (Mod Organizer 2)
 
