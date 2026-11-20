@@ -9,6 +9,8 @@ local CHASE_START_WARN_MS = 3000
 local OFFLINE_LIMIT_MS = 300000
 local RETREAT_GRACE_MS = 8000
 local RETREAT_COVER_RADIUS_M = 20
+local RETREAT_COVER_FAR_M = 30
+local RETREAT_COVER_MAX_M = 200
 local RETREAT_COVER_AHEAD_M = 10
 local RETREAT_MIN_RUN_M = 6
 local RETREAT_FLEE_M = 15
@@ -31,8 +33,8 @@ local XLIBS_API = {
     xsmart = { "get_named_smarts", "is_base", "assign_squad_to_smart" },
     xlevel = { "get_level_id", "get_danger_tier" },
     xsound = { "play", "create_sound", "set_volume", "release" },
-    xcombat = { "find_cover", "register_cover", "release_cover", "find_flee_lane", "get_track_pos",
-                "set_destination", "show_enemy", "COVER",
+    xcombat = { "get_best_cover", "register_cover", "release_cover", "find_free_lane", "get_track_pos",
+                "set_destination", "show_enemy",
                 "is_indoor", "INDOOR_LEVELS" },
     xgraft = { "get_blocked_planners", "is_takeover_current" },
     xmath = { "is_in_range" },
@@ -53,7 +55,7 @@ local function check_xlibs()
     if not xlibs_ok then
         table.sort(missing)
 
-        printf("~NEMESIS IMPORTANT ERROR (please report): xlibs 1.9.0 or newer is required (missing: %s). The mod is off.", table.concat(missing, ", "))
+        printf("~NEMESIS IMPORTANT ERROR (please report): xlibs 1.10.0 or newer is required (missing: %s). The mod is off.", table.concat(missing, ", "))
     end
     return xlibs_ok
 end
@@ -234,8 +236,9 @@ local function begin_retreat(obj, r, why)
         pcall(function()
             local search = vector():set(pos.x + away.x * RETREAT_COVER_AHEAD_M, pos.y, pos.z + away.z * RETREAT_COVER_AHEAD_M)
 
-            dest = xcombat.find_cover(obj, apos, { selection = xcombat.COVER.NEAREST,
-                firing = false, radius = RETREAT_COVER_RADIUS_M, search_pos = search })
+            dest = xcombat.get_best_cover(obj, apos, { radius = RETREAT_COVER_RADIUS_M,
+                radius_far = RETREAT_COVER_FAR_M, max_dist = RETREAT_COVER_MAX_M, give_ground = my_d,
+                search_pos = search, owner_id = id })
         end)
         if dest and not far_enough(dest) then dest = nil end
 
@@ -243,7 +246,7 @@ local function begin_retreat(obj, r, why)
         if dest then how = "cover" end
         if not dest then
 
-            pcall(function() dest = xcombat.find_flee_lane(obj, away, RETREAT_FLEE_M, 20, 90) end)
+            pcall(function() dest = xcombat.find_free_lane(obj, away, RETREAT_FLEE_M, 20, 90) end)
             if dest and not (far_enough(dest) and xcombat.register_cover(dest, id)) then dest = nil end
             if dest then how = "away from you" end
         end

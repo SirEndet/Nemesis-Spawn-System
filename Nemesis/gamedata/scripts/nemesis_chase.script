@@ -331,7 +331,7 @@ local function flank_vertex(npc, tpos, role)
     dir:set((dx * ca - dz * sa) / d, 0, (dx * sa + dz * ca) / d)
     local vid = nil
 
-    pcall(function() vid = xcombat.find_flee_lane(npc, dir, math.min(d * 0.5, 35), 10, 30) end)
+    pcall(function() vid = xcombat.find_free_lane(npc, dir, math.min(d * 0.5, 35), 10, 30) end)
     return vid
 end
 
